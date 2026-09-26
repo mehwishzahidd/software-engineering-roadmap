@@ -2,11 +2,13 @@
 
 > **Goal:** defend "CI/CD" with truthful past context and current competence in GitHub Actions:
 > workflows, jobs, caching, services, secrets, environments, OIDC, and a real build → test →
-> image → deploy pipeline (TicketHold CI in W12, PulseWatch CD in W22).
+> image → deploy pipeline (FlowGrid CI from W4, full CD in W8, ForgeCI's multi-service pipeline in
+> W18 — and ForgeCI is itself a CI system you built).
 >
 > **Honesty rule:** many engineers "used" CI/CD (pushed code, watched Jenkins go green) without
 > writing pipelines. If that's your past, say it. Your pipeline-authoring claim rests on the
-> workflows in TicketHold and PulseWatch.
+> workflows in FlowGrid, LedgerX, ForgeCI and FlagForge — and on ForgeCI, where you implemented the
+> queue, workers and container execution that a CI system is made of.
 
 ---
 
@@ -14,9 +16,11 @@
 
 | Project | CI/CD evidence |
 |---|---|
-| **P2 TicketHold** M4 (W12) | `.github/workflows/ci.yml`: on push/PR → `actions/setup-java` (Temurin 21, Maven cache) → `mvn -B verify` (unit + `@WebMvcTest` + `@DataJpaTest` + Testcontainers); branch protection requires it |
-| **P3 TeamBoard** (W17–18) | Two jobs: backend `mvn verify`, frontend `npm ci && npm run lint && tsc --noEmit && vitest run && npm run build` |
-| **P4 PulseWatch** M4 (W22) | Pipeline: test → build image → push (tag = git SHA) → deploy job (`environment: production`, manual approval) assuming AWS role via **OIDC** → SSM command on EC2: `docker compose pull && up -d` → smoke test `/actuator/health`; rollback = redeploy previous SHA |
+| **FlowGrid** M1 (W4) | `.github/workflows/ci.yml` from the first PR: on push/PR → `actions/setup-java` (Temurin 21, Maven cache) → `mvn -B verify` (unit + `@WebMvcTest` + `@DataJpaTest`; Testcontainers from M2); branch protection requires it |
+| **FlowGrid** M4–M5 (W7–8) | Frontend job: `npm ci && npm run lint && tsc --noEmit && vitest run && npm run build`. Full pipeline: test → build image → push to GHCR (tag = git SHA) → deploy job (`environment: production`, manual approval) assuming AWS role via **OIDC** → SSM command on EC2: `docker compose pull && up -d` → smoke test `/actuator/health`; rollback = redeploy previous SHA |
+| **LedgerX** (W9–13) | Same CI from M1; the invariant and concurrency suites gate every merge; deploy pipeline reused in W13 |
+| **ForgeCI** M5 (W18) | Multi-module pipeline: `mvn -pl api,worker -am verify`, Testcontainers Postgres + Redis, three images (api, worker, ui), Compose smoke test with `--scale worker=2`. **And ForgeCI *is* a CI system**: webhook → build → queued jobs → Docker-executed steps → live logs → status — you can explain what GitHub Actions does internally because you built the same pipeline |
+| **FlagForge** M4 (W23) | CI publishes the SDK Maven artifact alongside the server image; SDK ↔ server contract tests run in the pipeline |
 
 ## Where to learn it in this repo
 
@@ -57,7 +61,7 @@ Repository/environment secrets (`${{ secrets.X }}`), masked in logs, not availab
 
 ## 2. Intermediate questions
 
-<details><summary><b>I1. Show your TicketHold CI workflow.</b></summary>
+<details><summary><b>I1. Show your FlowGrid CI workflow.</b></summary>
 
 ```yaml
 name: ci
@@ -85,7 +89,7 @@ Dependency caching (`setup-java cache: maven`, `setup-node cache: npm`), Docker 
 
 <details><summary><b>I3. Explain environments and approvals.</b></summary>
 
-`environment: production` on a job enables environment-scoped secrets, required reviewers, and deployment history. PulseWatch's deploy job waits for manual approval.
+`environment: production` on a job enables environment-scoped secrets, required reviewers, and deployment history. FlowGrid's deploy job waits for manual approval.
 </details>
 
 <details><summary><b>I4. How does OIDC to AWS work in Actions?</b></summary>
@@ -100,7 +104,7 @@ Tag with `${{ github.sha }}` (immutable), optionally `vX.Y.Z` on release tags. D
 
 <details><summary><b>I6. Deployment strategies?</b></summary>
 
-Recreate (downtime, PulseWatch single host — brief), rolling (replace instances gradually), blue/green (switch traffic between two stacks), canary (small % first). Choose by risk tolerance and infra cost.
+Recreate (downtime, FlowGrid single host — brief), rolling (replace instances gradually), blue/green (switch traffic between two stacks), canary (small % first). Choose by risk tolerance and infra cost.
 </details>
 
 <details><summary><b>I7. What makes a CI suite flaky and how do you fix it?</b></summary>
@@ -108,11 +112,16 @@ Recreate (downtime, PulseWatch single host — brief), rolling (replace instance
 Time dependence, test order dependence, shared state, real network calls, race conditions, fixed sleeps. Fix root causes (injectable `Clock`, isolated data, Awaitility instead of `sleep`); quarantine only temporarily; never just "re-run until green".
 </details>
 
+<details><summary><b>I8. You built a CI system (ForgeCI). What does it do that GitHub Actions does?</b></summary>
+
+GitHub webhook (`push`) → HMAC-SHA256 verified, deduped on `X-GitHub-Delivery` → build + jobs created from `.forgeci.yml` → jobs enqueued in Redis → a worker pulls one (`BLMOVE` with a lease) → temporary Docker container from the configured image → clone at the commit SHA → run steps, capture exit codes → log chunks persisted + published → API streams them over SSE → result stored, status reported → container always removed. Timeouts, cancellation, retries only for infra failures, per-project concurrency limits, orphan recovery when a worker dies. That is the same shape as a hosted runner picking up a job.
+</details>
+
 ## 3. Realistic interview questions
 
 <details><summary><b>R1. "What is CI/CD?" (and "have you set one up?")</b></summary>
 
-Definition (B1) + concrete: "In PulseWatch, a PR runs `mvn verify` and the frontend tests; merge to main builds an image tagged with the SHA, pushes it, and after approval deploys to EC2 via an OIDC-assumed role, then a smoke test hits `/actuator/health`." Past: truthful about what you wrote vs used.
+Definition (B1) + concrete: "In FlowGrid, a PR runs `mvn verify` and the frontend tests; merge to main builds an image tagged with the SHA, pushes it to GHCR, and after approval deploys to EC2 via an OIDC-assumed role, then a smoke test hits `/actuator/health`." Then the differentiator: "I also built ForgeCI, a small CI system — webhook receiver, Redis job queue, workers that run steps in Docker containers, live logs — so I can explain what happens behind a pipeline, not just write the YAML." Past: truthful about what you wrote vs used.
 Follow-up: "How do you roll back?"
 </details>
 
@@ -168,9 +177,9 @@ Check step timings: no dependency cache, Docker layers rebuilt, sequential jobs 
 
 ## 6. Architecture questions
 
-<details><summary><b>A1. Design the pipeline for TeamBoard (monorepo, backend + frontend).</b></summary>
+<details><summary><b>A1. Design the pipeline for ForgeCI (multi-module Maven repo: api + worker + React ui).</b></summary>
 
-Path-filtered jobs (`backend/**`, `frontend/**`), both on PR; on main: build two images (api, web/nginx), push, deploy together with Compose; e2e smoke after deploy.
+Path-filtered jobs (`api/**`, `worker/**`, `ui/**`), all on PR; `mvn -pl <module> -am verify` so a worker-only change doesn't rebuild everything; on main: build three images (api, worker, ui/nginx), push, deploy together with Compose (`--scale worker=N`); e2e smoke after deploy = push a commit to a registered test repo and watch the build go green.
 </details>
 
 <details><summary><b>A2. How do you promote across dev → staging → prod?</b></summary>
@@ -206,7 +215,7 @@ Same image SHA deployed to each environment; config via environment-specific sec
 
 ## 9. When to use it
 
-- Every repository with more than a day's life — CI from the first commit (TicketHold from W12).
+- Every repository with more than a day's life — CI from the first commit (FlowGrid from W4, every later project from its M1).
 - CD when deploys are frequent enough that manual steps cause errors.
 
 ## 10. When NOT to use it
@@ -234,7 +243,7 @@ Same image SHA deployed to each environment; config via environment-specific sec
 
 ## 13. One small hands-on exercise
 
-**CI for TicketHold + image publish.**
+**CI for FlowGrid + image publish.**
 
 - [ ] PR workflow runs `mvn -B verify`, uploads test reports on failure.
 - [ ] Branch protection requires it; a PR with a failing test cannot merge.
@@ -249,4 +258,4 @@ Same image SHA deployed to each environment; config via environment-specific sec
 - [ ] Explain OIDC deploy and trust policy conditions
 - [ ] Explain rollback + migration compatibility
 - [ ] Diagnose "passes locally, fails in CI"
-- [ ] Truthful 60-second answer on past CI/CD involvement + PulseWatch bridge
+- [ ] Truthful 60-second answer on past CI/CD involvement + FlowGrid/ForgeCI bridge

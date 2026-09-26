@@ -5,7 +5,8 @@ templates, readiness matrix) is in [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_
 Cross-technology questions are in [`../RESUME_INTERVIEW_QUESTIONS.md`](../RESUME_INTERVIEW_QUESTIONS.md).
 
 > **Honesty rule:** these files train current, real competence. Every "how I used it" answer
-> is either a truthful description of past work or a reference to P1–P4 built in this roadmap.
+> is either a truthful description of past work or a reference to FlowGrid, LedgerX, ForgeCI or
+> FlagForge built in this roadmap.
 > Never rehearse an answer that describes work you didn't do.
 
 ---
@@ -47,7 +48,7 @@ Score every recorded answer. Target: **≥ 3** on three consecutive attempts per
 |---:|---|---|
 | **1** | Vague | Buzzwords, no mechanism, no example. "Spring does dependency injection so it's loosely coupled." Hesitation > 5 s, or incorrect facts. |
 | **2** | Correct but generic | Accurate definition, but no example from your work or projects; can't handle the first follow-up. |
-| **3** | Specific | Correct mechanism + a concrete example from P1–P4 (or truthful past work) + one trade-off. Survives one follow-up. |
+| **3** | Specific | Correct mechanism + a concrete example from FlowGrid / LedgerX / ForgeCI / FlagForge (or truthful past work) + one trade-off. Survives one follow-up. |
 | **4** | Interview-strong | Everything in 3, plus: structured (what → how → example → trade-off), 60–120 s, anticipates the next follow-up, admits limits cleanly ("I haven't used X in production, but here's how I'd reason about it"). |
 
 **Automatic deductions (−1):** claiming experience you don't have; rambling > 3 minutes;
@@ -90,6 +91,6 @@ an answer that contradicts your own project code.
 | AWS | [aws.md](./aws.md) | L2 | [`../12-aws/`](../12-aws/README.md) |
 | CI/CD | [cicd.md](./cicd.md) | L2 | [`../13-cicd/`](../13-cicd/README.md) |
 | Linux | [linux.md](./linux.md) | L2 | [`../10-linux/`](../10-linux/README.md) |
-| Python | [python.md](./python.md) | L1/L2 | [`../19-python/`](../19-python/README.md) |
+| Python | [python.md](./python.md) | L3 | [`../19-python/`](../19-python/README.md), [`../PYTHON_INTERVIEW_CHEATSHEET.md`](../PYTHON_INTERVIEW_CHEATSHEET.md) |
 
 Back to [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · [`../README.md`](../README.md)

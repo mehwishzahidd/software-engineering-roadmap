@@ -1,6 +1,6 @@
 # GitHub — Résumé Defense
 
-**Target level:** L2 · **Learned:** Week 1 (profile, remotes), Week 5 (PRs, reviews), Week 12 (Actions CI), Week 22 (CI/CD, environments, secrets)
+**Target level:** L2 · **Learned:** Week 1 (profile, remotes), Week 4 (Actions CI), Week 5 (PRs, reviews), Week 8 (CI/CD, environments, OIDC), Week 14 (GitHub OAuth, webhooks, REST API for ForgeCI), Week 18 (multi-service pipeline)
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md)
 
 ---
@@ -92,13 +92,25 @@ Dependabot opens PRs to update vulnerable/outdated dependencies (Maven, npm, Doc
 Secret scanning detects committed credentials; push protection blocks the push.
 </details>
 
+<details><summary><b>Q13. How do GitHub webhooks work, and how did ForgeCI secure its receiver?</b></summary>
+
+GitHub POSTs a JSON event (`push`, `pull_request`, …) to your URL with headers `X-GitHub-Event`,
+`X-GitHub-Delivery` (unique id) and `X-Hub-Signature-256` (HMAC-SHA256 of the raw body with the shared
+secret). ForgeCI: compute the HMAC over the *raw* bytes and compare with a constant-time equals → reject 401
+on mismatch; insert the delivery id into a table with a unique constraint → duplicate delivery (GitHub
+retries on timeout) is a no-op 200; answer 2xx within seconds and do the work asynchronously. Redeliveries
+can be replayed from the webhook settings page — useful for testing.
+</details>
+
 ## 3. Realistic interview questions
 
 <details><summary><b>R1. "Walk me through how code got from your laptop to production in your last team."</b></summary>
 
 - Truthful past: describe what you remember; it's fine if it was Bitbucket/GitLab/Jenkins — say so.
-- Current, concrete: PulseWatch — branch → PR → Actions runs tests → review (self-review checklist
-  as solo dev) → squash-merge → pipeline builds image, pushes to registry, deploys to EC2.
+- Current, concrete: FlowGrid — branch → PR → Actions runs tests → review (self-review checklist
+  as solo dev) → squash-merge → pipeline builds image, pushes to GHCR, deploys to EC2.
+- From the other side: ForgeCI receives GitHub's webhooks and reports status through the REST API, so
+  I know what happens on GitHub's side of a push, not only on mine.
 </details>
 
 <details><summary><b>R2. "How do you review a pull request?"</b></summary>
@@ -123,7 +135,7 @@ Secret scanning detects committed credentials; push protection blocks the push.
 
 <details><summary><b>R5. "Can I look at your GitHub?"</b></summary>
 
-- Yes — pinned repos: TicketHold, TeamBoard, PulseWatch with READMEs, diagrams, CI badges, tagged releases.
+- Yes — pinned repos: FlowGrid, LedgerX, ForgeCI, FlagForge with READMEs, diagrams, CI badges, tagged releases.
 - Be honest that they're personal learning projects; point to one PR that shows a design decision.
 </details>
 
@@ -166,6 +178,7 @@ Job runs in a container or runner without Docker. `ubuntu-latest` hosted runners
 - Secrets vs OIDC for deploying to AWS; how to scope the IAM role trust policy to one repo/branch.
 - Reusable workflows / composite actions when you have 3 Java services.
 - How would you design repo settings for a 5-person team (protection, CODEOWNERS, required checks)?
+- GitHub App vs OAuth App vs PAT for ForgeCI's integration — permissions, token lifetime, webhook delivery; why ForgeCI's MVP started on a PAT and what OAuth added.
 
 ## 7. Common mistakes
 
@@ -221,7 +234,7 @@ build farms where self-hosted CI is cheaper (you can still use self-hosted runne
 
 ## 13. Hands-on exercise
 
-**Harden the TicketHold repository.**
+**Harden the FlowGrid repository.**
 
 Acceptance criteria:
 - [ ] `main` protected: PR required, `build` check required, no force-push.
@@ -244,10 +257,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: link |
 |---|---|---|
-| P1 Ledger | PR workflow from M3, issues, tag `v1.0` release | |
-| P2 TicketHold | Actions CI (`mvn verify`) with Testcontainers, badge, protected `main` | |
-| P3 TeamBoard | Separate backend/frontend jobs in one workflow | |
-| P4 PulseWatch | Full CI/CD: test → build image → push → deploy to AWS | |
+| FlowGrid | PR-per-milestone, GitHub milestones + issues per M1–M5, Actions CI (`mvn verify`) with Testcontainers from W4, badge, protected `main`, full CI/CD to AWS in W8, tag `v1.0` | |
+| LedgerX | Same; failure-engineering findings logged as issues and closed via PRs | |
+| ForgeCI | Actions pipeline for a multi-module repo (api / worker / ui jobs). **Uses GitHub as a platform:** OAuth login, repo registration, webhook receiver (HMAC-SHA256, delivery-id dedupe), REST API calls (clone with a short-lived token, commit status) | |
+| FlagForge | CI publishes the SDK artifact; separate release tags for SDK and server; dashboard job | |
 
 ## Where to learn it in this repo
 

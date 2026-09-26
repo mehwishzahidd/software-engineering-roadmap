@@ -1,7 +1,8 @@
 # Mockito
 
-> **Week 12** · P2 TicketHold M4. Mockito lets you replace collaborators so a unit test exercises **one class**.
-> Used well, it makes service tests fast and focused. Used badly, it produces tests that pass while production burns.
+> **Week 5** (FlowGrid M2), then every project. Mockito lets you replace collaborators so a unit test exercises
+> **one class**. Used well, it makes service tests fast and focused. Used badly, it produces tests that pass while
+> production burns — especially for the concurrency and transaction behaviour that FlowGrid, LedgerX and ForgeCI are about.
 
 ---
 
@@ -10,9 +11,9 @@
 Included in `spring-boot-starter-test` (`mockito-core` + `mockito-junit-jupiter`). Mockito 5 uses the **inline mock maker**
 by default, so it can mock `final` classes and methods.
 
-> On JDK 21+, Mockito's self-attaching agent prints a warning about dynamic agent loading (future JDKs will
-> disallow it by default). The fix recommended in Mockito's docs is to add Mockito as a `-javaagent` in the Surefire
-> `argLine`. Know why the warning appears; fix it when it bothers you.
+> On JDK 21+, Mockito's self-attaching agent prints a warning about dynamic agent loading (future JDKs will disallow it
+> by default). The fix recommended in Mockito's docs is to add Mockito as a `-javaagent` in the Surefire `argLine`.
+> Know why the warning appears; fix it when it bothers you.
 
 ---
 
@@ -20,44 +21,45 @@ by default, so it can mock `final` classes and methods.
 
 | Term | Mockito | Use for |
 |---|---|---|
-| **Stub** | `when(repo.findById(1L)).thenReturn(Optional.of(seat))` | feeding data to the class under test (queries) |
-| **Mock** (verified) | `verify(notifier).bookingConfirmed(booking)` | asserting an outbound side effect happened (commands) |
+| **Stub** | `when(skus.findById(1L)).thenReturn(Optional.of(sku))` | feeding data to the class under test (queries) |
+| **Mock** (verified) | `verify(events).publish(any(StockReserved.class))` | asserting an outbound side effect happened (commands) |
 | **Spy** | `spy(realObject)` — real methods run unless stubbed | partial mocking of legacy code; rarely needed |
 
-Rule of thumb: **stub queries, verify commands.** Don't verify a stubbed query was called — the assertion on the
-result already proves it.
+Rule of thumb: **stub queries, verify commands.** Don't verify a stubbed query was called — the assertion on the result
+already proves it.
 
 ---
 
-## 3. The service under test (TicketHold)
+## 3. The class under test (a simplified FlowGrid service)
+
+A deliberately small version — your real reservation logic has more rules. What matters is the **shape**: constructor
+injection, collaborators behind interfaces, time from a `Clock`.
 
 ```java
-@Service
-@RequiredArgsConstructor // or an explicit constructor
-public class HoldService {
-    private final SeatRepository seats;
-    private final HoldRepository holds;
-    private final Clock clock;
+public class ReservationService {
+    private final InventoryRepository inventory;
+    private final ReservationRepository reservations;
     private final DomainEvents events;
+    private final Clock clock;
+
+    public ReservationService(InventoryRepository inventory, ReservationRepository reservations,
+                              DomainEvents events, Clock clock) { /* assign fields */ }
 
     @Transactional
-    public Hold hold(long seatId, long userId) {
-        Seat seat = seats.findById(seatId).orElseThrow(() -> new NotFoundException("seat", seatId));
-        if (holds.existsActiveHold(seatId, Instant.now(clock))) {
-            throw new SeatUnavailableException(seatId);
-        }
-        Hold hold = holds.save(Hold.create(seat.getId(), userId, Instant.now(clock), Duration.ofMinutes(5)));
-        events.publish(new SeatHeld(hold.getId(), seatId, userId));
-        return hold;
+    public Reservation reserve(long orderLineId, long skuId, long warehouseId, int qty) {
+        InventoryLevel level = inventory.findForUpdate(skuId, warehouseId)          // SELECT … FOR UPDATE
+            .orElseThrow(() -> new NotFoundException("inventory", skuId));
+        level.reserve(qty);                                                          // throws InsufficientStockException
+        Reservation r = reservations.save(Reservation.create(orderLineId, level.id(), qty, clock.instant(), Duration.ofMinutes(15)));
+        events.publish(new StockReserved(r.getId(), skuId, warehouseId, qty));
+        return r;
     }
 }
 ```
 
-Constructor injection makes this trivially testable without Spring.
-
 ---
 
-## 4. A complete Mockito unit test
+## 4. A unit test with Mockito
 
 ```java
 import static org.assertj.core.api.Assertions.*;
@@ -65,79 +67,67 @@ import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-class HoldServiceTest {
+class ReservationServiceTest {
 
-    @Mock SeatRepository seats;
-    @Mock HoldRepository holds;
+    @Mock InventoryRepository inventory;
+    @Mock ReservationRepository reservations;
     @Mock DomainEvents events;
-    @Captor ArgumentCaptor<SeatHeld> eventCaptor;
+    @Captor ArgumentCaptor<StockReserved> eventCaptor;
 
     final Instant now = Instant.parse("2026-05-01T10:00:00Z");
-    HoldService service;
+    ReservationService service;
 
     @BeforeEach
     void setUp() {
-        service = new HoldService(seats, holds, Clock.fixed(now, ZoneOffset.UTC), events);
+        service = new ReservationService(inventory, reservations, events, Clock.fixed(now, ZoneOffset.UTC));
     }
 
     @Test
-    void hold_whenSeatFree_savesHoldAndPublishesEvent() {
-        // Arrange (stubs)
-        when(seats.findById(7L)).thenReturn(Optional.of(seat(7L)));
-        when(holds.existsActiveHold(7L, now)).thenReturn(false);
-        when(holds.save(any(Hold.class))).thenAnswer(inv -> withId(inv.getArgument(0), 100L));
+    void reserve_whenStockAvailable_savesReservationAndPublishesEvent() {
+        when(inventory.findForUpdate(7L, 1L)).thenReturn(Optional.of(TestData.level(7L, 1L, /*onHand*/ 10, /*reserved*/ 0)));
+        when(reservations.save(any(Reservation.class))).thenAnswer(inv -> TestData.withId(inv.getArgument(0), 100L));
 
-        // Act
-        Hold result = service.hold(7L, 42L);
+        Reservation r = service.reserve(55L, 7L, 1L, 3);
 
-        // Assert (state)
-        assertThat(result.getId()).isEqualTo(100L);
-        assertThat(result.getExpiresAt()).isEqualTo(now.plus(Duration.ofMinutes(5)));
-
-        // Assert (behaviour: command was issued)
+        assertThat(r.getId()).isEqualTo(100L);
+        assertThat(r.getExpiresAt()).isEqualTo(now.plus(Duration.ofMinutes(15)));
         verify(events).publish(eventCaptor.capture());
-        assertThat(eventCaptor.getValue()).isEqualTo(new SeatHeld(100L, 7L, 42L));
+        assertThat(eventCaptor.getValue()).isEqualTo(new StockReserved(100L, 7L, 1L, 3));
     }
 
     @Test
-    void hold_whenSeatAlreadyHeld_throwsAndSavesNothing() {
-        when(seats.findById(7L)).thenReturn(Optional.of(seat(7L)));
-        when(holds.existsActiveHold(7L, now)).thenReturn(true);
+    void reserve_whenInsufficientStock_throwsAndSavesNothing() {
+        when(inventory.findForUpdate(7L, 1L)).thenReturn(Optional.of(TestData.level(7L, 1L, 2, 0)));
 
-        assertThatThrownBy(() -> service.hold(7L, 42L)).isInstanceOf(SeatUnavailableException.class);
+        assertThatThrownBy(() -> service.reserve(55L, 7L, 1L, 3)).isInstanceOf(InsufficientStockException.class);
 
-        verify(holds, never()).save(any());
+        verify(reservations, never()).save(any());
         verifyNoInteractions(events);
-    }
-
-    @Test
-    void hold_whenSeatMissing_throwsNotFound() {
-        when(seats.findById(7L)).thenReturn(Optional.empty());
-        assertThatThrownBy(() -> service.hold(7L, 42L)).isInstanceOf(NotFoundException.class);
     }
 }
 ```
 
-`seat(...)` and `withId(...)` are small test helpers (test data builders) in the test class or a `TestData` util.
+What this test **does not** prove: that two concurrent requests can't both reserve the last unit. The lock lives in
+Postgres; the mock repository has no lock. That's the Testcontainers test in [testcontainers.md §6](./testcontainers.md#6-concurrency-tests-the-core-evidence).
 
 ---
 
 ## 5. Stubbing reference
 
 ```java
-when(repo.findById(1L)).thenReturn(Optional.of(e));            // return value
-when(repo.findById(anyLong())).thenReturn(Optional.empty());   // matcher
-when(gateway.charge(any())).thenThrow(new PaymentDeclinedException());
-when(idGen.next()).thenReturn(1L, 2L, 3L);                     // consecutive calls
-when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));  // echo argument
+when(skus.findById(1L)).thenReturn(Optional.of(sku));               // return value
+when(skus.findById(anyLong())).thenReturn(Optional.empty());        // matcher
+when(github.fetchFile(any(), any())).thenThrow(new GitHubUnavailableException());
+when(ids.next()).thenReturn(1L, 2L, 3L);                            // consecutive calls
+when(repo.save(any())).thenAnswer(inv -> inv.getArgument(0));       // echo argument
 
 // void methods: doX().when(mock).method()
-doThrow(new MailException("SMTP down")).when(mailer).send(any());
-doNothing().when(mailer).send(any());                           // default anyway
+doThrow(new DockerException("image pull failed")).when(runner).pull(any());
+doNothing().when(notifier).lowStock(any());                          // default anyway
 
 // BDD style (reads as Given/When/Then)
-given(seats.findById(7L)).willReturn(Optional.of(seat));
-then(events).should().publish(any(SeatHeld.class));
+given(skus.findById(7L)).willReturn(Optional.of(sku));
+then(events).should().publish(any(StockReserved.class));
 ```
 
 ### Argument matchers
@@ -146,8 +136,8 @@ then(events).should().publish(any(SeatHeld.class));
 **If one argument uses a matcher, all must**:
 
 ```java
-when(holds.existsActiveHold(7L, any()))          // ❌ InvalidUseOfMatchersException
-when(holds.existsActiveHold(eq(7L), any()))      // ✅
+when(inventory.findForUpdate(7L, anyLong()))          // ❌ InvalidUseOfMatchersException
+when(inventory.findForUpdate(eq(7L), anyLong()))      // ✅
 ```
 
 ---
@@ -159,11 +149,11 @@ verify(events).publish(any());                   // exactly once (times(1))
 verify(events, times(2)).publish(any());
 verify(events, never()).publish(any());
 verify(events, atLeastOnce()).publish(any());
-verifyNoInteractions(mailer);                     // mock never touched
-verifyNoMoreInteractions(events);                 // use sparingly: makes tests brittle
+verifyNoInteractions(notifier);                  // mock never touched
+verifyNoMoreInteractions(events);                // use sparingly: makes tests brittle
 
-InOrder inOrder = inOrder(holds, events);         // order matters (save before publish)
-inOrder.verify(holds).save(any());
+InOrder inOrder = inOrder(reservations, events); // order matters (save before publish)
+inOrder.verify(reservations).save(any());
 inOrder.verify(events).publish(any());
 ```
 
@@ -174,21 +164,20 @@ inOrder.verify(events).publish(any());
 Use a captor when the argument is **built inside** the method under test and you need to inspect it.
 
 ```java
-@Captor ArgumentCaptor<AlertJob> jobCaptor;
+@Captor ArgumentCaptor<QueuedJob> jobCaptor;
 
 @Test
-void incidentOpened_enqueuesWebhookAlertWithIdempotencyKey() {
-    alertService.onIncidentOpened(incident(55L, monitor(9L)));
+void pushEvent_createsBuildAndEnqueuesOneJobPerPipelineJob() {        // ForgeCI M1/M2
+    webhookService.handlePush(TestData.pushEvent("delivery-abc", "main", "3f2c1e0"));
 
-    verify(jobQueue).enqueue(jobCaptor.capture());
-    AlertJob job = jobCaptor.getValue();
-    assertThat(job.channel()).isEqualTo(Channel.WEBHOOK);
-    assertThat(job.idempotencyKey()).isEqualTo("incident-55-opened");   // PulseWatch M2
+    verify(jobQueue, times(2)).enqueue(jobCaptor.capture());
+    assertThat(jobCaptor.getAllValues())
+        .extracting(QueuedJob::jobName, QueuedJob::commitSha)
+        .containsExactly(tuple("build", "3f2c1e0"), tuple("test", "3f2c1e0"));
 }
 ```
 
-If you only need a simple check, `verify(queue).enqueue(argThat(j -> j.channel() == Channel.WEBHOOK))` is shorter.
-`captor.getAllValues()` for multiple calls.
+If you only need a simple check, `verify(queue).enqueue(argThat(j -> j.commitSha().equals("3f2c1e0")))` is shorter.
 
 ---
 
@@ -200,8 +189,8 @@ If you only need a simple check, `verify(queue).enqueue(argThat(j -> j.channel()
 - A stubbing called with **different arguments** than the code uses → `PotentialStubbingProblem`, pointing at the real bug.
 
 ```java
-when(holds.existsActiveHold(7L, now)).thenReturn(false);
-service.hold(8L, 42L);   // code calls existsActiveHold(8L, now) → PotentialStubbingProblem
+when(inventory.findForUpdate(7L, 1L)).thenReturn(Optional.of(level));
+service.reserve(55L, 7L, 2L, 3);   // code calls findForUpdate(7L, 2L) → PotentialStubbingProblem
 ```
 
 Escape hatch for genuinely shared setup: `lenient().when(...)` or `@MockitoSettings(strictness = Strictness.LENIENT)` —
@@ -226,30 +215,29 @@ If you need to spy on the class under test, it's usually doing too much — spli
 
 ## 10. The over-mocking smell
 
-Signs your tests mock too much:
-
 | Smell | Why it hurts | Instead |
 |---|---|---|
-| Mocking value objects (`Money`, `Hold`, DTOs) | tests nothing real | use real instances |
-| Mocking the repository to test a JPQL query | query never runs | `@DataJpaTest` + Testcontainers |
+| Mocking value objects (`Money`, `Reservation`, DTOs) | tests nothing real | use real instances |
+| Mocking the repository to test a query or a lock | the SQL never runs | `@DataJpaTest` / `@SpringBootTest` + Testcontainers |
 | `verify` on every call, in order | test mirrors implementation; any refactor breaks it | assert outcomes; verify only side effects |
 | 8 `@Mock`s for one class | class has too many responsibilities | split the class |
-| Mocking types you don't own (`RestTemplate`, `JdbcTemplate`, `HttpClient`) | you encode your assumptions about their behaviour | wrap them in your own port, mock the port; integration-test the adapter (WireMock/Testcontainers) |
+| Mocking types you don't own (`RestClient`, `JdbcTemplate`, `StringRedisTemplate`, the Docker client) | you encode your assumptions about their behaviour | wrap them in your own port (`ContainerRunner`, `JobQueue`); mock or fake the port; integration-test the adapter |
 | Mocks returning mocks | "train wreck"; Law of Demeter violation | redesign |
 
 **The key question:** *"If I introduced a real bug here, would this test fail?"* A test that mocks the thing that
-contains the bug can't catch it. TicketHold's double-booking protection is a DB + transaction property — only an
-integration test with real Postgres ([testcontainers.md](./testcontainers.md)) proves it.
+contains the bug can't catch it. FlowGrid's no-oversell guarantee and LedgerX's no-negative-balance guarantee are
+database + transaction properties — only integration tests with real Postgres prove them.
 
 ---
 
 ## Break it
 
-1. Stub `holds.existsActiveHold(7L, now)` but call `service.hold(8L, ...)`. Read the `PotentialStubbingProblem` message.
+1. Stub `findForUpdate(7L, 1L)` but call the service with warehouse `2L`. Read the `PotentialStubbingProblem` message.
 2. Add a stub that's never used. Read the `UnnecessaryStubbingException`.
 3. Mix a raw value and a matcher. Read the `InvalidUseOfMatchersException`.
-4. Introduce a bug: publish the event **before** saving (hold id is null). Which test catches it? Add an `InOrder` check or an assertion on the captured event id.
+4. Introduce a bug: publish the event **before** saving (reservation id is null). Which test catches it? Add an `InOrder` check or assert on the captured id.
 5. Remove `@ExtendWith(MockitoExtension.class)`. `@Mock` fields stay `null` → `NullPointerException` in `setUp`.
+6. Remove `FOR UPDATE` from the real repository query. Does `ReservationServiceTest` notice? (No — which is the point of §10.)
 
 ---
 
@@ -276,20 +264,20 @@ and almost never use spies.
 
 <details><summary>When would you use an <code>ArgumentCaptor</code>?</summary>
 
-When the SUT creates an object internally and passes it to a collaborator, and I need to assert its fields — e.g.
-the `AlertJob` with its idempotency key in PulseWatch.
+When the SUT creates an object internally and passes it to a collaborator, and I need to assert its fields — e.g. the
+jobs ForgeCI enqueues for a push event.
 </details>
 
 <details><summary>What are strict stubs?</summary>
 
-Mockito's default with `MockitoExtension`: unused stubbings fail the test and stubbings called with mismatched args
-are reported. It keeps tests minimal and catches argument bugs.
+Mockito's default with `MockitoExtension`: unused stubbings fail the test and stubbings called with mismatched args are
+reported. It keeps tests minimal and catches argument bugs.
 </details>
 
 <details><summary>When should you NOT mock?</summary>
 
 Value objects, the code under test, types I don't own, and anything whose correctness depends on real infrastructure —
-SQL queries, constraints, transactions, locking. Those get integration tests with Testcontainers.
+SQL, constraints, transactions, row locks, Redis atomicity. Those get integration tests with Testcontainers.
 </details>
 
 <details><summary>What's the difference between <code>@Mock</code> and <code>@MockitoBean</code>?</summary>
@@ -302,8 +290,8 @@ replacing Boot's `@MockBean`) replaces a bean inside a Spring test context, e.g.
 
 ## Mastery checklist
 
-- [ ] Write `HoldServiceTest` from a blank file: stubs, `verify`, `never`, captor.
+- [ ] Write a service unit test from a blank file: stubs, `verify`, `never`, captor.
 - [ ] Explain strict stubs and trigger both failure types on purpose.
 - [ ] Use `doThrow` for a void method and `thenAnswer` to echo an argument.
-- [ ] Identify one over-mocked test in my code and rewrite it with real objects or an integration test.
-- [ ] Explain "stub queries, verify commands" with an example.
+- [ ] Identify one over-mocked test in my code and replace it with real objects or an integration test.
+- [ ] Explain "stub queries, verify commands" with an example from my own project.

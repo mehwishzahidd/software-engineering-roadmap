@@ -41,7 +41,7 @@ motivation, and red flags**. Being clear, honest and prepared is most of the gam
 | "Why are you interested in this role/company?" | Two concrete reasons + one link to your experience/projects. |
 | "I see a gap on your résumé — can you tell me about it?" | "Yes — I stepped away from software development in [year] for [true reason at your chosen level of detail]. I've spent the last six months rebuilding deliberately: [one project + one detail]. It's all on my GitHub." Stop. |
 | "Your background is more senior than this role — why junior?" | Honest template from [`behavioral.md`](./behavioral.md) §5: be assessed on current skills, strong review culture, over-deliver at the right level. |
-| "What tech stack are you strongest in?" | "Java and Spring Boot with PostgreSQL and Redis on the back end — most recently ForgeCI, a CI/CD execution platform, and LedgerX, a double-entry ledger engine. I've also built React + TypeScript dashboards for FlowGrid and FlagForge." |
+| "What tech stack are you strongest in?" (Track B answer — lead with the backend, not with your interview language) | "Java and Spring Boot with PostgreSQL and Redis on the back end — most recently ForgeCI, a CI/CD execution platform, and LedgerX, a double-entry ledger engine. I've also built React + TypeScript dashboards for FlowGrid and FlagForge." |
 | "Are you interviewing elsewhere?" | "Yes, I'm in early stages with a few companies." (True, brief; no names needed.) If you have a deadline/offer, say so — it can speed things up. |
 | "What are your salary expectations?" | See §5. |
 | "When can you start?" | Truthful date. |
@@ -81,7 +81,7 @@ Deeper prep: [`../RESUME_INTERVIEW_QUESTIONS.md`](../RESUME_INTERVIEW_QUESTIONS.
 
 - "What does the interview process look like from here, and how long does it usually take?"
 - "Is there an online assessment? Which platform and roughly what format?" → then [`../OA_PREP.md`](../OA_PREP.md)
-- "Which language can I use in the coding rounds?" (Java)
+- "Which language can I use in the coding rounds?" (You want Python for coding rounds; say so. If the coding round is "in the language of the job" and that's Java, you know now and prepare accordingly.)
 - "What team would this role be on, and what does it work on?"
 - "What do successful people in this role do well in their first six months?"
 - "Is there anything in my background you'd like me to clarify for the hiring team?" (surfaces concerns while you can still address them)

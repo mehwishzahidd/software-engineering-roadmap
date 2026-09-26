@@ -1,4 +1,4 @@
-# System Design Interview — Junior Level
+# System Design Interview — Junior Level (Track B)
 
 Junior and new-grad loops rarely include a full "design Twitter" round, but many include
 **light design**: "design a URL shortener", "how would you build the back end for X",
@@ -7,8 +7,10 @@ The bar is not distributed-systems expertise. It's: **can you turn vague require
 a sensible, working design, explain the data model and APIs, and reason about trade-offs?**
 
 Concepts live in [`../15-system-design/`](../15-system-design/) (fundamentals, caching,
-scalability, practice problems). This file is the **interview framework**. Starts Week 22
-(system design mock #1), practised through Week 26.
+scalability, practice problems). This file is the **interview framework**. Fundamentals start in
+Week 20 (FlagForge M1); system design mock #1 is in **Week 22**; practised through Week 26.
+This is a Track B round: you talk Java/Spring/PostgreSQL/Redis, and you draw — you do not write
+LeetCode-style code here.
 
 ---
 
@@ -125,6 +127,8 @@ You've already built systems with real design decisions. Reference them — hone
 | Queues, workers, retries, recovery | ForgeCI: reliable Redis queue with leases, heartbeats, orphan recovery, app-vs-infra retry policy |
 | Caching + low latency | FlagForge: Redis config snapshots, p99 evaluation latency, stampede protection; FlowGrid catalog cache-aside |
 | Real-time delivery | ForgeCI live logs and FlagForge propagation over SSE with replay-from-sequence |
+| Client-library / contract design | FlagForge Java SDK + Python SDK sharing one evaluation contract and a contract test suite |
+| Load and verification tooling | FlowGrid Python load harness, LedgerX independent verifier, ForgeCI webhook simulator — you can say how you *measured* a design |
 | Indexing for a query pattern | LedgerX history cursor pagination; FlowGrid low-stock queries — with `EXPLAIN` before/after |
 | Authorization / multi-tenancy | FlagForge org → project → environment scoping; FlowGrid warehouse roles |
 | Deployment & observability | All four: EC2 + RDS + S3, CloudWatch alarm, structured logs, CI/CD; ForgeCI multi-worker Compose |

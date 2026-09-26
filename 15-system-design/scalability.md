@@ -1,8 +1,8 @@
 # Scalability, Reliability & Consistency Basics
 
-> **Practical use:** explain how PulseWatch would go from one EC2 instance to handling 100× the
-> monitors and visitors — and which parts of P2/P4 (stateless JWT auth, idempotency keys, token-bucket
-> rate limiting, background workers) were already built with that in mind.
+> **Practical use:** explain how each of your projects would grow beyond one EC2 instance — and which
+> parts (stateless JWT auth, idempotency keys, row locking, Redis queues with leases, cached snapshots)
+> were already built with that in mind.
 > **Interview use:** vertical vs horizontal, stateless, load balancing, replicas, sharding, queues, CAP, idempotency, rate limiting, CDN.
 
 ← [Caching](./caching.md) · Next: [Junior design problems](./junior-design-problems.md)
@@ -30,10 +30,10 @@ lives in instance memory between requests.
 
 | State | Where it lives instead |
 |---|---|
-| User session / login | **JWT** in the request (P2/P3/P4) or a shared session store (Redis) |
+| User session / login | **JWT** in the request (all four projects) or a shared session store (Redis) |
 | Uploaded files | Object storage (S3), not local disk |
 | Caches | Redis (shared) — in-process caches are fine only as disposable optimizations |
-| Rate-limit counters | Redis (P4) — per-instance counters would multiply the real limit by N |
+| Rate-limit / concurrency counters | Redis (ForgeCI per-project limits) — per-instance counters would multiply the real limit by N |
 | Scheduled job "who runs it" | Leader election / DB locks (ShedLock) / a single worker deployment |
 | Business data | Database |
 
@@ -87,7 +87,7 @@ Split rows across multiple independent databases by a **shard key**.
 
 Costs: cross-shard queries and joins become application logic; cross-shard transactions are hard;
 rebalancing is operationally heavy; unique constraints across shards need care. Choose a shard key
-that matches the dominant access pattern (e.g. `organization_id` for TeamBoard — every query is
+that matches the dominant access pattern (e.g. `organization_id` for FlagForge — every query is
 already scoped by org, which is also what makes multi-tenant apps shard-friendly).
 
 ---
@@ -104,7 +104,7 @@ API ── enqueue {type: SEND_ALERT, incidentId} ──► Queue ──► Work
 | Benefit | Example |
 |---|---|
 | Lower request latency | Respond before sending emails |
-| Absorb spikes (load leveling) | 10k alerts during an outage processed at a steady rate |
+| Absorb spikes (load leveling) | 50 pushes in a minute become queued builds processed at worker capacity |
 | Isolation from slow/failed dependencies | Webhook endpoint down doesn't break the API |
 | Independent scaling | More workers without more API instances |
 
@@ -114,14 +114,15 @@ Delivery semantics — say these precisely:
 - **Exactly-once:** in practice achieved as at-least-once delivery + idempotent processing / dedupe ("exactly-once *effects*").
 
 Tools: SQS, RabbitMQ, Kafka (a log, not just a queue — replayable, ordered per partition), Redis
-Streams/lists, or a **Postgres table as a job queue** (`SELECT … FOR UPDATE SKIP LOCKED`) — what P4
-can use at its scale, with no new infrastructure:
+Streams/lists (ForgeCI M2: `BLMOVE` to a per-worker processing list + lease, or Streams consumer
+groups — see the [ForgeCI spec](../18-projects/forgeci/README.md)), or a **Postgres table as a job queue**
+(`SELECT … FOR UPDATE SKIP LOCKED`) — a good fit at small scale with no new infrastructure:
 
 ```sql
 -- Worker claims up to 10 due jobs without blocking other workers
-UPDATE alert_jobs SET status = 'RUNNING', locked_at = now()
+UPDATE jobs SET status = 'RUNNING', locked_at = now()
 WHERE id IN (
-  SELECT id FROM alert_jobs
+  SELECT id FROM jobs
   WHERE status = 'PENDING' AND run_after <= now()
   ORDER BY run_after
   LIMIT 10
@@ -147,7 +148,7 @@ the network splits**.
 | System leaning | Behaviour during partition | Fits |
 |---|---|---|
 | CP | Refuse/timeout some requests to stay correct | Seat booking, payments, inventory, unique usernames |
-| AP | Serve possibly stale data, reconcile later | Likes/view counters, feeds, status page uptime %, DNS |
+| AP | Serve possibly stale data, reconcile later | Likes/view counters, feeds, dashboards, feature-flag propagation, DNS |
 
 **PACELC** extension: *else* (no partition), trade **Latency vs Consistency** — e.g. synchronous
 replication (consistent, slower) vs async (fast, possibly stale).
@@ -158,8 +159,9 @@ Consistency vocabulary:
 - **Read-your-writes:** a user always sees their own updates.
 - **Monotonic reads:** a user never sees data go "back in time".
 
-Junior-level move: *for each piece of data, say which consistency it needs*. TicketHold seats: strong
-(single primary, transactions, `@Version`). PulseWatch uptime percentages: eventual is fine (cached 30 s).
+Junior-level move: *for each piece of data, say which consistency it needs*. LedgerX balances and
+FlowGrid reservations: strong (single primary, transactions, row locks). FlagForge flag changes reaching
+SDKs: eventual is fine (seconds), as long as each SDK evaluates against one consistent snapshot.
 
 ---
 
@@ -169,10 +171,10 @@ An operation is **idempotent** if doing it N times has the same effect as once. 
 `DELETE` are idempotent by definition; `POST` is not → retries after a timeout can double-book or
 double-charge.
 
-**Idempotency-Key pattern** (P2 M4 booking POST):
+**Idempotency-Key pattern** (FlowGrid M2 order POST, LedgerX M2 transfer POST):
 
 ```
-POST /api/bookings
+POST /api/v1/transfers
 Idempotency-Key: 5f1c7e0a-...          (client-generated UUID per logical attempt)
 
 Server:
@@ -182,11 +184,11 @@ Server:
       same request_hash + completed → return the stored response (same status + body)
       in progress                   → 409 Conflict (or wait)
       different request_hash        → 422 (key reused for a different request)
- 3. Else perform the booking in the same transaction, store the response, commit.
+ 3. Else perform the transfer in the same transaction, store the response, commit.
  4. Expire keys after e.g. 24 h.
 ```
 
-Other idempotency techniques: natural unique constraints (one booking per hold), conditional
+Other idempotency techniques: natural unique constraints (one webhook per `X-GitHub-Delivery`), conditional
 updates (`WHERE status = 'HELD'`), dedupe tables keyed by message ID in consumers, upserts.
 
 ---
@@ -201,7 +203,7 @@ Requests** with `Retry-After`.
 | **Fixed window counter** | `INCR key:{minute}`; reject over N | Trivial | Burst of 2N across a window boundary |
 | **Sliding window log** | Store each request timestamp (sorted set), count last 60 s | Accurate | Memory per request |
 | **Sliding window counter** | Weighted current + previous window counts | Good accuracy, cheap | Approximation |
-| **Token bucket** (P4) | Bucket of capacity C refills at R tokens/s; each request takes 1 | Allows bursts up to C, enforces average R | Slightly more logic |
+| **Token bucket** | Bucket of capacity C refills at R tokens/s; each request takes 1 | Allows bursts up to C, enforces average R | Slightly more logic |
 | **Leaky bucket** | Queue drained at constant rate | Smooth output | Adds latency; drops when full |
 
 Where: API gateway / nginx (`limit_req`) for coarse per-IP limits; application (Redis) for per-user /
@@ -252,7 +254,7 @@ policy if Redis is down (public status API: fail open with a local fallback limi
 A **Content Delivery Network** caches content at edge locations close to users.
 
 - Static assets (React build, images) → CDN with long TTLs and content-hashed filenames.
-- Cacheable public pages/API responses (P4 public status page) → short TTL (`Cache-Control: public, max-age=30`), absorbing traffic spikes before they reach your servers.
+- Cacheable public pages/API responses (e.g. a public status/badge endpoint like ForgeCI build badges) → short TTL (`Cache-Control: public, max-age=30`), absorbing traffic spikes before they reach your servers.
 - Benefits: lower latency (fewer long round trips), offloads origin, DDoS absorption, TLS at the edge.
 - Invalidation: versioned URLs (best) or purge API (slow/limited).
 - Not for private per-user data unless carefully keyed.
@@ -275,17 +277,16 @@ A **Content Delivery Network** caches content at edge locations close to users.
 
 ---
 
-## 11. P4 scaling story (practise saying this in 2 minutes)
+## 11. Scaling stories for your projects (practise each in 2 minutes)
 
-| Load | Change |
-|---|---|
-| Today: 1k monitors, one EC2 | Compose on one box, RDS single-AZ, Redis in Compose |
-| 10× monitors | Worker concurrency (virtual threads) + batch inserts of check results; partition `check_results` by month; rollup table for uptime % |
-| 10× public traffic | Status page cached (done) + CDN in front; more API instances behind an ALB (API is stateless: JWT, Redis-backed limits) |
-| Multiple workers | Avoid duplicate checks: partition monitors by `monitor_id % N` per worker, or claim due checks with `FOR UPDATE SKIP LOCKED` |
-| High availability | RDS Multi-AZ, ElastiCache Redis with replica, instances in two AZs, ALB health checks |
-| Alerts at scale | Dedicated queue (SQS) + idempotent notifier workers with DLQ |
-| "Who monitors the monitor?" | External health check from a different provider/region + CloudWatch alarm |
+| Project | First bottleneck to expect | Next step | After that |
+|---|---|---|---|
+| **FlowGrid** | Lock contention on hot SKUs' inventory rows; dashboard queries | Short transactions, correct indexes, cache catalog reads, read replica for dashboards | Partition by warehouse/region; per-warehouse services only if teams demand it |
+| **LedgerX** | Hot accounts (system/fee accounts touched by every transfer) serialise on row locks | Keep lock scope tiny; batch system-account postings; materialised balances with invariant checks | Shard by account id — cross-shard transfers need sagas/2-phase flows (say "hard", don't hand-wave) |
+| **ForgeCI** | Worker capacity (containers per host); queue wait time | More worker hosts (stateless, leases recover crashes); per-project limits for fairness | Managed queue (SQS) + autoscaling workers on queue depth; ephemeral VMs per job for isolation |
+| **FlagForge** | Evaluation QPS on the server; propagation fan-out | SDK local evaluation (server off the hot path), Redis snapshots, CDN for snapshot fetches | Regional read-only replicas of snapshots; streaming fan-out tier |
+
+"Who watches the system?" — external health checks from outside AWS + CloudWatch alarms, for every project.
 
 ---
 

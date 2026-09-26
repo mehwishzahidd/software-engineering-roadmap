@@ -22,6 +22,7 @@ the common framework, the layered versions, and the drill-down questions to rehe
 - **Numbers only from your own measurements**, with the setup stated: "My k6 run against a single t3.small with Postgres on RDS gave p95 of X ms at Y orders/s." No invented user counts. `PERFORMANCE.md` in each project is the source.
 - **Own every line.** If you used a library (docker-java, springdoc, Testcontainers), know what it does for you. If you followed a guide for part of it, you must still be able to explain and modify it.
 - **Scope tiers are your friend.** Say which tier you shipped: "The Strong Résumé Version is tagged v1.0; the DAG scheduler was the Advanced feature I added after."
+- **Two languages, stated plainly.** "The backend is Java/Spring Boot; the load harness and verifier are Python." Never present the Python tooling as the product, and never let a Track B interviewer think Python is your backend language.
 - **"I don't know" is allowed** — follow it with reasoning: "I haven't measured that. I'd expect X because Y, and I'd verify it by Z."
 
 ---
@@ -34,9 +35,9 @@ Prepare every project at three zoom levels. Start at 30 seconds; go deeper only 
 |---|---|---|
 | **30 seconds** | Intro, recruiter screen, "what's on your GitHub?" | What it is · who it's for · stack · the one hard problem you solved |
 | **2 minutes** | "Tell me about a project" | Problem → architecture in one breath → 1–2 key decisions with trade-offs → how you proved it works → what you'd do next |
-| **10 minutes** | Dedicated deep-dive round | Diagram → data model → one request end-to-end → hardest problem in detail → testing/failure engineering → deployment → trade-offs & limitations → what you learned |
+| **10–15 minutes** | Dedicated deep-dive round (Track B) | Diagram → data model → one request end-to-end → hardest problem in detail → testing/failure engineering → deployment → trade-offs & limitations → what you learned |
 
-### 10-minute skeleton (draw while talking)
+### 10–15-minute skeleton (draw while talking)
 
 ```
 1. Goal & scope (tier shipped) .............................. 1 min
@@ -45,8 +46,11 @@ Prepare every project at three zoom levels. Start at 30 seconds; go deeper only 
 4. One request end-to-end (client → DB → response) .......... 2 min
 5. The hardest problem: symptom → options → choice → proof .. 2 min
 6. Testing + failure engineering + CI + deploy .............. 1 min
-7. Limitations, what I'd change, what I learned ............. 1 min
+7. Python tooling: what it proves, how it's tested ........... 1 min
+8. Limitations, what I'd change, what I learned ............. 1 min
 ```
+
+The extra 5 minutes in a 15-minute round go to steps 5 and 7 — interviewers push hardest on "how do you *know* it works".
 
 ### Code-tour readiness
 
@@ -70,6 +74,7 @@ Interviewers may say "share your screen and show me". Before any interview:
 4. Decision 2: `SELECT … FOR UPDATE` on the inventory row for reservations, compared with `@Version` — and why you chose one.
 5. Decision 3: deterministic allocation scoring (availability, capacity, region match, workload, priority; tie-break by id) so the same input always allocates the same way — testable.
 6. Proof: N-threads-one-unit test on Testcontainers; k6 baseline for order creation; CI/CD to EC2 + RDS.
+7. **Python tooling (`tools/`, M4–M5):** a synthetic inventory & order generator (realistic SKUs, warehouses, order mix; writes via API or SQL) and a load/simulation harness that drives concurrent order creation and reports latency and reservation contention — pytest-tested, used by the benchmark protocol and the failure exercises.
 
 **10 minutes — emphasize:** the inventory state machine and which transitions are allowed; the exact SQL of the reservation transaction; the idempotency table and its lookup path; the allocation algorithm on a 3-warehouse example; what happens when Redis is down (degrade to DB); the two-phase stock transfer (`in_transit`); the AWS topology and IAM.
 
@@ -87,6 +92,8 @@ Interviewers may say "share your screen and show me". Before any interview:
 | Cache invalidation for the catalog — when and how? | On product/SKU write: delete key (or write-through); TTL as a backstop; stale window stated |
 | What's in the audit event and is it written in the same transaction? | Actor, action, entity, before/after; same transaction for consistency (trade-off: coupling) |
 | What did k6 show, and what was the bottleneck? | Your real numbers + methodology; typically DB connections or the lock hot spot |
+| Why a Python load harness when you already had k6? | k6 measures HTTP latency; the Python harness generates *realistic* data and reproduces contention scenarios (many orders for one SKU) and asserts on the resulting inventory state — different question; both are documented in `PERFORMANCE.md` |
+| How is the generator tested? | pytest: schema of generated records, determinism from a seed, referential integrity (every order line references a generated SKU) |
 | What would you change? | Honest list: e.g., outbox for alerts, partial index on low-stock, better allocation weights |
 
 ---
@@ -103,6 +110,7 @@ Interviewers may say "share your screen and show me". Before any interview:
 4. Decision 2: idempotency done properly — key + request fingerprint + status + stored response; same key/different body → conflict; retry-after-crash returns the original result.
 5. Decision 3: refunds and reversals as **compensating entries** (never edits); transactional outbox for events.
 6. Proof: the $500/$400/$400 test, isolation-level experiments, crash-between-steps tests, reconciliation job (every txn sums to zero; balance == sum(entries)); throughput measured.
+7. **Python tooling (`tools/`, M4):** an **independent** reconciliation verifier that reads Postgres directly with `psycopg` and `decimal` and proves every journal sums to zero and every balance equals the sum of its entries — *without trusting the Java code*; a transaction-data generator; a consistency checker run inside the crash/retry failure exercises. pytest-tested.
 
 **10 minutes — emphasize:** the SQL of one transfer (lock A and B in id order → check balance → insert journal + two entries → update materialized balances → store idempotent response), with the transaction boundary drawn; what each isolation level would have allowed; where the outbox is polled; the reconciliation query; one specific crash-injection test and what it proved.
 
@@ -121,6 +129,8 @@ Interviewers may say "share your screen and show me". Before any interview:
 | `BigDecimal` vs `long` cents? Rounding? | Your choice + rounding mode + scale; never `double` |
 | How do refunds work when the original txn was partially reversed already? | Compensating txn links the original; sum of reversals ≤ original enforced in code + test |
 | What was the throughput, and what limited it? | Your measurement; lock contention on hot accounts; connection pool size |
+| Why is the reconciliation verifier in Python and separate from the Java job? | Independence: a bug in the Java ledger code can't hide in a verifier written against the same code; it reads the tables directly and uses `Decimal`, never floats |
+| What did the verifier catch? | Your real answer (drift after a crash-injection run, or "nothing — and that's the evidence"), and how it's wired into the failure-exercise runbook |
 
 ---
 
@@ -136,6 +146,7 @@ Interviewers may say "share your screen and show me". Before any interview:
 4. Decision 3: retry policy — exit code ≠ 0 is an app failure (no retry); container start error / worker loss is an infra failure (retry with backoff, max N).
 5. Proof: Testcontainers (Postgres + Redis) integration tests; chaos tests (kill worker, kill Redis, kill container); queue wait time and jobs/min measured with N workers.
 6. Deploy: Compose with N workers; AWS with the Docker socket security notes.
+7. **Python tooling (`tools/`, M5):** a test-repository generator (creates git repos with `.forgeci.yml` variants: passing, failing, slow, timeout, bad config); a worker/load simulator that fires signed webhooks at a rate and measures queue wait and completion; build-result/log analysis tooling that parses persisted logs and reports failure-taxonomy stats. pytest-tested.
 
 **10 minutes — emphasize:** the life of one job with every state transition and the exact Redis operations; how a lease expiry recovers an orphaned job without double-running it; how cancellation reaches a running container (cancel flag + kill); per-project concurrency limits as a Redis counter and its race; the log pipeline's ordering and replay; the DAG scheduler (Kahn's algorithm, fan-out/fan-in, fail-fast).
 
@@ -154,6 +165,8 @@ Interviewers may say "share your screen and show me". Before any interview:
 | Running user code in Docker on a host with the Docker socket — what are the risks? | Socket access = root on the host; mitigations: dedicated worker host, no bind-mounting the socket into build containers, resource limits, network policy; you documented the residual risk |
 | Topological scheduling: how do you detect a cycle in `needs:`? | Kahn's algorithm; leftover nodes = cycle → reject config at parse time |
 | What did you measure? | Queue wait p50/p95, jobs/min for 1/2/4 workers, and where it stopped scaling (Docker start time, host CPU) |
+| How did you generate the load and the test repositories? | The Python generator builds repos with known outcomes (pass/fail/slow/timeout/bad config), so the simulator can assert the platform classified each build correctly, not just that it finished |
+| How does the simulator sign webhooks? | Same HMAC-SHA256 over the raw body with the shared secret; a test proves a tampered body is rejected |
 
 ---
 
@@ -169,6 +182,7 @@ Interviewers may say "share your screen and show me". Before any interview:
 4. Decision 3: SDK design — builder, local cache, local evaluation, timeouts, stale-if-error, offline mode; polling first, then SSE streaming.
 5. Propagation: publish → Redis pub/sub → SSE to connected SDKs; stampede protection on snapshot rebuild.
 6. Proof: engine unit tests (rule priority, bucket distribution), SDK contract tests against the server, p99 measurements, failure exercises (server down → SDK serves last snapshot/defaults).
+7. **Python tooling (`tools/` + `sdk-python/`, M3–M4):** a rollout-distribution simulator that proves a 10 % rollout lands within tolerance and stays sticky over N users, comparing local evaluation with the server; a minimal **Python SDK / test client** implementing the same evaluation contract (polling + ETag, defaults, offline) used for cross-SDK contract tests; a configuration validation tool that lints rule sets for overlaps, unreachable rules and invalid values. pytest-tested.
 
 **10 minutes — emphasize:** the evaluation algorithm on a concrete flag with three rules; why a stable hash (not `String.hashCode()` across JVMs — pick MurmurHash3 or SHA-based) and how you tested bucket uniformity; the Redis snapshot's shape and invalidation; the SDK's state machine (initializing → ready → stale → offline); how the server avoids a thundering herd on publish; what happens to an in-flight evaluation during a version switch (snapshot swap is atomic — one reference).
 
@@ -187,6 +201,8 @@ Interviewers may say "share your screen and show me". Before any interview:
 | Multi-tenancy: how do you stop org A reading org B's flags? | SDK key → environment → project → org resolved server-side; every query scoped; tests for cross-tenant access |
 | What was p99 evaluation latency and how did you measure it? | Your numbers, tool (k6 / JMH), warm-up, snapshot cache hit vs miss |
 | Semantic versioning of the SDK — what's a breaking change? | Public API changes (builder options removed, return types); document it; you published to a local/GitHub Maven repo |
+| You have a Java SDK and a Python SDK — how do you know they evaluate identically? | Shared contract test suite: same config + user attributes → same variant across both, driven from the server's canonical cases; the hash algorithm is specified, not language-default |
+| What does the config linter catch that the UI doesn't? | Rules shadowed by a higher-priority catch-all, percentage rollouts summing over 100 %, attributes referenced that no rule can match |
 
 ---
 
@@ -196,6 +212,7 @@ Interviewers may say "share your screen and show me". Before any interview:
 - "What was the hardest bug?" — tie to [`behavioral.md`](./behavioral.md) story #1; the failure-engineering logs in each project are your source.
 - "What would you do differently if you started over?" — have 2 real answers per project (`DESIGN_DECISIONS.md`).
 - "How did your approach change from FlowGrid to FlagForge?" — tests and failure injection earlier, design docs first, measuring before optimizing, smaller PRs.
+- "Why is your tooling in Python when the backend is Java?" — right tool for scripting/data generation/verification; independence for the LedgerX verifier; the same reason the interview coding track is Python. Keep it to two sentences.
 - "Idempotency appears in three of your projects — how did your implementation evolve?" — FlowGrid (key + hash + TTL) → LedgerX (fingerprint, conflict semantics, crash-safe) → ForgeCI (delivery-id dedupe, at-least-once workers).
 - "Did you use AI tools / tutorials?" — answer truthfully about how you used them and show you understand and can modify the result.
 - "How long did it take?" — truthful hours from [`../trackers/project-tracker.md`](../trackers/project-tracker.md).

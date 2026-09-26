@@ -1,7 +1,8 @@
 # Spring Boot Testing
 
-> **Week 12** · P2 TicketHold M4 (unit + `@WebMvcTest` + `@DataJpaTest` + Testcontainers), reused for
-> P3 TeamBoard authorization tests (W17) and P4 PulseWatch. Server-side concepts: [05-spring-boot/](../05-spring-boot/README.md).
+> **Weeks 4–5** (FlowGrid M1–M2: controllers, validation, security, repositories, idempotent orders), reused in
+> LedgerX (W9–12), ForgeCI (W14–18) and FlagForge (W20–23). Server-side concepts: [05-spring-boot/](../05-spring-boot/README.md).
+> Code below shows **test patterns** on FlowGrid-shaped endpoints; your own tests follow your own API.
 
 ---
 
@@ -11,10 +12,11 @@
 |---|---|---|---|
 | none (plain JUnit + Mockito) | nothing | ms | services, domain logic |
 | `@WebMvcTest(Controller.class)` | MVC infrastructure: controllers, `@ControllerAdvice`, filters, converters, Jackson, Spring Security auto-config, `MockMvc` — **no** `@Service`/`@Repository` beans | fast | HTTP contract: routing, validation, status codes, JSON, error format, security rules |
-| `@DataJpaTest` | JPA: entities, repositories, `EntityManager`, Flyway/Liquibase, `DataSource`; **transactional + rollback** per test | medium | custom queries, mappings, constraints, migrations |
-| `@JsonTest` | Jackson only | fast | tricky (de)serialization |
-| `@RestClientTest` | `RestClient`/`RestTemplate` + mock server | fast | outbound HTTP clients (PulseWatch webhook sender) |
-| `@SpringBootTest` | the **whole** application context | slow | end-to-end through all layers, transactions, security, scheduling |
+| `@DataJpaTest` | JPA: entities, repositories, `EntityManager`, Flyway/Liquibase, `DataSource`; **transactional + rollback** per test | medium | custom queries, mappings, constraints, triggers, migrations |
+| `@DataRedisTest` | Spring Data Redis repositories/templates | medium | Redis-backed repositories (with a Redis container) |
+| `@JsonTest` | Jackson only | fast | tricky (de)serialization (money as strings, `Instant`) |
+| `@RestClientTest` | `RestClient`/`RestTemplate` + mock server | fast | outbound HTTP clients (ForgeCI's GitHub API client) |
+| `@SpringBootTest` | the **whole** application context | slow | flows across layers, transactions, security, scheduling, concurrency |
 
 Slices load **only** the relevant beans; anything else the slice needs must be provided as a mock bean or imported.
 
@@ -23,51 +25,50 @@ Slices load **only** the relevant beans; anything else the slice needs must be p
 ## 2. `@WebMvcTest` + MockMvc
 
 ```java
-@WebMvcTest(EventController.class)
-@Import(SecurityConfig.class)                    // your SecurityFilterChain (so the real rules apply)
-class EventControllerTest {
+@WebMvcTest(SkuController.class)
+@Import(SecurityConfig.class)                    // your SecurityFilterChain, so the real rules apply
+class SkuControllerTest {
 
     @Autowired MockMvc mvc;
     @Autowired ObjectMapper json;
 
-    @MockitoBean EventService eventService;      // replaces the bean in the slice context
+    @MockitoBean SkuService skuService;          // replaces the bean in the slice context
     @MockitoBean JwtService jwtService;          // needed by your JWT filter if the filter is a bean
 
     @Test
-    @WithMockUser(roles = "ORGANIZER")
+    @WithMockUser(roles = "OPS_MANAGER")
     void create_withValidBody_returns201AndLocation() throws Exception {
-        var request = new CreateEventRequest("Jazz Night", 3L, Instant.parse("2026-06-01T19:00:00Z"));
-        when(eventService.create(any())).thenReturn(new EventResponse(10L, "Jazz Night", 3L, request.startsAt()));
+        var request = new CreateSkuRequest("BOLT-M8-50", "Bolt M8×50", 20);
+        when(skuService.create(any())).thenReturn(new SkuResponse(10L, "BOLT-M8-50", "Bolt M8×50", 20));
 
-        mvc.perform(post("/api/events")
+        mvc.perform(post("/api/skus")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(json.writeValueAsString(request)))
             .andExpect(status().isCreated())
-            .andExpect(header().string("Location", endsWith("/api/events/10")))
+            .andExpect(header().string("Location", endsWith("/api/skus/10")))
             .andExpect(jsonPath("$.id").value(10))
-            .andExpect(jsonPath("$.name").value("Jazz Night"));
+            .andExpect(jsonPath("$.code").value("BOLT-M8-50"));
     }
 
     @Test
-    @WithMockUser(roles = "ORGANIZER")
-    void create_withBlankName_returns400ProblemDetail() throws Exception {
-        mvc.perform(post("/api/events")
+    @WithMockUser(roles = "OPS_MANAGER")
+    void create_withBlankCode_returns400ProblemDetail() throws Exception {
+        mvc.perform(post("/api/skus")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                    {"name": "", "venueId": 3, "startsAt": "2026-06-01T19:00:00Z"}
+                    {"code": "", "name": "Bolt", "reorderPoint": 20}
                     """))
             .andExpect(status().isBadRequest())
             .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-            .andExpect(jsonPath("$.title").value("Validation failed"))
-            .andExpect(jsonPath("$.errors.name").exists());
+            .andExpect(jsonPath("$.errors.code").exists());
 
-        verifyNoInteractions(eventService);      // validation stopped the request before the service
+        verifyNoInteractions(skuService);        // validation stopped the request before the service
     }
 
     @Test
-    void getEvent_notFound_returns404() throws Exception {
-        when(eventService.get(99L)).thenThrow(new NotFoundException("event", 99L));
-        mvc.perform(get("/api/events/99").with(user("alice").roles("CUSTOMER")))
+    void get_notFound_returns404() throws Exception {
+        when(skuService.get(99L)).thenThrow(new NotFoundException("sku", 99L));
+        mvc.perform(get("/api/skus/99").with(user("ann").roles("VIEWER")))
             .andExpect(status().isNotFound())
             .andExpect(jsonPath("$.status").value(404));
     }
@@ -77,7 +78,7 @@ class EventControllerTest {
 Static imports: `MockMvcRequestBuilders.*`, `MockMvcResultMatchers.*`, `SecurityMockMvcRequestPostProcessors.*`, `Matchers.endsWith`.
 
 Notes:
-- `"$.title"` and `"$.errors.name"` match **your** `@RestControllerAdvice` output ([05-spring-boot/04-validation-errors.md](../05-spring-boot/04-validation-errors.md)); adjust.
+- `$.errors.code` matches **your** `@RestControllerAdvice` output ([05-spring-boot/04-validation-errors.md](../05-spring-boot/04-validation-errors.md)); adjust.
 - Debug a failing MockMvc test with `.andDo(print())`.
 - Spring Framework 6.2 adds `MockMvcTester` (AssertJ-style MockMvc). Either API is fine; be consistent.
 
@@ -96,7 +97,7 @@ It does **not** prove the service logic or the database — those are other test
 | Companion | `@MockitoSpyBean` | `@SpyBean` |
 
 Both replace a bean in the test's `ApplicationContext` with a Mockito mock that's reset after each test.
-In older codebases (and older tutorials) you'll see `@MockBean` — same idea.
+Older codebases and tutorials use `@MockBean` — same idea.
 
 > **Context caching:** Spring caches application contexts across test classes with the **same configuration**.
 > Every distinct combination of mock beans creates a **new** context → slow suites. Keep mock-bean sets consistent
@@ -106,60 +107,63 @@ In older codebases (and older tutorials) you'll see `@MockBean` — same idea.
 
 ## 4. Security tests
 
-Dependency: `spring-security-test` (test scope).
+Dependency: `spring-security-test` (test scope). FlowGrid roles: ADMIN, OPS_MANAGER, WAREHOUSE_ASSOCIATE, VIEWER.
 
 ```java
-@WebMvcTest(IssueController.class)
+@WebMvcTest(AdjustmentController.class)
 @Import(SecurityConfig.class)
-class IssueControllerSecurityTest {
+class AdjustmentControllerSecurityTest {
 
     @Autowired MockMvc mvc;
-    @MockitoBean IssueService issueService;
+    @MockitoBean AdjustmentService adjustments;
     @MockitoBean JwtService jwtService;
-    @MockitoBean(name = "authz") ProjectAuthz authz;   // bean used in @PreAuthorize("@authz.canWrite(#projectId, authentication)")
+
+    static final String BODY = """
+        {"skuId": 7, "warehouseId": 1, "delta": -2, "reason": "DAMAGED"}
+        """;
 
     @Test
     void anonymous_gets401() throws Exception {
-        mvc.perform(get("/api/projects/1/issues")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/inventory/adjustments").contentType(MediaType.APPLICATION_JSON).content(BODY))
+            .andExpect(status().isUnauthorized());
     }
 
-    @Test
-    @WithMockUser(username = "viewer@teamboard.dev")
-    void viewer_cannotCreateIssue_gets403() throws Exception {
-        when(authz.canWrite(eq(1L), any())).thenReturn(false);
-        mvc.perform(post("/api/projects/1/issues")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"title\":\"x\",\"status\":\"TODO\"}"))
+    @ParameterizedTest
+    @ValueSource(strings = {"VIEWER", "WAREHOUSE_ASSOCIATE"})
+    void rolesWithoutAdjustPermission_get403(String role) throws Exception {
+        mvc.perform(post("/api/inventory/adjustments").with(user("u").roles(role))
+                .contentType(MediaType.APPLICATION_JSON).content(BODY))
             .andExpect(status().isForbidden());
-        verifyNoInteractions(issueService);
+        verifyNoInteractions(adjustments);
     }
 
     @Test
-    @WithMockUser(username = "member@teamboard.dev")
-    void member_canCreateIssue() throws Exception {
-        when(authz.canWrite(eq(1L), any())).thenReturn(true);
-        when(issueService.create(eq(1L), any(), any())).thenReturn(sampleIssue());
-        mvc.perform(post("/api/projects/1/issues")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"title\":\"x\",\"status\":\"TODO\"}"))
+    @WithMockUser(roles = "OPS_MANAGER")
+    void opsManager_canAdjust() throws Exception {
+        when(adjustments.adjust(any())).thenReturn(TestData.adjustmentResponse());
+        mvc.perform(post("/api/inventory/adjustments").contentType(MediaType.APPLICATION_JSON).content(BODY))
             .andExpect(status().isCreated());
     }
 }
 ```
 
+(Which roles may adjust stock is *your* decision in FlowGrid's spec — the test table encodes it.)
+
 Tools:
-- `@WithMockUser(roles = "ORGANIZER")` → authority `ROLE_ORGANIZER`. `authorities = "issue:write"` for raw authorities.
-- `.with(user("alice").roles("ADMIN"))` per request.
+- `@WithMockUser(roles = "OPS_MANAGER")` → authority `ROLE_OPS_MANAGER`. `authorities = "inventory:adjust"` for raw authorities.
+- `.with(user("ann").roles("ADMIN"))` per request (works well with `@ParameterizedTest`).
 - `.with(jwt().authorities(...))` if you use Spring's OAuth2 resource server.
 - `.with(csrf())` only if CSRF protection is enabled (stateless JWT APIs usually disable it).
-- `@WithUserDetails` loads a real user from your `UserDetailsService` (needs that bean).
-- **Method security** (`@PreAuthorize` on services) needs `@EnableMethodSecurity` in the loaded config; test it in a
-  `@SpringBootTest` or with the service bean real, not mocked — mocking the service mocks away its annotations.
+- **Method security** (`@PreAuthorize` on services) needs `@EnableMethodSecurity` in the loaded config; test it with the
+  real service bean (a `@SpringBootTest`) — mocking the service mocks away its annotations.
+- The 401 vs 403 distinction depends on your `AuthenticationEntryPoint`. Know which one your config returns for anonymous requests.
 
-For TeamBoard's per-org RBAC, the strongest evidence is a `@SpringBootTest` + Testcontainers test that seeds a real
-VIEWER membership and asserts 403 through the real filter chain, JWT and database. Write at least one per role.
+FlagForge (Week 20) has **per-organization** roles: the rule is "member of *this* org with role ≥ X". A mock user with a
+global role can't express that — write those tests as `@SpringBootTest` + Testcontainers with real memberships, and include
+the cross-tenant case (an ADMIN of org A gets 403/404 on org B's flags).
 
-> The 401 vs 403 distinction depends on your `AuthenticationEntryPoint`. Know which one your config returns for anonymous requests.
+ForgeCI (Week 14) adds a different kind of auth test: the webhook endpoint authenticates **the sender** with an
+HMAC-SHA256 signature — test valid signature → 2xx, wrong/missing signature → 401, and the same delivery id twice → one build.
 
 ---
 
@@ -169,42 +173,37 @@ VIEWER membership and asserts 403 through the real filter chain, JWT and databas
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)   // don't swap in H2
 @Import(TestcontainersConfig.class)                                            // real Postgres, see testcontainers.md
-class HoldRepositoryTest {
+class IdempotencyRecordRepositoryTest {
 
-    @Autowired HoldRepository holds;
+    @Autowired IdempotencyRecordRepository records;
     @Autowired TestEntityManager em;
 
     @Test
-    void existsActiveHold_ignoresExpiredHolds() {
-        var seat = em.persist(TestData.seat());
-        var now = Instant.parse("2026-05-01T10:00:00Z");
-        em.persist(TestData.hold(seat, now.minus(Duration.ofMinutes(10)), Duration.ofMinutes(5))); // expired
+    void sameKeyTwice_isRejectedByUniqueConstraint() {
+        em.persist(TestData.idempotencyRecord("key-1", "sha256:aaa"));
         em.flush();
-
-        assertThat(holds.existsActiveHold(seat.getId(), now)).isFalse();
+        assertThatThrownBy(() -> { em.persist(TestData.idempotencyRecord("key-1", "sha256:bbb")); em.flush(); })
+            .isInstanceOf(PersistenceException.class);   // jakarta.persistence; Hibernate's ConstraintViolationException is a subtype
     }
 
     @Test
-    void uniqueConfirmedBookingPerSeat_isEnforcedByDatabase() {
-        var seat = em.persist(TestData.seat());
-        em.persist(TestData.booking(seat));
-        em.flush();
-        assertThatThrownBy(() -> { em.persist(TestData.booking(seat)); em.flush(); })
-            .isInstanceOf(PersistenceException.class);   // jakarta.persistence; Hibernate's ConstraintViolationException is a subtype
+    void findLowStock_returnsOnlyLevelsBelowReorderPoint() {
+        // arrange 3 inventory levels around the reorder point, flush, call the custom query, assert exact SKUs
     }
 }
 ```
 
 Facts:
 - Each test runs in a transaction that is **rolled back** → isolated. Consequence: code that relies on a **commit**
-  (e.g. `@TransactionalEventListener(AFTER_COMMIT)`, other threads seeing data) won't behave as in production. Use
-  `@SpringBootTest` for those.
-- **Call `em.flush()`** before asserting on constraints — otherwise the INSERT hasn't happened yet. (Via a Spring Data
-  repository you'd see Spring's `DataIntegrityViolationException`; via `TestEntityManager` directly, Hibernate's
-  `ConstraintViolationException`, a `jakarta.persistence.PersistenceException`.)
-- Flyway migrations run, so this also tests your schema.
-- **Why not H2?** Different SQL dialect, constraint behaviour, locking and types (`jsonb`, `timestamptz`). Tests
-  that pass on H2 and fail on Postgres are worse than no tests. Use Testcontainers.
+  (`@TransactionalEventListener(AFTER_COMMIT)`, the outbox relay, other threads/connections seeing data) won't behave as
+  in production. Use `@SpringBootTest` for those.
+- **Call `em.flush()`** before asserting on constraints or triggers — otherwise the SQL hasn't run yet. (Through a Spring
+  Data repository you'd see Spring's `DataIntegrityViolationException`; through `TestEntityManager` directly, a JPA
+  `PersistenceException`.)
+- Flyway migrations run, so this also tests your schema — including LedgerX's "no UPDATE/DELETE on `ledger_entry`"
+  trigger: attempt a native `UPDATE`, flush, expect an exception.
+- **Why not H2?** Different SQL dialect, constraint and trigger behaviour, locking, types (`jsonb`, `timestamptz`).
+  Tests that pass on H2 and fail on Postgres are worse than no tests. Use Testcontainers.
 
 ---
 
@@ -214,35 +213,33 @@ Facts:
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(TestcontainersConfig.class)
 @ActiveProfiles("test")
-class BookingFlowIT {
+class OrderIdempotencyIT {
 
     @Autowired TestRestTemplate http;       // real HTTP to the random port
-    @Autowired BookingRepository bookings;
+    @Autowired OrderRepository orders;
 
     @Test
-    void customerCanHoldThenConfirm() {
-        String token = TestAuth.loginAsCustomer(http);
-        var headers = new HttpHeaders();
-        headers.setBearerAuth(token);
+    void samePostWithSameIdempotencyKey_createsOneOrderAndReturnsSameResponse() {
+        HttpHeaders headers = TestAuth.bearer(http, "ops@flowgrid.test");
         headers.set("Idempotency-Key", UUID.randomUUID().toString());
+        var body = new HttpEntity<>(TestData.createOrderRequest(), headers);
 
-        var hold = http.exchange("/api/events/1/seats/7/hold", HttpMethod.POST,
-                new HttpEntity<>(headers), HoldResponse.class);
-        assertThat(hold.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        var first = http.postForEntity("/api/orders", body, OrderResponse.class);
+        var second = http.postForEntity("/api/orders", body, OrderResponse.class);
 
-        var booking = http.exchange("/api/holds/" + hold.getBody().id() + "/confirm", HttpMethod.POST,
-                new HttpEntity<>(headers), BookingResponse.class);
-        assertThat(booking.getStatusCode()).isEqualTo(HttpStatus.CREATED);
-        assertThat(bookings.count()).isEqualTo(1);
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(second.getBody()).usingRecursiveComparison().isEqualTo(first.getBody());
+        assertThat(orders.count()).isEqualTo(1);
     }
+    // Also: same key + different body → 409 (or 422 — your spec decides); key expired → treated as new.
 }
 ```
 
-- `webEnvironment = MOCK` (default) + `@AutoConfigureMockMvc` → full context, MockMvc, no real server; tests are
-  transactional-rollback-capable. `RANDOM_PORT` → real server on another thread; `@Transactional` on the test does
-  **not** roll back server-side work → clean up with `@Sql`/truncation or fresh data per test.
-- The concurrency test for P2 M5 (N threads holding the same seat, exactly one wins) must be a `@SpringBootTest` with
-  real Postgres — see [testcontainers.md §6](./testcontainers.md#6-the-tickethold-concurrency-test).
+- `webEnvironment = MOCK` (default) + `@AutoConfigureMockMvc` → full context, MockMvc, no real server; tests can be
+  transactional-rollback. `RANDOM_PORT` → real server on another thread; `@Transactional` on the test does **not** roll back
+  server-side work → clean up with `@Sql`/truncation or unique data per test.
+- Concurrency tests (FlowGrid N-threads-one-unit, LedgerX $500/$400/$400) must be `@SpringBootTest` with real Postgres —
+  see [testcontainers.md §6](./testcontainers.md#6-concurrency-tests-the-core-evidence).
 
 ---
 
@@ -253,18 +250,18 @@ class BookingFlowIT {
 spring:
   jpa:
     open-in-view: false
-  flyway:
-    clean-disabled: false        # allow clean in tests only
 app:
   jwt:
     secret: test-secret-at-least-32-bytes-long-000000
     access-ttl: PT15M
+  reservations:
+    ttl: PT15M
 logging:
   level:
     org.hibernate.SQL: debug     # see generated SQL while debugging tests
 ```
 
-- `@ActiveProfiles("test")` activates it; `@TestPropertySource(properties = "app.hold-ttl=PT1S")` for one class.
+- `@ActiveProfiles("test")` activates it; `@TestPropertySource(properties = "app.reservations.ttl=PT1S")` for one class.
 - `@DynamicPropertySource` sets properties computed at runtime (container URLs in pre-3.1 style).
 - Never let tests read production secrets; never point tests at a shared DB.
 
@@ -273,10 +270,11 @@ logging:
 ## 8. Break it
 
 1. Remove `@Import(SecurityConfig.class)` from a `@WebMvcTest`. Boot's default security applies → your role rules vanish (or everything is 401). Explain.
-2. Replace `@MockitoBean EventService` with nothing → `NoSuchBeanDefinitionException` for the controller's dependency. That's the slice boundary.
+2. Remove `@MockitoBean SkuService` → `NoSuchBeanDefinitionException` for the controller's dependency. That's the slice boundary.
 3. Remove `em.flush()` from the constraint test → no exception → test fails. Why?
 4. Put `@Transactional` on a `RANDOM_PORT` test and expect rollback → data leaks into the next test.
 5. Give two controller test classes different `@MockitoBean` sets; watch "Starting application" appear twice in logs (two contexts).
+6. Forget to add `Idempotency-Key` handling for a retry that arrives while the first request is still in flight. What should the second request get? Write the test before deciding.
 
 ---
 
@@ -287,7 +285,7 @@ logging:
 | `@SpringBootTest` for everything | slices for layers; full context for flows |
 | H2 for Postgres features | Testcontainers |
 | Mocking the service then testing `@PreAuthorize` on it | test method security with real beans |
-| Asserting on `toString()` of JSON | `jsonPath` / DTO deserialization |
+| Asserting on JSON strings | `jsonPath` / DTO deserialization |
 | Relying on test order to share data | each test arranges its own data |
 | Forgetting `flush()` in JPA tests | flush before asserting DB behaviour |
 
@@ -299,7 +297,7 @@ logging:
 
 `@SpringBootTest` loads the whole context — for flows across layers. `@WebMvcTest` loads only the web layer with MockMvc;
 services are mock beans — for HTTP contracts, validation and security. `@DataJpaTest` loads JPA with rollback per test —
-for repositories, queries and constraints, and I point it at Testcontainers Postgres instead of H2.
+for repositories, queries and constraints, pointed at Testcontainers Postgres instead of H2.
 </details>
 
 <details><summary>What is MockMvc?</summary>
@@ -314,25 +312,25 @@ Same purpose — replace a bean in the Spring test context with a Mockito mock. 
 version used from Boot 3.4; Boot's `@MockBean` is deprecated there.
 </details>
 
-<details><summary>How do you test that a VIEWER can't create an issue?</summary>
+<details><summary>How did you test that a VIEWER can't adjust stock?</summary>
 
-A MockMvc test with a mock user and the real security config asserting 403 and that the service wasn't called; plus
-one `@SpringBootTest` with a real VIEWER membership in Testcontainers Postgres asserting 403 through the full chain.
+A parameterized MockMvc test over the roles that lack the permission, with the real security config, asserting 403 and
+that the service wasn't called; plus a positive test for the allowed role.
 </details>
 
-<details><summary>Why does <code>@DataJpaTest</code> roll back, and when is that a problem?</summary>
+<details><summary>How did you test idempotency?</summary>
 
-It wraps each test in a transaction for isolation. It's a problem when behaviour depends on commit — after-commit
-listeners, other threads/connections seeing data, or constraint checks deferred until flush/commit.
+A `@SpringBootTest` against Testcontainers Postgres that posts the same request twice with the same `Idempotency-Key` and
+asserts one row and identical responses; a second test with the same key and a different body asserts a conflict.
 </details>
 
 ---
 
 ## Mastery checklist
 
-- [ ] TicketHold: ≥ 1 `@WebMvcTest` per controller covering happy path, validation 400, 404, and 401/403.
-- [ ] TicketHold: `@DataJpaTest` for every custom query and each unique constraint, on Postgres.
-- [ ] TeamBoard: authorization tests per role (OWNER/ADMIN/MEMBER/VIEWER) for issue create/update/delete.
-- [ ] One `@SpringBootTest` flow test (hold → confirm) with real HTTP.
+- [ ] FlowGrid: ≥ 1 `@WebMvcTest` per controller covering happy path, validation 400, 404, and 401/403.
+- [ ] FlowGrid: `@DataJpaTest` for every custom query and each unique constraint, on Postgres.
+- [ ] FlowGrid: idempotent order creation proven end-to-end.
+- [ ] LedgerX: immutability trigger tested; ForgeCI: webhook signature + delivery dedupe tested; FlagForge: cross-tenant access tested.
 - [ ] Explain context caching and why mock-bean sets matter.
 - [ ] Explain `@MockitoBean` vs `@MockBean` and 401 vs 403.

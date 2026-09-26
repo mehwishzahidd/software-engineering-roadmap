@@ -150,7 +150,7 @@ Write one story per prompt using the template in §9. Several prompts can share 
 | 5 | …you did something for a user/customer that wasn't asked for. | Past client work; FlagForge SDK stale-if-error so apps keep working when the server is down; clear ProblemDetail error bodies in FlowGrid | Customer Obsession |
 | 6 | …you simplified something complex. | FlagForge immutable config versions (rollback = publish old version); LedgerX compensating entries instead of edits; a past-job process | Invent and Simplify |
 | 7 | …you made a decision with incomplete information or under time pressure. | Past incident; choosing `BLMOVE` + lease vs Streams for the ForgeCI queue; pessimistic vs optimistic locking in LedgerX | Bias for Action, Are Right A Lot |
-| 8 | …you raised the quality bar. | Adding tests/CI at a past job; LedgerX invariant suite + fault-injection tests; ForgeCI chaos tests; code-review standards | Insist on the Highest Standards |
+| 8 | …you raised the quality bar. | Adding tests/CI at a past job; LedgerX invariant suite + the independent Python reconciliation verifier; ForgeCI chaos tests; code-review standards | Insist on the Highest Standards |
 | 9 | …you delivered with limited time or resources. | Contract project; four projects on AWS with a strict cost cap (teardown/cost notes); ForgeCI Redis-on-EC2 instead of managed services | Frugality, Deliver Results |
 | 10 | …you received critical feedback. | Past code review or manager feedback; mock-interview feedback you acted on | Earn Trust, Learn and Be Curious |
 | 11 | …you helped a teammate or someone learn. | Onboarding someone at a past job; explaining code in reviews | Hire and Develop the Best, Strive to be Earth's Best Employer |

@@ -1,7 +1,7 @@
 # 04 — Prefix Sums
 
-> **Week 4** · NeetCode section: **Arrays & Hashing** (prefix-sum extras; NeetCode "Range Sum Query" practice) · Target: **4 new problems** + stretch pool
-> Back to [DSA overview](./README.md) · Tracker: [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md#04--prefix-sums) · Java APIs: [`java-dsa-toolkit.md`](./java-dsa-toolkit.md)
+> **Week 3** · NeetCode section: **Arrays & Hashing** (prefix-sum extras) · Target: **3 new problems** + stretch pool · Java rep: **560** (Week 3)
+> Back to [DSA overview](./README.md) · Tracker: [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md#04--prefix-sums) · Python: [`19-python/02-interview-toolkit.md`](../19-python/02-interview-toolkit.md) (`itertools.accumulate`) · Java: [quick reference](./java-dsa-toolkit.md)
 
 Precompute cumulative sums once (O(n)), then answer "sum of range [i, j]" in O(1). Combined with a hash map, prefix sums count subarrays with a target sum **even with negative numbers** — where sliding window fails.
 
@@ -11,245 +11,275 @@ Precompute cumulative sums once (O(n)), then answer "sum of range [i, j]" in O(1
 
 | Concept | Formula / idea |
 |---|---|
-| Prefix array (1-indexed, padded) | `pre[0] = 0`, `pre[i + 1] = pre[i] + a[i]` → `pre` has length n + 1 |
+| Prefix list (padded) | `pre[0] = 0`, `pre[i + 1] = pre[i] + a[i]` → `pre` has length n + 1. Python: `pre = [0, *itertools.accumulate(a)]` |
 | Range sum | `sum(a[l..r]) = pre[r + 1] - pre[l]` (inclusive l, r) |
-| Running prefix (no array) | Keep `sum` while scanning; enough when you only need "sum so far" |
-| Prefix + hash map | `sum(a[j+1..i]) = k` ⇔ `pre[i+1] - pre[j+1] = k` ⇔ look up count of `pre - k` seen so far |
-| Seed the map | `count.put(0, 1)` — the empty prefix, so subarrays starting at index 0 are counted |
-| 2-D prefix | `P[r+1][c+1] = g[r][c] + P[r][c+1] + P[r+1][c] - P[r][c]`; rectangle via inclusion–exclusion |
+| Running prefix (no list) | Keep `total` while scanning; enough when you only need "sum so far" |
+| Prefix + hash map | `sum(a[j+1..i]) == k` ⇔ `pre[i+1] - pre[j+1] == k` ⇔ look up how many earlier prefixes equal `pre - k` |
+| Seed the map | `{0: 1}` — the empty prefix, so subarrays starting at index 0 are counted |
+| 2-D prefix | `P[r+1][c+1] = g[r][c] + P[r][c+1] + P[r+1][c] - P[r][c]`; rectangle by inclusion–exclusion |
 | Difference array | Range-add `v` on `[l, r]`: `d[l] += v; d[r+1] -= v`; prefix-sum `d` at the end → O(1) per update |
-| Prefix of other operations | Prefix XOR, prefix product (see [238](./01-arrays-strings.md)), prefix counts of a condition |
-| Overflow | Sums of 10⁵ values up to 10⁹ need `long` |
+| Prefix of other operations | Prefix XOR, prefix product ([238](./01-arrays-strings.md)), prefix counts of a condition |
+| Overflow | None in Python (unbounded `int`); in the Java rep, sums of 10⁵ values up to 10⁹ need `long` |
 
-Practical use: monthly running totals and "balance at date X" in [P1 Ledger](../18-projects/p1-ledger/README.md) reports are prefix sums; in SQL you'll meet the same idea as `SUM(...) OVER (ORDER BY ...)` window functions in Week 7.
+Practical use: running inventory balances in [FlowGrid](../18-projects/flowgrid/README.md) and account balances in [LedgerX](../18-projects/ledgerx/README.md) (balance = sum of ledger entries up to a point) are prefix sums; in SQL you'll write the same idea as `SUM(amount) OVER (ORDER BY created_at)`.
 
 ---
 
 ## 2. Prerequisite knowledge
 
 - [`01-arrays-strings.md`](./01-arrays-strings.md) — indexing and off-by-one discipline.
-- [`02-hashing.md`](./02-hashing.md) — `merge`/`getOrDefault` counting for the prefix + map variant.
-- [Toolkit §9 overflow](./java-dsa-toolkit.md#9-integer-overflow-and-long).
+- [`02-hashing.md`](./02-hashing.md) — `dict.get(k, 0)` / `Counter` counting for the prefix + map variant.
 
 ---
 
-## 3. Java implementation
+## 3. Python implementation
 
-```java
-import java.util.*;
+```python
+from collections import defaultdict
+from itertools import accumulate
 
-class PrefixTemplates {
-    // 1-D prefix sums with padding: O(n) build, O(1) query
-    static long[] build(int[] a) {
-        long[] pre = new long[a.length + 1];
-        for (int i = 0; i < a.length; i++) pre[i + 1] = pre[i] + a[i];
-        return pre;
-    }
 
-    static long rangeSum(long[] pre, int l, int r) {   // inclusive l..r
-        return pre[r + 1] - pre[l];
-    }
+def build(a: list[int]) -> list[int]:
+    return [0, *accumulate(a)]                  # padded: len(a) + 1 entries
 
-    // Count subarrays summing to k (works with negatives): O(n)
-    static int countSubarrays(int[] a, int k) {
-        Map<Integer, Integer> seen = new HashMap<>();
-        seen.put(0, 1);                                // empty prefix
-        int sum = 0, count = 0;
-        for (int x : a) {
-            sum += x;
-            count += seen.getOrDefault(sum - k, 0);   // earlier prefixes p with sum - p = k
-            seen.merge(sum, 1, Integer::sum);
-        }
-        return count;
-    }
 
-    // Longest subarray with sum k: store FIRST index of each prefix sum
-    static int longestWithSum(int[] a, int k) {
-        Map<Integer, Integer> firstIdx = new HashMap<>();
-        firstIdx.put(0, -1);
-        int sum = 0, best = 0;
-        for (int i = 0; i < a.length; i++) {
-            sum += a[i];
-            Integer j = firstIdx.get(sum - k);
-            if (j != null) best = Math.max(best, i - j);
-            firstIdx.putIfAbsent(sum, i);              // keep earliest → longest window
-        }
-        return best;
-    }
+def range_sum(pre: list[int], l: int, r: int) -> int:
+    return pre[r + 1] - pre[l]                  # inclusive l..r
 
-    // 2-D prefix sums (LC 304 core)
-    static int[][] build2D(int[][] g) {
-        int R = g.length, C = g[0].length;
-        int[][] P = new int[R + 1][C + 1];
-        for (int r = 0; r < R; r++)
-            for (int c = 0; c < C; c++)
-                P[r + 1][c + 1] = g[r][c] + P[r][c + 1] + P[r + 1][c] - P[r][c];
-        return P;
-    }
 
-    static int rect(int[][] P, int r1, int c1, int r2, int c2) {   // inclusive corners
-        return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1];
-    }
+def count_subarrays(a: list[int], k: int) -> int:
+    """Number of subarrays summing to k (negatives allowed): O(n)."""
+    seen: defaultdict[int, int] = defaultdict(int)
+    seen[0] = 1                                 # empty prefix
+    total = count = 0
+    for x in a:
+        total += x
+        count += seen[total - k]                # earlier prefixes p with total - p == k
+        seen[total] += 1
+    return count
 
-    // Difference array: apply many range increments, then materialise
-    static int[] applyRangeAdds(int n, int[][] updates) {  // each update = {l, r, v}
-        int[] d = new int[n + 1];
-        for (int[] u : updates) { d[u[0]] += u[2]; d[u[1] + 1] -= u[2]; }
-        int[] out = new int[n];
-        int run = 0;
-        for (int i = 0; i < n; i++) { run += d[i]; out[i] = run; }
-        return out;
-    }
 
-    public static void main(String[] args) {
-        long[] pre = build(new int[]{1, 2, 3, 4});
-        System.out.println(rangeSum(pre, 1, 2));                                  // 5
-        System.out.println(countSubarrays(new int[]{1, 1, 1}, 2));                // 2
-        System.out.println(countSubarrays(new int[]{1, -1, 0}, 0));               // 3
-        System.out.println(longestWithSum(new int[]{1, -1, 5, -2, 3}, 3));        // 4
-        int[][] P = build2D(new int[][]{{1, 2}, {3, 4}});
-        System.out.println(rect(P, 0, 0, 1, 1) + " " + rect(P, 1, 0, 1, 1));    // 10 7
-        System.out.println(Arrays.toString(applyRangeAdds(5, new int[][]{{1, 3, 2}, {2, 4, 3}}))); // [0, 2, 5, 5, 3]
-    }
-}
+def longest_with_sum(a: list[int], k: int) -> int:
+    """Longest subarray with sum k: store the FIRST index of each prefix sum."""
+    first_idx = {0: -1}
+    total = best = 0
+    for i, x in enumerate(a):
+        total += x
+        if total - k in first_idx:
+            best = max(best, i - first_idx[total - k])
+        first_idx.setdefault(total, i)          # keep earliest → longest window
+    return best
+
+
+def build_2d(g: list[list[int]]) -> list[list[int]]:
+    R, C = len(g), len(g[0])
+    P = [[0] * (C + 1) for _ in range(R + 1)]
+    for r in range(R):
+        for c in range(C):
+            P[r + 1][c + 1] = g[r][c] + P[r][c + 1] + P[r + 1][c] - P[r][c]
+    return P
+
+
+def rect(P: list[list[int]], r1: int, c1: int, r2: int, c2: int) -> int:   # inclusive corners
+    return P[r2 + 1][c2 + 1] - P[r1][c2 + 1] - P[r2 + 1][c1] + P[r1][c1]
+
+
+def apply_range_adds(n: int, updates: list[tuple[int, int, int]]) -> list[int]:
+    d = [0] * (n + 1)
+    for l, r, v in updates:
+        d[l] += v
+        d[r + 1] -= v
+    return list(accumulate(d[:n]))
+
+
+pre = build([1, 2, 3, 4])
+assert pre == [0, 1, 3, 6, 10] and range_sum(pre, 1, 2) == 5
+assert count_subarrays([1, 1, 1], 2) == 2 and count_subarrays([1, -1, 0], 0) == 3
+assert longest_with_sum([1, -1, 5, -2, 3], 3) == 4
+P = build_2d([[1, 2], [3, 4]])
+assert rect(P, 0, 0, 1, 1) == 10 and rect(P, 1, 0, 1, 1) == 7
+assert apply_range_adds(5, [(1, 3, 2), (2, 4, 3)]) == [0, 2, 5, 5, 3]
+print("prefix-sum templates ok")
 ```
 
 ---
 
-## 4. Common patterns (sub-variants)
+## 4. The same in Java (occasional reps)
+
+**This week's Java rep (Week 3): 560 Subarray Sum Equals K.**
+
+| Python | Java |
+|---|---|
+| `[0, *accumulate(a)]` | `long[] pre = new long[n + 1]; for (...) pre[i + 1] = pre[i] + a[i];` |
+| `seen[total - k]` on a `defaultdict(int)` | `seen.getOrDefault(total - k, 0)` |
+| `seen[total] += 1` | `seen.merge(total, 1, Integer::sum)` |
+| unbounded `int` | `long` when sums can exceed ~2.1·10⁹ |
+
+```java
+import java.util.*;
+
+class SubarraySumKRep {
+    static int subarraySum(int[] nums, int k) {
+        Map<Integer, Integer> seen = new HashMap<>();
+        seen.put(0, 1);
+        int total = 0, count = 0;               // |total| ≤ 2·10^4 · 1000 → int is enough here
+        for (int x : nums) {
+            total += x;
+            count += seen.getOrDefault(total - k, 0);
+            seen.merge(total, 1, Integer::sum);
+        }
+        return count;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(subarraySum(new int[]{1, 1, 1}, 2) + " " + subarraySum(new int[]{1, -1, 0}, 0)); // 2 3
+    }
+}
+```
+
+Java trap: `%` on negatives (divisible-by-k variants) needs `Math.floorMod`; Python's `%` already floors.
+
+---
+
+## 5. Common patterns (sub-variants)
 
 | Sub-pattern | Problems |
 |---|---|
 | Running sum output | 1480 |
 | Immutable range-sum queries | 303, 304 (2-D) |
 | Balance point: left sum == right sum (`total - left - a[i]`) | 724 |
-| Count subarrays with sum k (prefix + map of counts) | 560 |
-| Longest subarray with sum k (prefix + map of first index) | 525 Contiguous Array *(reference only, not assigned)* |
-| Divisible sums (prefix mod k, careful with negatives: `Math.floorMod`) | 974 Subarray Sums Divisible by K *(reference only)* |
-| Range updates via difference array | 1109 Corporate Flight Bookings *(reference only)* |
+| Count subarrays with sum k (prefix + dict of counts) | 560 |
+| Longest subarray with sum k (prefix + dict of first index) | `longest_with_sum` in §3 |
+| Divisible sums (prefix `% k` as the key — Python's `%` is already non-negative for positive k) | variant of 560 |
+| Range updates via difference array | `apply_range_adds` in §3 |
 
 ---
 
-## 5. How to recognise the pattern
+## 6. How to recognise the pattern
 
-- "Sum of elements between i and j", **many queries** on a static array → prefix array.
-- "Number of subarrays whose sum equals k" and values may be **negative** → prefix + hash map (sliding window requires non-negative values to be monotonic).
+- "Sum of elements between i and j", **many queries** on a static array → prefix list.
+- "Number of subarrays whose sum equals k" and values may be **negative** → prefix + dict (sliding window requires non-negative values).
 - "Pivot / equilibrium index", "left sum equals right sum".
 - Many range **updates** then one read → difference array.
 - Matrix region sums → 2-D prefix.
 
 ---
 
-## 6. Beginner problems (Week 4)
+## 7. Beginner problems (Week 3)
 
 | # | Problem | Difficulty | Hint |
 |---:|---|---|---|
-| 1480 | [Running Sum of 1d Array](https://leetcode.com/problems/running-sum-of-1d-array/) | Easy | `a[i] += a[i - 1]` in place. |
-| 303 | [Range Sum Query - Immutable](https://leetcode.com/problems/range-sum-query-immutable/) | Easy | Build a padded `pre` array in the constructor; `sumRange = pre[r+1] - pre[l]`. |
+| 303 | [Range Sum Query - Immutable](https://leetcode.com/problems/range-sum-query-immutable/) | Easy | Build a padded `pre` in `__init__`; `sumRange = pre[r + 1] - pre[l]`. |
+| 724 | [Find Pivot Index](https://leetcode.com/problems/find-pivot-index/) | Easy | `total = sum(nums)`; scanning left to right, pivot when `left == total - left - x`; update `left` **after** the check. |
 
 ---
 
-## 7. Interview problems (Week 4)
+## 8. Interview problems (Week 3)
 
 | # | Problem | Difficulty | Week | Key insight |
 |---:|---|---|---:|---|
-| 724 | [Find Pivot Index](https://leetcode.com/problems/find-pivot-index/) | Easy | 4 | <details><summary>show</summary>Compute total once; scanning left to right, pivot when `left == total - left - a[i]`; update `left` after the check.</details> |
-| 560 | [Subarray Sum Equals K](https://leetcode.com/problems/subarray-sum-equals-k/) | Medium | 4 | <details><summary>show</summary>Count of earlier prefixes equal to `sum - k`; seed `{0: 1}`. Sliding window fails because values can be negative.</details> |
+| 560 | [Subarray Sum Equals K](https://leetcode.com/problems/subarray-sum-equals-k/) | Medium | 3 | <details><summary>show</summary>Count of earlier prefixes equal to `total - k`; seed `{0: 1}`. Sliding window fails because values can be negative.</details> |
 
-### Stretch pool (Weeks 21–26 mixed review)
+### Stretch pool (Weeks 20–26 mixed review)
 
 | # | Problem | Difficulty | Key insight |
 |---:|---|---|---|
+| 1480 | [Running Sum of 1d Array](https://leetcode.com/problems/running-sum-of-1d-array/) | Easy | <details><summary>show</summary>`list(accumulate(nums))`, or in place `nums[i] += nums[i - 1]`. Timed warm-up: ≤ 3 min.</details> |
 | 304 | [Range Sum Query 2D - Immutable](https://leetcode.com/problems/range-sum-query-2d-immutable/) | Medium | <details><summary>show</summary>(R+1)×(C+1) padded prefix; inclusion–exclusion with four corners.</details> |
 
 ---
 
-## 8. Recommended NeetCode / LeetCode practice order
+## 9. Recommended NeetCode / LeetCode practice order
 
-NeetCode 150 has no dedicated section; 238 (in [01](./01-arrays-strings.md)) and 560 are the prefix ideas that appear in NeetCode lists. Order: implement §3 → 1480 → 303 → 724 → 560 → (W21–26) 304.
-
----
-
-## 9. Target number of problems
-
-**4 new** in Week 4 (with 3 from [03](./03-two-pointers.md) = the week's 7) + 1 stretch.
+NeetCode 150 has no dedicated section; 238 (in [01](./01-arrays-strings.md)) and 560 are the prefix ideas that appear in NeetCode lists. Order: implement §3 → 303 → 724 → 560 → Java rep 560 → (W20–26) 1480, 304.
 
 ---
 
-## 10. Mistakes beginners commonly make
+## 10. Target number of problems
 
-- Unpadded prefix arrays → special-casing `l == 0` and off-by-one bugs. Always use length n + 1.
-- 560: forgetting `seen.put(0, 1)` → misses subarrays starting at index 0.
-- 560: inserting the current prefix **before** looking up `sum - k` → counts empty subarrays when k = 0.
+**3 new** in Week 3 (with 5 from [03](./03-two-pointers.md) = the week's 8) + 2 stretch.
+
+---
+
+## 11. Mistakes beginners commonly make
+
+**Python-specific**
+- `sum(a[l:r + 1])` per query → O(n) per query (slice copy + sum). That's the brute force, not a prefix sum.
+- `accumulate(a)` returns an **iterator** — wrap in `list(...)` if you need indexing (and pad with `0`).
+- Using a plain `dict` and `seen[total - k]` → `KeyError`; use `.get(key, 0)` or `defaultdict(int)` (and remember `defaultdict` inserts on read).
+- Mixing `/` and `//` when computing averages/indices.
+
+**General**
+- Unpadded prefix lists → special-casing `l == 0` and off-by-one bugs. Always use length n + 1.
+- 560: forgetting the `{0: 1}` seed → misses subarrays starting at index 0.
+- 560: recording the current prefix **before** looking up `total - k` → counts empty subarrays when k = 0.
 - Trying sliding window on arrays with negatives.
-- `int` overflow on large sums → `long[] pre`.
-- 724: returning the last pivot instead of the leftmost; or updating `left` before the comparison.
-- Java: `%` of a negative number is negative → use `Math.floorMod` for "divisible by k" variants.
+- 724: returning the last pivot instead of the leftmost; updating `left` before the comparison.
 - 2-D: sign errors in inclusion–exclusion — draw the four rectangles.
 
+**Java-rep traps (560):** `int` overflow on large sums, `Math.floorMod` for negative remainders.
+
 ---
 
-## 11. Mastery criteria
+## 12. Mastery criteria
 
-- [ ] Write `build`, `rangeSum`, and the prefix + map counter from memory, no off-by-one, in ≤ 10 min total.
+- [ ] Write `build`, `range_sum`, and the prefix + dict counter from memory, no off-by-one, in ≤ 10 min total.
 - [ ] Solve 560 from blank in ≤ 15 min and explain why sliding window doesn't work.
 - [ ] Derive the 2-D formula on paper in ≤ 3 min.
 - [ ] Solve 1 unseen prefix-sum Medium in ≤ 25 min.
+- [ ] Java rep: 560 in Java in ≤ 15 min.
 
 ---
 
-## 12. Revision schedule
+## 13. Revision schedule
 
-| Review | Week 4 set (1480, 303, 724, 560) |
+| Review | Week 3 set (303, 724, 560) |
 |---|---|
-| Day 0 | W4 |
-| Day 3 | W4/W5 |
-| Day 7 | W5 (contrast with sliding window) |
-| Day 14 | W6 |
-| Day 30 | W8 (review week) |
+| Day 0 | W3 |
+| Day 3 | W3/W4 |
+| Day 7 | W4 (contrast with sliding window) |
+| Day 14 | W5 |
+| Day 30 | W7 |
 
-**Revisit:** Week 5 (sliding window — explain why 560 isn't a window problem), Week 16 (DP: prefix-sum states), Weeks 21–26 (304).
+**Revisit:** Week 4 (sliding window — explain why 560 isn't a window problem), Week 9 (LedgerX balances = prefix sums of entries), Week 15 (DP with prefix-sum states), Weeks 20–26 (1480, 304).
 
 ---
 
 ## Worked example — 560. Subarray Sum Equals K
 
-**Clarify.** `int[] nums`, 1 ≤ n ≤ 2·10⁴, values in [−1000, 1000], k in [−10⁷, 10⁷]. Count **contiguous, non-empty** subarrays with sum exactly k. Negative numbers allowed.
+**Clarify.** `nums: list[int]`, 1 ≤ n ≤ 2·10⁴, values in [−1000, 1000], k in [−10⁷, 10⁷]. Count **contiguous, non-empty** subarrays with sum exactly k. Negative numbers allowed.
 
-**Brute force.** All (i, j) pairs with a running sum → O(n²) = 4·10⁸. Borderline in Java; interviewer wants better.
+**Brute force.** All (i, j) pairs with a running sum → O(n²) = 4·10⁸ steps. In Python that's minutes — TLE. We need O(n).
 
 **Why not sliding window?** Windows need "adding an element never decreases the sum" to know which pointer to move. With negatives, that monotonicity is gone.
 
-**Optimise.** Let `P` be the prefix sum up to index i. A subarray ending at i with sum k exists for every earlier prefix equal to `P - k`. Maintain `Map<prefixSum, howManyTimesSeen>`, seeded with `{0: 1}`. For each element: update P, add `count(P - k)` to the answer, then record P. O(n).
+**Optimise.** Let `P` be the prefix sum up to index i. A subarray ending at i with sum k exists for every earlier prefix equal to `P - k`. Maintain `prefix → how many times seen`, seeded with `{0: 1}`. For each element: update P, add `count[P - k]` to the answer, then record P. O(n).
 
-**Code.**
+**Code (Python).**
 
-```java
-import java.util.*;
+```python
+from collections import defaultdict
 
-class SubarraySumK {
-    public int subarraySum(int[] nums, int k) {
-        Map<Integer, Integer> prefixCount = new HashMap<>();
-        prefixCount.put(0, 1);
-        int prefix = 0, count = 0;          // |prefix| ≤ 2·10^4 · 1000 = 2·10^7 → int is fine
-        for (int x : nums) {
-            prefix += x;
-            count += prefixCount.getOrDefault(prefix - k, 0);
-            prefixCount.merge(prefix, 1, Integer::sum);
-        }
-        return count;
-    }
 
-    public static void main(String[] args) {
-        SubarraySumK s = new SubarraySumK();
-        System.out.println(s.subarraySum(new int[]{1, 1, 1}, 2));     // 2
-        System.out.println(s.subarraySum(new int[]{1, 2, 3}, 3));     // 2
-        System.out.println(s.subarraySum(new int[]{1, -1, 0}, 0));    // 3
-        System.out.println(s.subarraySum(new int[]{5}, 5));           // 1
-    }
-}
+def subarray_sum(nums: list[int], k: int) -> int:
+    prefix_count: defaultdict[int, int] = defaultdict(int)
+    prefix_count[0] = 1
+    prefix = count = 0
+    for x in nums:
+        prefix += x
+        count += prefix_count[prefix - k]   # look up BEFORE recording the current prefix
+        prefix_count[prefix] += 1
+    return count
+
+
+assert subarray_sum([1, 1, 1], 2) == 2
+assert subarray_sum([1, 2, 3], 3) == 2
+assert subarray_sum([1, -1, 0], 0) == 3
+assert subarray_sum([5], 5) == 1
+assert subarray_sum([1, 2], 10) == 0
+print("560 worked example passed")
 ```
 
-**Test cases.** `[1,1,1], k=2` → 2 · `[1,2,3], k=3` → 2 (`[1,2]`, `[3]`) · `[1,-1,0], k=0` → 3 (`[1,-1]`, `[0]`, `[1,-1,0]`) · single element `[5], k=5` → 1 · no match `[1,2], k=10` → 0.
+**Test cases.** `[1,1,1], k=2` → 2 · `[1,2,3], k=3` → 2 (`[1,2]`, `[3]`) · `[1,-1,0], k=0` → 3 · single element `[5], k=5` → 1 · no match → 0.
 
-**Complexity.** Time O(n) average (hash operations). Space O(n) for the map.
+**Complexity.** Time O(n) average. Space O(n) for the dict. (Note: reading `prefix_count[prefix - k]` on a `defaultdict` inserts zero-count keys — harmless here, but it grows the dict; `.get(prefix - k, 0)` avoids that.)

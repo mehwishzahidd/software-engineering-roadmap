@@ -123,7 +123,7 @@ a bug; `git bisect run mvn -q test` automates it.
 <details><summary><b>R5. "What makes a good commit / commit message?"</b></summary>
 
 - One logical change, builds and passes tests. Imperative subject ≤ ~50 chars ("Add hold expiry job"),
-  blank line, body explaining *why*. Link issue. Evidence: your P2/P3 commit history.
+  blank line, body explaining *why*. Link issue. Evidence: the FlowGrid and LedgerX commit history — one PR per milestone, each linked to a GitHub milestone/issue.
 </details>
 
 ## 4. Practical tasks (live)
@@ -165,8 +165,9 @@ It was already tracked. `git rm -r --cached target && git commit`. Also check th
 
 ## 6. Architecture questions
 
-- GitHub Flow vs Git Flow vs trunk-based development — which suits a small team with CI/CD (PulseWatch)? Why?
-- Monorepo (API + React in one repo, as in TeamBoard) vs polyrepo — effects on CI, versioning, PRs.
+- GitHub Flow vs Git Flow vs trunk-based development — which suits a small team with CI/CD (each of my projects)? Why?
+- Monorepo (api + worker + React ui in one repo, as in ForgeCI's multi-module build) vs polyrepo — effects on CI, versioning, PRs.
+- ForgeCI *consumes* Git: cloning at a commit SHA with a short-lived token, shallow clones (`--depth 1`) for speed, why a build must pin the SHA and not the branch name.
 - Squash-merge vs merge commits vs rebase-merge in PR policy — what does each do to `git bisect` and history readability?
 - Release tagging and semantic versioning for the projects.
 
@@ -226,7 +227,7 @@ generated build artifacts, database dumps with personal data.
 
 ## 13. Hands-on exercise
 
-**Conflict + bisect lab on a copy of Ledger.**
+**Conflict + bisect lab on a copy of FlowGrid.**
 
 Acceptance criteria:
 - [ ] Two branches edit the same method differently; you resolve via rebase, tests green, history linear.
@@ -249,10 +250,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: link |
 |---|---|---|
-| P1 Ledger | Commits from Week 3, PR-based workflow from M3 (Week 5), tag `v1.0` | |
-| P2 TicketHold | Feature branches + PRs with CI checks, tag `v1.0` | |
-| P3 TeamBoard | Monorepo (backend + frontend), conflict resolution across layers | |
-| P4 PulseWatch | Merges to `main` trigger CI/CD deploy; SHA-tagged images | |
+| FlowGrid | PR-per-milestone workflow from M1 (W4): feature branches, CI check, squash-merge, GitHub milestone per M1–M5, tag `v1.0` in W8 | |
+| LedgerX | Same workflow; a rebase-heavy branch (locking experiments) cleaned with interactive rebase before review; tag `v1.0` in W13 | |
+| ForgeCI | Multi-module repo (api, worker, ui): conflicts across modules; ForgeCI *consumes* Git — clones repos at the webhook's commit SHA, reports status per commit | |
+| FlagForge | Tags drive the SDK release (`sdk-v1.0.0`) separately from the server `v1.0`; merges to `main` trigger CI/CD; SHA-tagged images | |
 
 ## Where to learn it in this repo
 

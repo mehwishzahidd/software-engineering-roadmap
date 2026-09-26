@@ -1,8 +1,9 @@
 # Docker — Résumé Tech Defense
 
 > **Goal:** defend "Docker" with truthful past context and current competence with images, layers,
-> multi-stage builds, volumes, networks and Docker Compose v2 — shown by TicketHold's Dockerfile,
-> TeamBoard's full-stack Compose, and PulseWatch's 4-service stack running on EC2.
+> multi-stage builds, volumes, networks and Docker Compose v2 — shown by FlowGrid's Dockerfile and
+> 4-service Compose stack (W4–8), ForgeCI's multi-worker stack — where the workers themselves create
+> and destroy containers through the Docker Engine API (W14–18) — and four deployments on EC2.
 >
 > **Honesty rule:** "I ran `docker compose up` on a project someone else containerised" is a
 > valid, honest past description. Your authoring skill is demonstrated by the Dockerfiles and
@@ -14,11 +15,13 @@
 
 | Project | Docker evidence |
 |---|---|
-| **P2 TicketHold** M2 (W10) | `compose.yaml` running Postgres 16 with a named volume + healthcheck for local dev |
-| **P2** M4 (W12) | Multi-stage `Dockerfile` (Maven build → JRE runtime, non-root user); Testcontainers in tests |
-| **P3 TeamBoard** M5 (W18) | Full-stack Compose: `nginx` (serving React build + reverse proxy `/api`), `api`, `postgres`; `depends_on: condition: service_healthy` |
-| **P4 PulseWatch** M1/M3 (W19–21) | `api`, `worker`, `postgres`, `redis` Compose stack locally; on EC2 with RDS replacing the Postgres container; `awslogs` driver |
-| **P4** M4 (W22) | CI builds and pushes tagged images (`:sha`), deploy pulls by tag |
+| **FlowGrid** M1 (W4) | `compose.yaml` running Postgres 16 with a named volume + healthcheck for local dev; Flyway migrates on startup |
+| **FlowGrid** M2 (W5) | Multi-stage `Dockerfile` (Maven build → JRE runtime, non-root user); Testcontainers Postgres in the N-threads reservation test |
+| **FlowGrid** M3–M5 (W6–8) | `redis:7` added; full stack `nginx` (React build + reverse proxy `/api`), `api`, `postgres`, `redis` with `depends_on: condition: service_healthy`; on EC2 with RDS replacing the Postgres container; `awslogs` driver; CI builds and pushes `:sha` images to GHCR, deploy pulls by tag |
+| **LedgerX** (W9–13) | Same pattern rebuilt from memory; Testcontainers for isolation-level and crash-between-steps tests |
+| **ForgeCI** M2 (W15) | Worker uses the **Docker Engine API** (docker-java) to create a temporary container per job: image from `.forgeci.yml`, workspace volume, clone, run steps, capture exit codes, `finally` remove container + volume |
+| **ForgeCI** M4–M5 (W17–18) | Per-job timeout = kill container; cancellation of running jobs; Compose stack `api`, `worker` (`--scale worker=3`), `postgres`, `redis`, `ui`; Testcontainers Postgres + Redis in integration tests; Docker-socket security notes for the W19 AWS deploy |
+| **FlagForge** M4 (W23) | Server + Redis + Postgres + dashboard Compose; SDK sample app in its own container talking to the server over the Compose network |
 
 ## Where to learn it in this repo
 
@@ -116,6 +119,11 @@ SIGTERM to PID 1, wait 10 s (configurable), then SIGKILL. Spring Boot graceful s
 Modern JDKs are container-aware (cgroup limits). Default max heap is 25% of container memory; set `-XX:MaxRAMPercentage`. Exceeding the limit → OOM-killed (exit 137), not a Java `OutOfMemoryError`.
 </details>
 
+<details><summary><b>I8. How does ForgeCI run a CI job inside a container through the Engine API?</b></summary>
+
+Worker talks to the daemon over the socket (docker-java): pull image if missing → create container (image from `.forgeci.yml`, workspace volume mounted at `/workspace`, no privileged flag, memory/CPU limits, non-root user) → start → `exec` each step (`sh -c`), attach stdout/stderr and stream chunks → collect exit code per step (first non-zero fails the job) → on timeout: `stop` (SIGTERM, grace period) then `kill` (SIGKILL) → `finally`: remove container + volume even when the worker thread is interrupted. Everything the daemon does is what `docker run` does, minus the CLI.
+</details>
+
 ## 3. Realistic interview questions
 
 <details><summary><b>R1. "What did Docker solve for your application?"</b></summary>
@@ -125,7 +133,7 @@ Reproducible environments (same Postgres 16 / Redis 7 for everyone, one command)
 
 <details><summary><b>R2. "Your résumé says Docker — what did you do with it?"</b></summary>
 
-Truthful past scope → current: wrote TicketHold's multi-stage Dockerfile, TeamBoard's 3-service Compose, PulseWatch's stack on EC2, CI image build.
+Truthful past scope → current: wrote FlowGrid's multi-stage Dockerfile and 4-service Compose stack, deployed it on EC2, built CI image publishing — and in ForgeCI wrote the code that *creates* containers: each CI job runs in a temporary container started through the Engine API and always cleaned up.
 </details>
 
 <details><summary><b>R3. "How do your containers talk to each other?"</b></summary>
@@ -135,7 +143,7 @@ Compose network + service-name DNS; nginx `proxy_pass http://api:8080`; api → 
 
 <details><summary><b>R4. "Docker vs Kubernetes?"</b></summary>
 
-Docker builds/runs containers; Compose runs multi-container apps on one host. Kubernetes orchestrates across many hosts: scheduling, self-healing, rolling updates, service discovery, autoscaling. PulseWatch doesn't need K8s; say when you'd move (multiple hosts, HA SLAs, many services).
+Docker builds/runs containers; Compose runs multi-container apps on one host. Kubernetes orchestrates across many hosts: scheduling, self-healing, rolling updates, service discovery, autoscaling. None of my four projects needs K8s; say when you'd move (multiple hosts, HA SLAs, many services).
 </details>
 
 <details><summary><b>R5. "How do you persist Postgres data in Docker?"</b></summary>
@@ -182,7 +190,7 @@ No volume (data in container writable layer) or `down -v` was run. Add named vol
 
 <details><summary><b>A1. One container per process — why?</b></summary>
 
-Independent scaling, restarts, logs, and images. PulseWatch splits `api` and `worker` from the same codebase (different Spring profiles) so the worker can be scaled/paused independently.
+Independent scaling, restarts, logs, and images. ForgeCI splits `api` and `worker` into two Spring Boot apps in one multi-module Maven repo, so workers can be scaled (`--scale worker=3`) or drained independently of the API.
 </details>
 
 <details><summary><b>A2. How do you version and promote images?</b></summary>
@@ -227,7 +235,7 @@ Tag with git SHA (immutable) + optionally semver; CI builds once, tests, pushes;
 
 - Managed platforms already handling runtime (e.g. Lambda zip deploys) where images add nothing.
 - Stateful production databases when a managed service (RDS) is available.
-- As a security boundary for untrusted code (use VMs/sandboxes).
+- As a security boundary for untrusted code (use VMs/sandboxes) — ForgeCI runs user-supplied build steps in containers and documents exactly why that is isolation, not a hard security boundary (Docker socket = root on the host).
 
 ## 11. Trade-offs
 
@@ -249,7 +257,7 @@ Tag with git SHA (immutable) + optionally semver; CI builds once, tests, pushes;
 
 ## 13. One small hands-on exercise
 
-**Containerise TicketHold end to end.**
+**Containerise FlowGrid end to end.**
 
 - [ ] Multi-stage Dockerfile, final image < 250 MB, non-root.
 - [ ] `compose.yaml` with api + postgres (healthcheck, named volume), api waits for healthy DB.

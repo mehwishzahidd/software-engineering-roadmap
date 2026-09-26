@@ -5,13 +5,16 @@
 > API and schema, draw a sensible box diagram, estimate roughly, and discuss 2–3 trade-offs honestly?
 > Your four projects already contain most of the answers. This folder formalizes them.
 
-Timeline (from [ROADMAP](../ROADMAP.md#5-week-by-week-master-table)):
+Timeline (from [ROADMAP §5–§6](../ROADMAP.md#6-just-in-time-learning-map)): system design is formalised
+**after three real systems exist**, and those systems are your case studies.
 
 | Week | Activity |
 |---|---|
-| 20 | Caching + rate limiting built for real in P4 → read [`caching.md`](./caching.md) alongside |
-| 22 | **Formal study**: [`fundamentals.md`](./fundamentals.md), [`scalability.md`](./scalability.md); system design mock #1 |
-| 23–26 | One problem from [`junior-design-problems.md`](./junior-design-problems.md) per week, timed (35–45 min), out loud; full-loop mocks |
+| 6, 21 | Caching built for real (FlowGrid catalog cache; FlagForge config snapshots) → read [`caching.md`](./caching.md) alongside |
+| 15 | Queues, workers, leases built for real in ForgeCI → [`scalability.md` §5](./scalability.md#5-queues-and-asynchronous-processing) |
+| **20** | **Formal study**: [`fundamentals.md`](./fundamentals.md), [`scalability.md`](./scalability.md); redo FlowGrid as a design problem |
+| 22 | **System design mock #1** — one problem from [`junior-design-problems.md`](./junior-design-problems.md) |
+| 23–26 | One problem per week, timed (35–45 min), out loud; full-loop mocks; present each project as a design answer |
 
 Interview-day method and delivery tips: [`16-interview-prep/system-design-interview.md`](../16-interview-prep/system-design-interview.md).
 Foundations this builds on: [`14-cs-fundamentals/networking.md`](../14-cs-fundamentals/networking.md),
@@ -24,9 +27,9 @@ Foundations this builds on: [`14-cs-fundamentals/networking.md`](../14-cs-fundam
 | File | Contents |
 |---|---|
 | [`fundamentals.md`](./fundamentals.md) | The 6-step framework, requirements, API & data model, back-of-envelope estimation with worked numbers |
-| [`caching.md`](./caching.md) | Where to cache, cache-aside / write-through / write-back, TTL, invalidation, stampede, P4 status page |
+| [`caching.md`](./caching.md) | Where to cache, cache-aside / write-through / write-back, TTL, invalidation, stampede — FlowGrid catalog + FlagForge snapshots |
 | [`scalability.md`](./scalability.md) | Vertical/horizontal, stateless services, load balancers, replication, sharding, queues, CAP, idempotency, rate limiting, CDN |
-| [`junior-design-problems.md`](./junior-design-problems.md) | 8 worked problems: URL shortener, rate limiter, uptime monitor (P4), ticket booking (P2), issue tracker (P3), notification service, pastebin, leaderboard |
+| [`junior-design-problems.md`](./junior-design-problems.md) | 8 worked problems: inventory reservation (≈FlowGrid), wallet/ledger (≈LedgerX), CI job runner (≈ForgeCI), feature-flag service (≈FlagForge), URL shortener, rate limiter, notification service, leaderboard |
 
 ---
 
@@ -41,7 +44,7 @@ Foundations this builds on: [`14-cs-fundamentals/networking.md`](../14-cs-fundam
 | One or two bottlenecks and fixes | Idempotency, retries, backoff | |
 | Honest trade-offs; "I'd measure first" | Relating to your own project | |
 
-The strongest junior signal: **"In PulseWatch I actually hit this — here's what I measured and what I changed."**
+The strongest junior signal: **"In FlowGrid / LedgerX / ForgeCI / FlagForge I actually hit this — here's what I measured and what I changed."** (Only say it when it's true and you have the numbers and methodology written down.)
 
 ---
 
@@ -84,12 +87,12 @@ Almost every junior problem is this diagram with 2–3 boxes emphasized. Learn t
 
 - [ ] Can run the 6-step framework on a blank page in 40 minutes
 - [ ] Can do a QPS + storage estimate in under 3 minutes with round numbers
-- [ ] Can explain cache-aside and one invalidation strategy with P4's status page
+- [ ] Can explain cache-aside and invalidation with FlowGrid's catalog cache and FlagForge's publish-triggered invalidation
 - [ ] Can explain why stateless services scale horizontally and where state goes instead
-- [ ] Can explain a token bucket rate limiter in Redis (P4 M2)
-- [ ] Can explain idempotency keys (P2 M4) and at-least-once delivery
+- [ ] Can explain a token bucket rate limiter in Redis (and ForgeCI's per-project concurrency limit)
+- [ ] Can explain idempotency keys (FlowGrid M2, LedgerX M2) and at-least-once delivery (ForgeCI queue, LedgerX outbox)
 - [ ] Have done all 8 problems out loud at least once; 3 of them twice
-- [ ] Have presented P4's architecture as a system design answer in a mock
+- [ ] Have presented each of the four projects as a system design answer in a mock
 
 ---
 

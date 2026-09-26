@@ -25,7 +25,7 @@ don't burn out or decay while waiting for results. Run it from Week 27 until you
 
 ## 2. DSA maintenance
 
-- **45 minutes/day:** 1 new problem (Medium, from weak patterns or company-tagged lists) **or** 2 reviews from the Day 0/3/7/14/30 queue in [`../trackers/dsa-tracker.md`](../trackers/dsa-tracker.md).
+- **45 minutes/day, in Python:** 1 new problem (Medium, from weak patterns or company-tagged lists) **or** 2 reviews from the Day 0/3/7/14/30 queue in [`../trackers/dsa-tracker.md`](../trackers/dsa-tracker.md). Keep the one-per-week Java rep for collections fluency.
 - Timed: 25 minutes per Medium, method from [`coding-interview-method.md`](./coding-interview-method.md), spoken aloud at least twice a week.
 - **Monthly pattern sweep:** one problem from each of the 23 patterns in [`../03-dsa/`](../03-dsa/) over the month; any failure goes back into the review queue.
 - Before a specific company's OA/interview: 5–10 problems from that company's commonly reported topics; re-read [`../OA_PREP.md`](../OA_PREP.md).
@@ -34,7 +34,7 @@ don't burn out or decay while waiting for results. Run it from Week 27 until you
 
 | Frequency | Activity |
 |---|---|
-| Weekly | 1 mock (rotate: coding · behavioral + project · coding · system design) — [`mock-interviews.md`](./mock-interviews.md) |
+| Weekly | 1 mock, alternating **Track A** (Python coding) and **Track B** (project deep-dive / résumé grill / behavioral / system design) — [`mock-interviews.md`](./mock-interviews.md) |
 | Every 2 weeks | 1 OA simulation (reuse OA-1…OA-8 with alternates, or the platform's practice test) |
 | Weekly | 3 résumé-defense questions ([`../RESUME_INTERVIEW_QUESTIONS.md`](../RESUME_INTERVIEW_QUESTIONS.md)), rotating technologies |
 | Weekly | 1 behavioral story rehearsed; update the bank after every real interview |
@@ -59,7 +59,7 @@ don't burn out or decay while waiting for results. Run it from Week 27 until you
 
 - One meaningful commit per week (feature, test, refactor, docs) on one of the four projects (ForgeCI and FlagForge first — they carry the strongest stories) — not busywork.
 - Keep the AWS deployments **off** unless you're demoing them (cost) — ForgeCI's worker EC2 especially. Keep the teardown/redeploy runbook tested so you can bring it up before an interview.
-- Pick backlog items that give new interview stories: FlowGrid split fulfillment, LedgerX risk rules, ForgeCI SQS-vs-Redis experiment, FlagForge segments or a TypeScript SDK — or a Testcontainers test you were missing.
+- Pick backlog items that give new interview stories: FlowGrid split fulfillment, LedgerX risk rules, ForgeCI SQS-vs-Redis experiment, FlagForge segments or a TypeScript SDK — or a Testcontainers test you were missing. Extending a project's Python tool (a new generator scenario, a new lint rule) counts, and keeps Python warm for Track A.
 - Update READMEs with anything you'd want an interviewer to see.
 
 ## 6. After each real interview (same day, 20 min)

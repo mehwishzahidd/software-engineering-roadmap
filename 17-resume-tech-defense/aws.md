@@ -2,12 +2,13 @@
 
 > **Goal:** defend "AWS" with truthful past context and current, hands-on knowledge of the five
 > services this roadmap uses — **IAM, EC2, S3, RDS, CloudWatch** — plus enough VPC/security-group
-> knowledge to deploy PulseWatch safely and cheaply.
+> knowledge to deploy FlowGrid safely and cheaply — and then LedgerX, ForgeCI and FlagForge faster each time.
 >
 > **Honesty rule:** AWS is the résumé item interviewers most often probe for inflated claims.
 > If past work was "deployed to an EC2 box someone else set up" or "used S3 buckets via the SDK",
 > say exactly that. Never claim you designed infrastructure you didn't. Your depth claim comes
-> from PulseWatch, which you deployed yourself.
+> from FlowGrid — the first deployment you did yourself in Week 8 — and from the three deployments
+> that repeated and extended it (LedgerX W13, ForgeCI W19, FlagForge W23).
 
 ---
 
@@ -15,15 +16,17 @@
 
 | Project | AWS evidence |
 |---|---|
-| **P4 PulseWatch** M3 (W21) | EC2 instance running the Docker Compose stack (api, worker, redis, nginx); **RDS PostgreSQL** in private subnets; **S3** bucket for CSV report exports (pre-signed download URLs); **IAM instance role** with least-privilege policy (only `s3:PutObject/GetObject` on `arn:aws:s3:::pulsewatch-reports-*/*`, CloudWatch Logs write); **CloudWatch** log group via `awslogs` driver + alarm on 5xx / CPU |
-| **P4** M4 (W22) | GitHub Actions deploys via OIDC-assumed role (no long-lived keys), images pushed to registry |
-| **P4** polish (W23–25) | Runbook, teardown script, cost notes, budget alarm |
+| **FlowGrid** M5 (W8) — first deploy | EC2 instance running the Docker Compose stack (api, redis, nginx serving the React dashboard); **RDS PostgreSQL** in private subnets (SG allows 5432 only from the EC2 SG); **S3** bucket for report exports (pre-signed download URLs); **IAM instance role** with least-privilege policy (only `s3:PutObject/GetObject` on `arn:aws:s3:::flowgrid-reports-*/*`, CloudWatch Logs write); **CloudWatch** log group via `awslogs` driver + alarm on 5xx / CPU; GitHub Actions deploys via OIDC-assumed role (no long-lived keys), images in GHCR |
+| **LedgerX** M5 (W13) — second deploy | Same EC2 + RDS pattern rebuilt from the runbook in a fraction of the time; budget alarm + teardown script from day one |
+| **ForgeCI** M6 (W19) — multi-service | api + N workers; worker EC2 with the Docker socket (security notes: socket access = root on the host, so workers get their own instance and SG); SQS considered vs Redis for the queue, decision recorded |
+| **FlagForge** M4 (W23) — fourth deploy | Eval endpoint + SSE propagation behind nginx; Redis snapshot cache on EC2 (ElastiCache only if cheaper); p99 latency benchmarks recorded on the deployed instance |
+| **Polish** (W24–26) | Runbooks per project, cost review, final deploy check, teardown |
 
 ## Where to learn it in this repo
 
 - [`../12-aws/README.md`](../12-aws/README.md)
 - [`../12-aws/iam.md`](../12-aws/iam.md) · [`../12-aws/ec2.md`](../12-aws/ec2.md) · [`../12-aws/s3.md`](../12-aws/s3.md) · [`../12-aws/rds.md`](../12-aws/rds.md) · [`../12-aws/cloudwatch.md`](../12-aws/cloudwatch.md)
-- [`../12-aws/deploy-walkthrough.md`](../12-aws/deploy-walkthrough.md) — PulseWatch deploy step by step
+- [`../12-aws/deploy-walkthrough.md`](../12-aws/deploy-walkthrough.md) — FlowGrid deploy step by step (the runbook you repeat for each later project)
 - [`../12-aws/cost-safety.md`](../12-aws/cost-safety.md) — budgets, teardown, avoiding surprise bills
 
 ---
@@ -67,22 +70,22 @@ Security group: stateful, instance/ENI-level, allow rules only; return traffic a
 
 ## 2. Intermediate questions
 
-<details><summary><b>I1. Explain least privilege with your PulseWatch policy.</b></summary>
+<details><summary><b>I1. Explain least privilege with your FlowGrid policy.</b></summary>
 
 ```json
 { "Version": "2012-10-17",
   "Statement": [
     { "Effect": "Allow", "Action": ["s3:PutObject","s3:GetObject"],
-      "Resource": "arn:aws:s3:::pulsewatch-reports-prod/*" },
+      "Resource": "arn:aws:s3:::flowgrid-reports-prod/*" },
     { "Effect": "Allow", "Action": ["logs:CreateLogStream","logs:PutLogEvents"],
-      "Resource": "arn:aws:logs:*:*:log-group:/pulsewatch/*:*" } ] }
+      "Resource": "arn:aws:logs:*:*:log-group:/flowgrid/*:*" } ] }
 ```
 Attached to the EC2 instance role; the app uses the default credential provider chain — no keys in env files.
 </details>
 
 <details><summary><b>I2. Public vs private subnet; how does RDS stay private?</b></summary>
 
-Public subnet has a route to an Internet Gateway. RDS goes in private subnets with "publicly accessible = false"; its SG allows 5432 **only from the app's security group** (SG reference, not CIDR). Instances in private subnets reach the internet via NAT gateway (costs money — PulseWatch keeps EC2 public-with-tight-SG to avoid NAT cost, documented as a trade-off).
+Public subnet has a route to an Internet Gateway. RDS goes in private subnets with "publicly accessible = false"; its SG allows 5432 **only from the app's security group** (SG reference, not CIDR). Instances in private subnets reach the internet via NAT gateway (costs money — FlowGrid keeps EC2 public-with-tight-SG to avoid NAT cost, documented as a trade-off).
 </details>
 
 <details><summary><b>I3. How do you handle secrets on AWS?</b></summary>
@@ -102,7 +105,7 @@ Automated backups + PITR: recovery from mistakes. Multi-AZ: synchronous standby 
 
 <details><summary><b>I6. How do you get application logs into CloudWatch?</b></summary>
 
-Docker `awslogs` log driver per service (`awslogs-group=/pulsewatch/api`), or the CloudWatch agent tailing files. Structured JSON logs → Logs Insights queries: `fields @timestamp, level, requestId | filter status >= 500 | stats count() by bin(5m)`.
+Docker `awslogs` log driver per service (`awslogs-group=/flowgrid/api`), or the CloudWatch agent tailing files. Structured JSON logs → Logs Insights queries: `fields @timestamp, level, requestId | filter status >= 500 | stats count() by bin(5m)`.
 </details>
 
 <details><summary><b>I7. How should CI deploy to AWS without storing access keys?</b></summary>
@@ -110,22 +113,22 @@ Docker `awslogs` log driver per service (`awslogs-group=/pulsewatch/api`), or th
 GitHub Actions OIDC: `permissions: id-token: write`, `aws-actions/configure-aws-credentials` with `role-to-assume`; the role's trust policy restricts `sub` to `repo:<owner>/<repo>:ref:refs/heads/main`. Short-lived credentials per run.
 </details>
 
-<details><summary><b>I8. EC2 vs ECS/Fargate vs Elastic Beanstalk vs Lambda for PulseWatch?</b></summary>
+<details><summary><b>I8. EC2 vs ECS/Fargate vs Elastic Beanstalk vs Lambda for FlowGrid?</b></summary>
 
-EC2+Compose: simplest mental model, cheapest for one box, but you patch the OS and there's no auto-healing. ECS/Fargate: managed container orchestration, rolling deploys, per-task IAM roles — next step. Beanstalk: PaaS convenience. Lambda: great for spiky, short tasks; poor fit for a long-running scheduler + Redis-connected API without redesign.
+EC2+Compose: simplest mental model, cheapest for one box, but you patch the OS and there's no auto-healing. ECS/Fargate: managed container orchestration, rolling deploys, per-task IAM roles — next step. Beanstalk: PaaS convenience. Lambda: great for spiky, short tasks; poor fit for a Redis-connected API with scheduled low-stock alerts (FlowGrid) or long-running Docker-executing workers (ForgeCI) without redesign.
 </details>
 
 ## 3. Realistic interview questions
 
 <details><summary><b>R1. "Your résumé lists AWS. Which services, and what did <i>you</i> configure?"</b></summary>
 
-Past: truthful (e.g. "used S3 via SDK and deployed to existing EC2 instances; infra was owned by ops"). Now: "I deployed PulseWatch myself: EC2, RDS Postgres, S3, IAM role, CloudWatch alarm — here's the diagram and the policy JSON."
+Past: truthful (e.g. "used S3 via SDK and deployed to existing EC2 instances; infra was owned by ops"). Now: "I deployed FlowGrid myself in Week 8 — EC2, RDS Postgres, S3, IAM role, CloudWatch alarm — and repeated the deploy for LedgerX, ForgeCI (api + workers on separate instances) and FlagForge; here's the diagram and the policy JSON."
 Follow-up: "What would break if the AZ went down?"
 </details>
 
 <details><summary><b>R2. "How would you deploy this architecture on AWS?"</b></summary>
 
-Route/DNS → EC2 (SG: 443 from world, 22 closed—use SSM) running nginx + api + worker + redis in Compose → RDS Postgres in private subnets (SG from app SG) → S3 for exports via instance role → CloudWatch logs/alarms → GitHub Actions builds images, deploys via OIDC role. Next steps: ALB + ASG or ECS, ElastiCache for Redis, Multi-AZ RDS.
+Route/DNS → EC2 (SG: 443 from world, 22 closed—use SSM) running nginx + api + redis in Compose (ForgeCI adds N worker instances) → RDS Postgres in private subnets (SG from app SG) → S3 for exports via instance role → CloudWatch logs/alarms → GitHub Actions builds images, deploys via OIDC role. Next steps: ALB + ASG or ECS, ElastiCache for Redis, Multi-AZ RDS.
 </details>
 
 <details><summary><b>R3. "The app on EC2 can't connect to RDS. Walk me through it."</b></summary>
@@ -143,16 +146,16 @@ Budget + alarm, smallest instance class, single-AZ for dev, stop/teardown script
 AWS secures the cloud (hardware, facilities, hypervisor, managed-service internals); you secure what's in it (IAM, SG rules, OS patching on EC2, data encryption choices, app code). Managed services shift more to AWS (RDS patches the DB engine).
 </details>
 
-<details><summary><b>R6. "How would you know PulseWatch is down on AWS?"</b></summary>
+<details><summary><b>R6. "How would you know FlowGrid is down on AWS?"</b></summary>
 
-CloudWatch alarm on EC2 status check + custom health endpoint check (Route 53 health check or external), alarm on 5xx rate from logs metric filter, RDS CPU/free storage alarms → SNS email. Ironically, PulseWatch can monitor itself from a second region/account; say why an external check is better.
+CloudWatch alarm on EC2 status check + custom health endpoint check (Route 53 health check or external), alarm on 5xx rate from logs metric filter, RDS CPU/free storage alarms → SNS email. Say why a check from *outside* the instance (Route 53 health check or a tiny external probe) beats the app reporting on itself.
 </details>
 
 ## 4. Practical tasks (doable live)
 
 1. Write an IAM policy allowing read-only access to one S3 prefix.
-2. Draw the PulseWatch VPC: subnets, SGs, arrows with ports.
-3. Use the AWS CLI: `aws s3 cp`, `aws s3 presign`, `aws sts get-caller-identity`, `aws logs tail /pulsewatch/api --follow`.
+2. Draw the FlowGrid VPC: subnets, SGs, arrows with ports. Then add ForgeCI's worker instance.
+3. Use the AWS CLI: `aws s3 cp`, `aws s3 presign`, `aws sts get-caller-identity`, `aws logs tail /flowgrid/api --follow`.
 4. Write a CloudWatch Logs Insights query counting errors by endpoint.
 5. Explain the trust policy for a GitHub OIDC deploy role.
 
@@ -180,14 +183,14 @@ Each app instance's Hikari pool × instances + worker + migrations > `max_connec
 
 ## 6. Architecture questions
 
-<details><summary><b>A1. How would you make PulseWatch highly available?</b></summary>
+<details><summary><b>A1. How would you make FlowGrid highly available?</b></summary>
 
-ALB across two AZs, ASG (or ECS service) of stateless API containers, worker with leader election or partitioned monitors, ElastiCache Redis, RDS Multi-AZ, S3 already regional. Cost roughly ×3; justify by SLA.
+ALB across two AZs, ASG (or ECS service) of stateless API containers, the scheduled low-stock alert job guarded by a distributed lock (or moved to a single worker instance), ElastiCache Redis, RDS Multi-AZ, S3 already regional. Cost roughly ×3; justify by SLA.
 </details>
 
-<details><summary><b>A2. Where does the scheduled worker run if you scale the API to 3 instances?</b></summary>
+<details><summary><b>A2. Where does FlowGrid's scheduled low-stock alert job run if you scale the API to 3 instances?</b></summary>
 
-Separate worker service (1 replica) or distributed lock (ShedLock / Redis lock / `SELECT … FOR UPDATE SKIP LOCKED` claim) so checks aren't run 3 times.
+Separate worker service (1 replica) or distributed lock (ShedLock / Redis lock / `SELECT … FOR UPDATE SKIP LOCKED` claim) so alerts aren't sent 3 times. ForgeCI avoids the problem by design: workers *pull* jobs from the Redis queue, so N workers share the work instead of duplicating it.
 </details>
 
 ## 7. Common mistakes
@@ -258,10 +261,10 @@ Separate worker service (1 replica) or distributed lock (ShedLock / Redis lock /
 
 ## 14. Mastery checklist
 
-- [ ] Draw PulseWatch's AWS architecture from memory with ports and SGs
+- [ ] Draw FlowGrid's AWS architecture from memory with ports and SGs (and ForgeCI's api + worker variant)
 - [ ] Write a least-privilege policy and a trust policy by hand
 - [ ] Explain Multi-AZ vs read replica vs backup
 - [ ] Debug EC2→RDS connectivity step by step
 - [ ] Explain OIDC deploys without stored keys
 - [ ] Explain cost controls and my teardown script
-- [ ] Truthful 60-second answer on past AWS exposure + PulseWatch bridge
+- [ ] Truthful 60-second answer on past AWS exposure + FlowGrid bridge

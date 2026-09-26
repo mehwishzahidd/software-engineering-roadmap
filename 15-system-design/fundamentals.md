@@ -1,6 +1,6 @@
 # System Design Fundamentals — the framework and the numbers
 
-> **Practical use:** write P4's design doc (Week 18, M0) and every future design doc using the same
+> **Practical use:** write every project's design doc ([template](../18-projects/templates/design-doc.md)) with the same
 > structure; estimate whether one Postgres instance can hold a year of check results.
 > **Interview use:** a repeatable 40-minute structure so you never stare at a blank whiteboard.
 
@@ -98,13 +98,20 @@ bandwidth    = QPS × response size
 - Storage: 100 M × 300 B = 30 GB/month ≈ **360 GB/year**; 5 years ≈ 1.8 TB → fits on one large DB instance, or shard later.
 - Keyspace: base62, 7 chars = 62⁷ ≈ 3.5 × 10¹² codes → plenty for 6 B URLs over 5 years.
 
-### Worked example 2 — PulseWatch (your P4, honest numbers)
+### Worked example 2 — ForgeCI (a system you build)
 
-- 1,000 monitors × check every 60 s = **~17 checks/s** → one worker with virtual threads is plenty.
-- Each check result row: `monitor_id` 8 + `checked_at` 8 + `status` ~2 + `latency_ms` 4 + `http_status` 2 + header ~24 → ~60 B, + composite index ~40 B ≈ **100 B**.
-- Per day: 17 × 86,400 ≈ 1.5 M rows ≈ **150 MB/day** → ~55 GB/year.
-- Decision it drives: **retention policy** (keep raw results 30 days = ~4.5 GB; aggregate older into hourly rollups) and possibly monthly partitions so cleanup is `DROP` not `DELETE`.
-- Status page reads: if 10,000 visitors/day hit a status page, that's tiny — but a viral incident could make it 1,000 req/s → **cache** the status page in Redis (M2).
+Assume 50 repositories, 200 pushes/day total, each build = 3 jobs × ~4 min, log output ~200 KB per job.
+
+- Jobs: 200 × 3 = 600 jobs/day. Peak hour (say 30% of pushes): 60 builds → **180 jobs/hour ≈ 3 jobs/min**.
+- Concurrency needed at peak: 3 jobs/min × 4 min ≈ **12 jobs running at once** (Little's law: arrivals × duration).
+  With 4 concurrent containers per worker host → **3 workers**, or accept queueing (measure queue wait time!).
+- Log storage: 600 × 200 KB = **120 MB/day** ≈ 44 GB/year → retention policy (e.g. 30 days) + partition or move old logs to S3.
+- Log streaming: 12 running jobs × a few lines/s is trivial for Redis pub/sub; the SSE connection count
+  (viewers) matters more than throughput.
+
+Decisions it drives: worker count and per-host concurrency cap; log retention; that Postgres + Redis
+on small instances are plenty — no Kafka needed. Measure the real numbers in M5 and put them in
+`PERFORMANCE.md` with the methodology.
 
 Estimation is only worth doing if it changes a decision. Say what it changed.
 
@@ -175,7 +182,7 @@ Pick the most interesting or risky part (or follow the interviewer):
 | "What if X fails?" | Health checks, retries with backoff, replicas, queues buffer, graceful degradation |
 | "How do you avoid duplicates?" | Unique constraints, idempotency keys, exactly-once *effects* via dedupe |
 | "How would you monitor it?" | Metrics (rate, errors, latency p95/p99), logs with request IDs, alerts on symptoms |
-| "Consistency?" | Which data must be strongly consistent (payments, seats) vs eventually (counters, feeds) |
+| "Consistency?" | Which data must be strongly consistent (balances, stock reservations) vs eventually (counters, dashboards, flag propagation) |
 
 **Trade-off vocabulary** (state both sides): consistency vs availability, latency vs freshness
 (cache TTL), cost vs redundancy, simplicity vs scalability, write amplification vs read speed
@@ -191,7 +198,7 @@ Pick the most interesting or risky part (or follow the interviewer):
 - Saying "use a cache" without saying *what key, what TTL, how it's invalidated*.
 - Saying "use NoSQL because it scales" without an access-pattern argument.
 - Silence. Think out loud; it's the evaluation.
-- Not relating to experience — you *have* built P2/P3/P4; use them.
+- Not relating to experience — you *have* built FlowGrid, LedgerX, ForgeCI and FlagForge; use them.
 
 ---
 

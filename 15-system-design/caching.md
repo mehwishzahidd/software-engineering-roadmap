@@ -1,7 +1,8 @@
 # Caching Strategy
 
-> **Practical use:** P4 M2 caches the public status page in Redis so an incident (when everyone
-> refreshes at once) doesn't melt Postgres.
+> **Practical use:** FlowGrid M3 caches the product/SKU catalog and low-stock view in Redis (and must
+> keep working when Redis is down); FlagForge M2 caches each environment's config snapshot in Redis and
+> invalidates it on publish; FlagForge's SDK keeps an in-memory snapshot (a client-side cache).
 > **Interview use:** "Where would you add a cache?", "How do you keep it consistent?", "What's a cache stampede?"
 
 Redis *mechanics* (data types, TTL commands, eviction policies, persistence) live in
@@ -17,7 +18,7 @@ about **strategy**: what to cache, where, and how to keep it correct.
 
 A cache trades **freshness** (and complexity) for **latency and load reduction**. Worth it when:
 
-- Reads greatly outnumber writes (status pages, product pages, URL redirects).
+- Reads greatly outnumber writes (product catalogs, flag configs, URL redirects).
 - The same data is requested repeatedly (skewed popularity — a few keys are hot).
 - Computing/fetching it is expensive (aggregations, remote API calls).
 - Slightly stale data is acceptable (define *how* stale: TTL).
@@ -47,7 +48,7 @@ Rules of thumb:
 
 ## 3. Caching patterns
 
-### Cache-aside (lazy loading) — the default, used in P4
+### Cache-aside (lazy loading) — the default (FlowGrid catalog)
 
 ```
 read:   app ──get──► cache ──hit──► return
@@ -57,26 +58,14 @@ read:   app ──get──► cache ──hit──► return
 write:  app ──update──► DB ──then──► delete(key) in cache
 ```
 
+The core of cache-aside is four lines — the design work is choosing keys, TTLs and invalidation:
+
 ```java
-@Service
-public class StatusPageService {
-    private static final Duration TTL = Duration.ofSeconds(30);
-    private final StringRedisTemplate redis;
-    private final StatusPageQuery query;          // hits Postgres
-    private final ObjectMapper json;
-
-    public StatusPageDto get(String slug) throws JsonProcessingException {
-        String key = "status:v1:" + slug;
-        String cached = redis.opsForValue().get(key);
-        if (cached != null) return json.readValue(cached, StatusPageDto.class);
-
-        StatusPageDto fresh = query.load(slug);   // several SQL queries + aggregation
-        redis.opsForValue().set(key, json.writeValueAsString(fresh), TTL);
-        return fresh;
-    }
-
-    public void evict(String slug) { redis.delete("status:v1:" + slug); }   // after incident open/resolve
-}
+String cached = redis.opsForValue().get(key);                    // 1. try cache
+if (cached != null) return json.readValue(cached, SkuDto.class);
+SkuDto fresh = loadFromDb(skuId);                                 // 2. miss → source of truth
+redis.opsForValue().set(key, json.writeValueAsString(fresh), ttl); // 3. populate with TTL
+return fresh;                                                      // (write path: update DB, then DEL key after commit)
 ```
 
 Spring shortcut: `@Cacheable(cacheNames = "statusPage", key = "#slug")` + `@CacheEvict` with a Redis
@@ -120,7 +109,7 @@ recently written data isn't read soon.
 
 ## 4. TTL and eviction
 
-- **TTL** bounds staleness and cleans up unused keys. Choose from the business requirement: "status page may be 30 s stale". Add **jitter** (e.g. 30 s ± 5 s) so keys created together don't expire together.
+- **TTL** bounds staleness and cleans up unused keys. Choose from the business requirement: "catalog data may be 60 s stale; stock levels may not be cached for reservation decisions at all". Add **jitter** (e.g. 30 s ± 5 s) so keys created together don't expire together.
 - **Eviction** when memory is full: Redis `maxmemory-policy` — `allkeys-lru` (typical for pure caches), `allkeys-lfu`, `volatile-ttl`, `noeviction` (errors on write — right for Redis used as a **store**, e.g. rate-limit counters you can't lose silently).
 - Watch **hit ratio** = hits / (hits + misses). Low hit ratio → wrong keys, TTL too short, or data too unique to cache.
 
@@ -131,7 +120,7 @@ recently written data isn't read soon.
 | Strategy | How | Staleness | Use |
 |---|---|---|---|
 | TTL only | Let it expire | Up to TTL | Data where bounded staleness is fine |
-| Delete on write | Update DB, then `DEL key` | Tiny window | Most cache-aside cases (P4) |
+| Delete on write | Update DB, then `DEL key` | Tiny window | Most cache-aside cases (FlowGrid, FlagForge on publish) |
 | Update on write | Update DB, then `SET key newValue` | Tiny window, but racy | Rarely — prefer delete |
 | Versioned keys | `status:v2:slug` or include `updated_at` in key | None for new key | Schema changes, bulk invalidation |
 | Event-driven | DB change → event → consumers evict | Seconds | Many services caching the same data |
@@ -182,14 +171,24 @@ if (Boolean.TRUE.equals(gotLock)) {
 
 ---
 
-## 7. P4 status page — the full story (use it in interviews)
+## 7. Your two caching stories (and the questions to answer before building them)
 
-- **Problem:** the public status page aggregates the last 90 days of uptime per monitor plus current incidents — several queries over `check_results`. During an incident, traffic spikes exactly when the system is under stress.
-- **Decision:** cache-aside in Redis, key `status:v1:{slug}`, TTL 30 s ± jitter; evict on incident open/resolve (after commit); rate limit the public API per IP.
-- **Evidence:** k6 load test before/after: p95 latency and Postgres CPU (Week 22) — put the numbers in the README.
-- **Trade-off:** up to 30 s staleness on uptime percentages; incidents appear immediately thanks to eviction.
-- **Failure mode handled:** Redis down → fall back to DB with a short timeout, logged as WARN.
-- **What I'd do at scale:** precompute daily uptime rollups in a table (so even a miss is cheap), put the page behind a CDN with `Cache-Control: public, max-age=30`.
+### FlowGrid M3 — catalog cache with Redis-down degradation
+
+- [ ] **What is cached?** Product/SKU catalog reads (read-heavy, rarely changed) and a low-stock summary. **Not** the `available` quantity used to decide a reservation — that decision must read the locked DB row.
+- [ ] **Key design:** e.g. `catalog:v1:sku:{id}`; version prefix for DTO changes.
+- [ ] **TTL:** from a stated staleness requirement; add jitter.
+- [ ] **Invalidation:** delete keys after the transaction that changes a product commits.
+- [ ] **Redis down:** short Redis timeouts; catch and fall back to Postgres; log WARN; a test that proves it (stop the Redis container in an integration test).
+- [ ] **Evidence:** hit ratio and latency with/without cache from your k6 baseline — only numbers you measured, with the environment written down.
+
+### FlagForge M2–M4 — config snapshot cache, publish invalidation, stampede protection
+
+- [ ] Snapshot = the whole environment's flag config as one versioned document (`flags:{envId}:v{n}` or a pointer key to the latest version) — evaluation needs one read, not N.
+- [ ] Publish → write new version to Postgres → commit → update/invalidate Redis → Redis pub/sub notifies API nodes → SSE pushes to SDKs.
+- [ ] Stampede: after an invalidation, many evaluation requests miss at once → single-flight rebuild (§6).
+- [ ] SDK side: in-memory snapshot, polling or streaming refresh, **stale-if-error** (keep serving the last good snapshot when the server is unreachable), defaults when no snapshot exists yet.
+- [ ] Trade-off to state: propagation delay (seconds) vs load; which flags can tolerate it (almost all) and what you'd do if one couldn't.
 
 ---
 
