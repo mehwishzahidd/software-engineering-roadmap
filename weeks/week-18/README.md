@@ -43,6 +43,7 @@ If M4 is not merged: finish it first (ROADMAP §13 rule 3). Cut M5's benchmark s
 | CI/CD with image publishing | Job matrix, service containers vs Testcontainers in Actions, `docker/build-push-action`, GHCR login with `GITHUB_TOKEN`, tags (`sha`, `v1.0`), caching layers | [`13-cicd/github-actions.md`](../../13-cicd/github-actions.md), [`13-cicd/pipeline-examples.md`](../../13-cicd/pipeline-examples.md) |
 | Redis for reliable queues (revisit) | `BLMOVE`, `XPENDING`/`XCLAIM` if using Streams, `INFO` and `SLOWLOG` for measurements | [`04-sql-databases/redis.md`](../../04-sql-databases/redis.md) |
 | Benchmark methodology | What to record (env, load, warm-up, duration, percentiles), why one number is not a result | [`18-projects/templates/benchmark-report.md`](../../18-projects/templates/benchmark-report.md), [`18-projects/forgeci/docs-and-resume.md`](../../18-projects/forgeci/docs-and-resume.md) |
+| Python tooling for the project | `subprocess` + `git` to generate repos, `hmac`/`hashlib` for signed webhooks, `requests`/`httpx` with a thread pool for load, `argparse`, `dataclasses`, `statistics.quantiles`, `pytest` fixtures with `tmp_path`, `pyproject.toml` | [`19-python/04-testing-and-scripting.md`](../../19-python/04-testing-and-scripting.md), [`19-python/python-for-java-devs.md`](../../19-python/python-for-java-devs.md) |
 
 ## 4. Concepts to learn
 
