@@ -32,6 +32,49 @@ Templates: [`../templates/design-doc.md`](../templates/design-doc.md) ·
 
 Diagrams: commit sources (`.drawio`/`.excalidraw`/Mermaid) beside PNGs under `docs/diagrams/`.
 
+### 1.1 `tools/README.md` — content requirements (Python component)
+
+- **Purpose in one paragraph:** why an independent verifier exists (it does not trust the Java
+  code; different language, different author-state, SELECT-only role, exact decimals).
+- **Install:** Python 3.12, `python -m venv .venv`, `pip install -e ".[dev]"`; dependencies
+  pinned in `pyproject.toml` (`psycopg[binary]`, `httpx`, `pytest`, `mypy`, `ruff`).
+- **Commands and options:**
+  - `python -m ledgerx_verify --dsn postgresql://ledgerx_verify@host/ledgerx [--json]
+    [--since-entry-id N] [--fail-fast]` — exit `0` clean, `1` findings, `2` error.
+  - `python -m ledgerx_gen --base-url … --users N --accounts-per-user K --ops M
+    --concurrency C --duplicate-rate 0.1 --seed S --manifest keys.jsonl`.
+  - `python -m ledgerx_check snapshot --dsn … --out before.json` and
+    `python -m ledgerx_check compare before.json after.json --manifest keys.jsonl`.
+- **JSON report schema** with an example finding for each `kind`.
+- **Guarantees and non-guarantees:** the verifier reads one `REPEATABLE READ` snapshot; it
+  does not modify data; it will report *false* drift only if pointed at a replica with lag —
+  say so.
+- **Testing:** `pytest -m unit` (no DB), `pytest -m integration` (needs `DATABASE_URL` of a
+  migrated Postgres, e.g. the Compose one), `mypy --strict`, `ruff check`.
+- **Where it runs:** local drills, CI (`python-tools` job), the release pipeline post-deploy
+  step on the EC2 host against RDS.
+
+### 1.2 Documentation quality checklist (run before tagging `v1.0`)
+
+- [ ] A stranger can go from clone to a replayed idempotent transfer in ≤ 10 minutes using only `README.md`.
+- [ ] Every invariant in `README.md` is traceable to (a) a DB constraint or trigger in `DATABASE.md`, (b) a test name in `TESTING.md`, and (c) a check in both the Java job and the Python verifier.
+- [ ] Every ADR has context, options considered, decision, consequences — and a date.
+- [ ] Every number in `README.md` links to a run block in `PERFORMANCE.md`.
+- [ ] `openapi.json` matches the running app (CI diff step green).
+- [ ] Diagrams have sources committed and render on GitHub.
+- [ ] `FAILURE_ENGINEERING.md` has ≥ 10 completed drill records with real log excerpts.
+- [ ] `SECURITY.md` lists what the system deliberately does not do (no card data, simulated external side).
+- [ ] All relative links resolve (`markdown-link-check` or a quick script in CI).
+- [ ] No secrets, hostnames or account ids from AWS in any doc.
+
+### 1.3 Demo script (`scripts/demo.sh`)
+
+A bash script against the Compose stack that prints each step's command and response,
+pausing between steps: register two users → open wallets → deposit → show entries and the
+clearing balance → two concurrent transfers → replay → reversal → reconciliation clean →
+inject drift with `psql` → reconciliation finding → Python verifier finding → exit. The GIF in
+the README is a recording of this script; the script itself is the reproducible artifact.
+
 ---
 
 ## 2. Benchmarking protocol

@@ -1,7 +1,7 @@
 # 07 · PostgreSQL vs MySQL (InnoDB) — The Diff You Need
 
 > **Week 9, ≈2 hours** (with DB internals). MySQL is on the résumé, so you must defend it — but it's taught as a **diff against PostgreSQL**,
-> not a second course (see [ROADMAP §2.5](../ROADMAP.md#25-weighting-problems-fixed)). Versions: PostgreSQL 16, MySQL 8.x with InnoDB.
+> not a second course (see [ROADMAP §2.4](../ROADMAP.md#24-weighting-fixed)). Versions: PostgreSQL 16, MySQL 8.x with InnoDB.
 > Résumé-defense drill: [`../17-resume-tech-defense/mysql.md`](../17-resume-tech-defense/mysql.md).
 
 ## 1. Try it (15 minutes)
