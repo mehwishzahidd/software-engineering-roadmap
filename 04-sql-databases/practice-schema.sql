@@ -57,7 +57,7 @@ INSERT INTO employees (id, full_name, title, department, manager_id, salary, hir
  (6,  'Felix Wagner',    'Head of Sales',       'Sales',       1,    160000, '2020-01-06'),
  (7,  'Gita Rao',        'Account Executive',   'Sales',       6,     95000, '2022-07-01'),
  (8,  'Hugo Laurent',    'Account Executive',   'Sales',       6,     95000, '2023-01-09'),
- (9,  'Ines Costa',      'Engineer',            'Engineering', 5,    120000, '2023-05-22'),
+ (9,  'Ines Costa',      'Engineer',            'Engineering', 5,    155000, '2023-05-22'),
  (10, 'Jamal Wright',    'Engineering Intern',  'Engineering', 5,      NULL, '2026-05-04'),
  (11, 'Keiko Sato',      'Support Specialist',  'Support',     6,     70000, '2024-11-11');
 

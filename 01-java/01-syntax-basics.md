@@ -99,7 +99,7 @@ System.out.println(Math.addExact(Integer.MAX_VALUE, 1)); // throws ArithmeticExc
 
 - **Overflow is silent** for `int`/`long`. In DSA, `mid = lo + (hi - lo) / 2` instead of
   `(lo + hi) / 2`; sum into a `long` when values can exceed ~2·10⁹.
-- **Money is never `double`.** P1 Ledger uses `BigDecimal` (see [04-modern-java.md](./04-modern-java.md) and exercises).
+- **Money is never `double`.** LedgerX (Weeks 9–13) uses `BigDecimal` everywhere (see [04-modern-java.md](./04-modern-java.md#bigdecimal-essentials-money) and exercises).
 - **Short-circuit**: `&&` and `||` skip the right side; `&` and `|` on booleans evaluate both.
   `if (s != null && s.isEmpty())` is safe; with `&` it NPEs.
 - **Compound assignment casts silently**: `byte b = 10; b += 300;` compiles (implicit cast), `b = b + 300;` does not.
@@ -221,15 +221,16 @@ contiguous element storage. Index access is bounds-checked → `ArrayIndexOutOfB
 ## 7. Strings
 
 ```java
-String s = "Ledger";
+String s = "Pallet";      // 6 chars
 s.length();               // 6 (method; arrays use .length field)
-s.charAt(0);              // 'L'
-s.substring(1, 4);        // "edg"  [begin, end)
-s.indexOf("dg");          // 2, or -1 if absent
+s.charAt(0);              // 'P'
+s.substring(1, 4);        // "all"  [begin, end)
+s.indexOf("ll");          // 2, or -1 if absent
 s.toLowerCase();          // returns NEW string; s unchanged
-s.contains("edge");       // false (case-sensitive)
+s.contains("PALLET");     // false (case-sensitive)
 " a b ".strip();          // "a b"  (Unicode-aware; trim() is ASCII-only)
-"a,b,,c".split(",");      // ["a", "b", "", "c"]  — trailing empties dropped!
+"a,b,,c".split(",");      // ["a", "b", "", "c"]  — middle empty kept
+"a,b,,".split(",");       // ["a", "b"]           — trailing empties DROPPED!
 "a,b,,".split(",", -1);   // ["a", "b", "", ""]   — limit -1 keeps them (CSV parsing!)
 String.join("-", List.of("x", "y"));  // "x-y"
 "ab".repeat(3);           // "ababab"
@@ -289,7 +290,7 @@ String sql = """
 
 ## 8. Input for DSA / OA platforms
 
-LeetCode gives you a method. HackerRank/CodeSignal OAs often need stdin:
+Your coding-interview language is **Python** ([../19-python/README.md](../19-python/README.md)), but you'll still meet Java stdin handling in OA tasks that ship a Java codebase, and in your weekly Java DSA rep. HackerRank/CodeSignal-style Java templates often need stdin:
 
 ```java
 import java.io.*;

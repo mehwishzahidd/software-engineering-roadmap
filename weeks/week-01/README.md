@@ -1,362 +1,340 @@
-# Week 1 — Set up; write Java from a blank file; version everything with Git
+# Week 1 — Write Java from a blank file; version it
 
 [Roadmap](../../ROADMAP.md) · [Week 2 →](../week-02/)
 
-**Phase 1 — Programming foundation + Java + Git + JUnit** (Weeks 1–4, exit gate: [Checkpoint 4](../../checkpoints/checkpoint-04.md))
-**Estimated time: ≈ 21 hours**
+**Phase 0 · Foundation** (exercises only — nothing this week is portfolio material)
 
-| Category | Hours | What it covers this week |
+| Block | Hours | What it means this week |
 |---|---:|---|
-| Core learning | 5 | Terminal, JDK, Java syntax/types/control flow, `String`, arrays, Git model |
-| Hands-on coding | 4.5 | Small programs from a blank file, compiled and run from the terminal |
-| DSA | 5 | Big-O intro, 4 array problems, first Day-3 reviews |
-| Project (setup) | 3 | GitHub profile, repo layout, tracker copies, `dsa-java` repo |
-| Revision | 2 | Friday recap, Sunday weekly test |
-| Interview | 1.5 | Explain each solution out loud; 60-second "about me" draft |
-| **Total** | **21** | |
+| Project (foundation coding) | 15 | Java katas from a blank file, committed to a throwaway repo |
+| Learning | 15 | Terminal & Linux basics, JDK/IDE, Java syntax, control flow, methods, arrays, Strings, Git core |
+| DSA | 7 | Big-O + Arrays — **6 new problems** + Day-3 reviews |
+| Interview / review | 3 | Explain every DSA solution out loud; draft a 60-second "about me" |
 
 ---
 
 ## 1. Main objective
 
-Get a working, reproducible development environment and prove you can write, compile, run and
-commit a Java program **without a tutorial open**. Everything in the next 25 weeks — Maven,
-Spring Boot, Docker, CI — is driven from a terminal and versioned in Git, so these habits must
-be automatic from day one. This week also starts the DSA habit that runs for all 26 weeks: every
-problem gets a complexity analysis and an out-loud explanation.
+By Sunday you can open a terminal, create a Maven-free Java 21 file, compile and run it, write a
+method that manipulates an array or a `String` correctly, state its Big-O, and commit the result to
+GitHub with a sensible message. That is the floor everything else stands on: Week 2 adds classes,
+tests and Maven; Week 3 adds streams, SQL and the first HTTP endpoint; Week 4 starts
+[FlowGrid](../../18-projects/flowgrid/README.md).
+
+You have written Java professionally before. This week is not about "learning Java"; it is about
+removing the rust *fast*, on Java 21 specifically, and installing the habits (terminal, Git,
+Big-O, explaining out loud) that every later week assumes.
 
 ## 2. Prerequisites
 
-- A computer you can install software on (macOS, Linux, or Windows with WSL2 recommended).
-- A GitHub account (create one on Monday if you don't have it; use a professional username).
-- Nothing else. If you remember Java from previous work, treat this week as a **verification**
-  week: do every exercise anyway — speed is the signal, not skipping.
+- A laptop with ≥ 8 GB RAM, admin rights, and a GitHub account.
+- No prior checkpoint. If your Java is genuinely fresh, spend Monday and Tuesday on
+  [`01-java/01-syntax-basics.md`](../../01-java/01-syntax-basics.md) and skip nothing.
 
-## 3. Topics & subtopics
+## 3. Learning topics
 
-| Topic | Subtopics | Where to study |
+| Topic | Subtopics | Folder file |
 |---|---|---|
-| Terminal basics | `pwd`, `ls -la`, `cd`, `mkdir -p`, `touch`, `cp`, `mv`, `rm`, `cat`, `less`, `echo $PATH`, `which` | [10-linux/commands.md](../../10-linux/commands.md) |
-| JDK & IDE | Temurin/OpenJDK 21, `JAVA_HOME`, `javac`, `java`, single-file launch, IntelliJ IDEA Community setup | [01-java/README.md](../../01-java/README.md) |
-| Java syntax & types | primitives vs references, `int`/`long`/`double`/`char`/`boolean`, casting, overflow, `var`, operators, integer division | [01-java/01-syntax-basics.md](../../01-java/01-syntax-basics.md) |
-| Control flow & methods | `if`, `switch` expressions, `for`, enhanced `for`, `while`, `break`/`continue`, `static` methods, parameters, return values | [01-java/01-syntax-basics.md](../../01-java/01-syntax-basics.md) |
-| Arrays & strings | `int[]`, default values, `Arrays.toString/sort/fill`, 2-D arrays, `String` immutability, `equals` vs `==`, `StringBuilder` | [01-java/01-syntax-basics.md](../../01-java/01-syntax-basics.md) |
-| Git fundamentals | working tree / index / repository, `init`, `status`, `add`, `commit`, `log`, `diff`, `restore`, `.gitignore`, `remote`, `push` | [02-git/README.md](../../02-git/README.md) |
-| Big-O | time vs space, constant factors, O(1)/O(n)/O(n²)/O(log n), best/worst/average | [03-dsa/00-big-o.md](../../03-dsa/00-big-o.md) |
-| Arrays for DSA | traversal, in-place writes, index arithmetic | [03-dsa/01-arrays-strings.md](../../03-dsa/01-arrays-strings.md), [03-dsa/java-dsa-toolkit.md](../../03-dsa/java-dsa-toolkit.md) |
+| Terminal & Linux basics | shell, `pwd`/`ls`/`cd`, paths, `cat`/`less`/`grep`, pipes, `chmod`, `PATH`, env vars | [`10-linux/commands.md`](../../10-linux/commands.md), [`10-linux/README.md`](../../10-linux/README.md) |
+| JDK 21 + IDE | install JDK 21 (Temurin), `java -version`, `javac`, single-file `java Foo.java`, IntelliJ IDEA (Community is enough), `JAVA_HOME` | [`01-java/README.md`](../../01-java/README.md) |
+| Java syntax & control flow | primitives vs references, `var`, `if`/`switch` (arrow form), loops, `break`/`continue`, methods, overloading, `static` | [`01-java/01-syntax-basics.md`](../../01-java/01-syntax-basics.md) |
+| Arrays & Strings | 1-D/2-D arrays, `Arrays.*`, `String` immutability, `StringBuilder`, `charAt`, `equals` vs `==`, text blocks | [`01-java/01-syntax-basics.md`](../../01-java/01-syntax-basics.md) |
+| Git core | `init`/`clone`/`status`/`add`/`commit`/`log`/`diff`, `.gitignore`, remotes, `push`/`pull`, SSH keys | [`02-git/README.md`](../../02-git/README.md), [`02-git/exercises.md`](../../02-git/exercises.md) |
+| Big-O | time/space, dominant term, common classes, amortised cost (informal) | [`03-dsa/00-big-o.md`](../../03-dsa/00-big-o.md) |
 
 ## 4. Concepts to learn
 
-### 4.1 The terminal is your primary interface
-You will run `git`, `mvn`, `java`, `docker`, `psql` and `curl` from a shell for six months.
-Learn to navigate without a mouse.
-
-```bash
-pwd                         # where am I?
-mkdir -p ~/code/dsa-java/src && cd ~/code/dsa-java
-ls -la                      # -a shows dotfiles like .git and .gitignore
-echo $PATH                  # where the shell looks for programs
-which java && java -version # which JDK is actually on PATH?
-```
-**Interview angle:** "What is `PATH` and why does `java -version` show a different version than your IDE?" — the shell and the IDE can point at different JDKs.
-
-### 4.2 JDK vs JRE vs JVM, compile vs run
-`javac` compiles `.java` source to `.class` bytecode; `java` starts a JVM that loads and runs
-bytecode (JIT-compiling hot code to native). Since Java 11 you can run a single source file directly.
-
-```bash
-javac Hello.java && java Hello     # two steps: compile, then run class Hello
-java Hello.java                    # single-file source launch (no .class written)
-```
-**Interview angle:** "Why is Java called platform-independent?" — bytecode runs on any JVM; the JVM itself is platform-specific.
-
-### 4.3 Primitive types and their traps
-```java
-int big = Integer.MAX_VALUE;
-System.out.println(big + 1);          // -2147483648: silent overflow
-System.out.println(7 / 2);            // 3: integer division truncates
-System.out.println(7 / 2.0);          // 3.5
-long safe = (long) big + 1;           // widen BEFORE adding
-char c = 'a'; System.out.println((char)(c + 1)); // 'b'
-System.out.println(0.1 + 0.2);        // 0.30000000000000004 -> money needs BigDecimal (Week 3)
-```
-**Interview angle:** "How do you compute the midpoint of two ints safely?" — `lo + (hi - lo) / 2`, not `(lo + hi) / 2` (overflow).
-
-### 4.4 Control flow, including modern `switch`
-```java
-String label = switch (day) {          // switch expression (Java 14+), no fall-through
-    case 6, 7 -> "weekend";
-    case 1, 2, 3, 4, 5 -> "weekday";
-    default -> throw new IllegalArgumentException("bad day: " + day);
-};
-```
-**Interview angle:** "Difference between `switch` statement and expression?" — expression yields a value, arrows don't fall through, and it must be exhaustive.
-
-### 4.5 Methods and `static`
-A `static` method belongs to the class, not an instance. This week all your code is
-`static` helpers called from `main`; objects come in Week 2.
+### 4.1 Primitives, references and `==`
 
 ```java
-static int maxOf(int[] a) {
-    if (a.length == 0) throw new IllegalArgumentException("empty");
-    int best = a[0];
-    for (int x : a) best = Math.max(best, x);
-    return best;
-}
+int a = 1_000, b = 1_000;
+Integer x = 1_000, y = 1_000;
+System.out.println(a == b);        // true  — primitives compare values
+System.out.println(x == y);        // false — boxed references outside the -128..127 cache
+System.out.println(x.equals(y));   // true
+String s1 = "grid", s2 = new String("grid");
+System.out.println(s1 == s2);      // false — different objects
+System.out.println(s1.equals(s2)); // true
 ```
-**Interview angle:** "Why is `main` static?" — the JVM calls it before any object exists.
 
-### 4.6 Arrays
-Fixed length, zero-indexed, default-initialised (`0`, `false`, `null`). Length is a field (`a.length`), not a method.
+- **Interview angle:** "Why does `==` on two `Integer`s sometimes return true?" (the small-value cache).
+- **FlowGrid uses this:** every `equals(...)` on IDs and SKU codes; comparing `Long` entity IDs with `==` is a classic bug you will plant on purpose in Week 4's "Break it".
+
+### 4.2 Strings are immutable; build with `StringBuilder`
 
 ```java
-int[] counts = new int[26];                 // all zeros
-for (char ch : "banana".toCharArray()) counts[ch - 'a']++;
-System.out.println(Arrays.toString(counts)); // printing `counts` directly shows [I@1b6d3586
-int[][] grid = new int[3][4];               // 3 rows, 4 cols
-```
-**Interview angle:** "What happens on `a[a.length]`?" — `ArrayIndexOutOfBoundsException` at runtime; Java checks bounds.
-
-### 4.7 `String` is immutable; `StringBuilder` is not
-```java
-String a = "hi", b = new String("hi");
-System.out.println(a == b);        // false: different objects
-System.out.println(a.equals(b));   // true: same characters
+String csv = "";
+for (int i = 0; i < n; i++) csv += i + ",";     // O(n²): each += copies the whole string
 
 StringBuilder sb = new StringBuilder();
-for (int i = 0; i < 5; i++) sb.append(i).append(',');
-sb.setLength(sb.length() - 1);     // drop trailing comma
-System.out.println(sb.reverse());  // 4,3,2,1,0
+for (int i = 0; i < n; i++) sb.append(i).append(',');
+String out = sb.toString();                      // O(n)
 ```
-Concatenating with `+` in a loop creates a new `String` each iteration → O(n²) characters copied.
-**Interview angle:** "Why use `StringBuilder` in a loop?" — avoids re-copying the whole string every append.
 
-### 4.8 Git's three areas
-Working tree → (`git add`) → index/staging → (`git commit`) → repository. A commit is a snapshot plus
-metadata and a pointer to its parent.
+- **Interview angle:** "What is the complexity of concatenating in a loop, and how do you fix it?"
+- **FlowGrid uses this:** building pick-list export lines and CSV report exports (M5, S3 uploads).
+
+### 4.3 Modern `switch` and `var`
+
+```java
+static String zone(char aisle) {
+    return switch (aisle) {
+        case 'A', 'B' -> "north";
+        case 'C'      -> "south";
+        default       -> throw new IllegalArgumentException("unknown aisle " + aisle);
+    };
+}
+var counts = new int[26];   // var infers int[]; the variable is still statically typed
+```
+
+- **Interview angle:** "What changed in `switch` in recent Java versions?" (arrow form, expression, no fall-through, exhaustiveness with sealed types later).
+- **FlowGrid uses this:** mapping inventory states (`on_hand`, `available`, `reserved`…) to behaviour in the reservation state machine (M2).
+
+### 4.4 Arrays: fixed size, O(1) index, O(n) shift
+
+```java
+int[] qty = new int[5];             // zero-initialised
+qty[2] = 7;
+int[][] grid = new int[3][4];       // 3 rows, 4 columns
+int[] copy = Arrays.copyOf(qty, qty.length);
+Arrays.sort(qty);                   // O(n log n), dual-pivot quicksort for primitives
+```
+
+- **Interview angle:** "Insert at the front of an array — cost?" (O(n): everything shifts). "Why is `ArrayList.add` amortised O(1)?" (growth by ~1.5×).
+- **FlowGrid uses this:** almost never directly, and that is the point — you will pick `List`/`Map` on purpose in Week 2 knowing what they cost.
+
+### 4.5 Big-O in one table
+
+| Code shape | Time | Example |
+|---|---|---|
+| Index into array / hash lookup | O(1) | `qty[i]`, `map.get(k)` |
+| Single loop over n | O(n) | max of an array |
+| Sort | O(n log n) | `Arrays.sort` |
+| Nested loop over n | O(n²) | naive pair search |
+| Halving each step | O(log n) | binary search (Week 6) |
+
+Rule: drop constants and lower-order terms; state *what n is* ("n = number of SKUs").
+
+- **Interview angle:** interviewers ask complexity of *your* code, not definitions. Say it before they ask.
+- **FlowGrid uses this:** the allocation scorer in M3 is O(warehouses × order lines); you will say that out loud in the Week 8 deep-dive.
+
+### 4.6 Git: the three areas
 
 ```bash
-git init
-git status                 # read this before every command
-git add Hello.java
-git commit -m "feat: add hello world"
+git init && git add . && git commit -m "feat: initial katas"
+git status          # working tree vs index vs HEAD
+git diff            # unstaged changes
+git diff --staged   # what the next commit contains
 git log --oneline --graph
-git diff                   # working tree vs index
-git diff --staged          # index vs last commit
-git restore --staged X     # unstage; git restore X discards working-tree changes (careful)
-git remote add origin git@github.com:<you>/dsa-java.git
+git remote add origin git@github.com:<you>/java-foundation-katas.git
 git push -u origin main
 ```
-**Interview angle:** "What's the difference between `git add` and `git commit`?" — `add` stages a change in the index; `commit` records the staged snapshot in history.
 
-### 4.9 `.gitignore`
-```gitignore
-*.class
-out/
-target/
-.idea/
-*.iml
-.DS_Store
-```
-**Interview angle:** "You committed a secret — does adding it to `.gitignore` fix it?" — No; it's still in history. Rotate the secret; rewriting history is secondary.
-
-### 4.10 Big-O
-Count how work grows with input size `n`, drop constants and lower-order terms. One loop over the
-array → O(n). Nested loop over the same array → O(n²). Halving each step → O(log n). Extra array of size n → O(n) space.
-**Interview angle:** "What's the time and space complexity?" — you will be asked this after **every** problem. Answer it for every problem this week, out loud.
+- **Interview angle:** "Explain the difference between `git add`, `git commit` and `git push`." "What does a commit actually point to?" (a tree + parent(s) + metadata; a SHA-1 of that content).
+- **FlowGrid uses this:** every milestone is a branch → PR → squash/merge → tag. Habits start now.
 
 ## 5. Resources
 
-| Category | Source |
-|---|---|
-| Official docs | dev.java → "Learn" track: *Getting Started*, *Language Basics* · docs.oracle.com/javase/21 (API: `String`, `StringBuilder`, `Arrays`, `Math`) · docs.github.com → "Get started" · git-scm.com/book (Pro Git) ch. 1–2 |
-| Books | *Head First Java* (3rd ed.) ch. 1–5 if you want a gentle refresher · *Pro Git* ch. 2 "Git Basics" |
-| NeetCode | neetcode.io → Courses → *Data Structures & Algorithms for Beginners*: "Static Arrays", "Dynamic Arrays"; Big-O lesson |
-| Practice | leetcode.com (problems below) · the Learn-to-program exercises in [01-java/exercises.md](../../01-java/exercises.md) · [02-git/exercises.md](../../02-git/exercises.md) |
+- Java: [Oracle Java Tutorials — Language Basics](https://docs.oracle.com/javase/tutorial/java/nutsandbolts/index.html); *Effective Java* (3rd ed.) Item 63 (string concatenation), Item 17 (immutability — read for Strings, apply in Week 2).
+- JDK: [Adoptium Temurin 21](https://adoptium.net/); [JEP 330 — launch single-file source programs](https://openjdk.org/jeps/330).
+- Git: [Pro Git, chapters 1–2](https://git-scm.com/book/en/v2); [GitHub docs — connecting with SSH](https://docs.github.com/en/authentication/connecting-to-github-with-ssh).
+- Terminal: [`10-linux/commands.md`](../../10-linux/commands.md); `man` pages for `ls`, `grep`, `find`.
+- DSA: [NeetCode roadmap — Arrays & Hashing](https://neetcode.io/roadmap); [`03-dsa/00-big-o.md`](../../03-dsa/00-big-o.md); [`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md).
 
-## 6. Exercises & coding assignments
+## 6. Exercises + coding assignments
 
-### Exercises (small; each in its own file; compile and run from the terminal)
-1. `Temps.java`: convert a hard-coded array of Celsius values to Fahrenheit; print with `"%.1f".formatted(...)`.
-2. `Vowels.java`: count vowels in a `String` using `switch` on `char`.
-3. `ArrayStats.java`: min, max, sum (as `long`), and average (as `double`) of an `int[]` in **one pass**.
-4. `ReverseWords.java`: `"the sky is blue"` → `"blue is sky the"` using `split(" ")` and `StringBuilder`.
-5. `Fizz.java`: FizzBuzz 1–100 using a `switch` expression on `i % 15`... then rewrite with `if`. Which is clearer?
-6. `Grid.java`: fill a 5×5 `int[][]` with multiplication values and print it aligned.
-7. Terminal drill: create `~/code/sandbox/a/b/c`, create 3 files, move one, copy one, delete the tree — without the GUI.
+All in one throwaway repo `java-foundation-katas`, one folder per kata, single-file programs
+run with `java Kata.java` (no Maven yet). Each kata has a `main` that demonstrates it plus
+`assert`-style checks (run with `java -ea Kata.java`). Also do the drills in
+[`01-java/exercises.md`](../../01-java/exercises.md) and [`10-linux/exercises.md`](../../10-linux/exercises.md).
 
-### Coding assignments (from a blank file, no IDE autocomplete for the first one)
-**A1 — `WordFreq.java` (in the `dsa-java` repo under `warmups/`)**
-Read words from `args`, print each distinct lowercase word and its count, sorted alphabetically.
-Acceptance criteria:
-- [ ] `java WordFreq.java The cat the Dog` prints `cat 1`, `dog 1`, `the 2` (one per line).
-- [ ] Uses only arrays, `String`, `StringBuilder`, `Arrays.sort` (no `HashMap` yet — you'll redo it with one in Week 2).
-- [ ] Handles zero arguments by printing `usage: java WordFreq.java <words...>` and exiting with `System.exit(1)`.
-- [ ] Committed with a Conventional Commit message.
+| # | Kata | Acceptance criteria |
+|---|---|---|
+| 1 | **FizzBuzz with a twist**: `fizzbuzz(int n)` returns a `String[]`; divisible-by-3 → `Fizz`, 5 → `Buzz`, both → `FizzBuzz` | Works for n = 0, 1, 15, 100; uses arrow `switch` or a clean `if` chain; O(n) |
+| 2 | **Reverse & palindrome**: `reverse(String)`, `isPalindrome(String)` ignoring case and non-letters | `"A man, a plan, a canal: Panama"` → true; empty string → true; no `StringBuilder.reverse()` in `isPalindrome` (two indices) |
+| 3 | **Array stats**: `min`, `max`, `sum`, `mean` for `int[]`; `secondLargest` | Handles length 1 and duplicates; `secondLargest` in one pass; throws `IllegalArgumentException` on empty input |
+| 4 | **Inventory count table** (domain warm-up): given `String[] skus` with repeats, print a `sku → count` table using **arrays only** (sort first, then count runs) | Output sorted by SKU; O(n log n); no `HashMap` yet (that is Week 2) |
+| 5 | **Matrix ops**: transpose a `int[][]`, rotate 90°, sum of each row | Non-square matrices handled for transpose; rotate returns a new array |
+| 6 | **Word frequency from a file**: read `words.txt` via `Files.readAllLines`, lowercase, split on non-letters, print top 5 by count with arrays + sort | Correct on a file with punctuation; explain complexity in a comment |
+| 7 | **Command-line temperature converter**: `java Temp.java 37 C` prints Fahrenheit; validates args | Bad input prints a usage line and exits with code 2 (`System.exit(2)`) |
 
-**A2 — `Matrix.java`**
-Static methods `transpose(int[][])`, `rotate90(int[][])` (square only), `print(int[][])`.
-Acceptance criteria:
-- [ ] Rotating a 3×3 four times returns the original (checked in `main` with `Arrays.deepEquals`).
-- [ ] Non-square input to `rotate90` throws `IllegalArgumentException` with a helpful message.
-- [ ] Comment at top states time and space complexity of each method.
+### Break it
 
-### Break it (predict first, then run, then write one line on what happened)
-1. Delete a semicolon. Read the **first** compiler error only — where does `javac` point?
-2. `System.out.println(Integer.MAX_VALUE + 1);` and `Math.abs(Integer.MIN_VALUE)`.
-3. Compare two strings built at runtime with `==` (e.g. `new StringBuilder("ab").toString() == "ab"`).
-4. Access `args[0]` when running with no arguments. Read the full stack trace: exception type, message, line.
-5. Build a 100,000-character string with `+=` in a loop vs `StringBuilder`; time both with `System.nanoTime()`.
-6. Add `*.java` to `.gitignore` after files are already committed. Does `git status` stop tracking them? (No — `.gitignore` only affects untracked files; look up `git rm --cached`.)
+- In Kata 2, change `s1.equals(s2)` to `s1 == s2` for two strings built at runtime. Predict, run, observe. Explain the string pool in three sentences.
+- In Kata 3, call `secondLargest(new int[]{5, 5, 5})`. What *should* it return? Decide, document, test.
+- In Kata 6, remove the `toLowerCase()`. Watch `The` and `the` split. That is your first "normalise input at the boundary" lesson — FlowGrid SKU codes will be upper-cased at the boundary for the same reason.
 
 ### Debug it
-This method should return the index of the largest element. It has two bugs. Find them by reasoning, then confirm by adding `System.out.println` traces.
-```java
-static int argMax(int[] a) {
-    int best = 0;
-    for (int i = 1; i <= a.length; i++) {
-        if (a[i] > best) best = i;
-    }
-    return best;
-}
-```
-<details><summary>Answer</summary>
 
-`i <= a.length` goes out of bounds (should be `<`), and it compares `a[i]` with the **index** `best` instead of `a[best]`.
-</details>
+- Introduce an off-by-one in Kata 5's rotate (`n - i` instead of `n - 1 - i`). Run with `-ea`, read the `AssertionError` stack trace, find the line, fix it. Write down the trace-reading steps in your notes; you will reuse them for Spring stack traces in Week 4.
+- Run `java -ea Kata.java` with a deliberately missing file in Kata 6. Read the `NoSuchFileException`. Add a clear error message and a non-zero exit code.
 
-## 7. DSA
+## 7. DSA — Big-O + Arrays (6 new)
 
-**Topics:** Big-O notation; array traversal; string building.
-**Guides:** [03-dsa/00-big-o.md](../../03-dsa/00-big-o.md) · [03-dsa/01-arrays-strings.md](../../03-dsa/01-arrays-strings.md) · [03-dsa/java-dsa-toolkit.md](../../03-dsa/java-dsa-toolkit.md)
+Pattern guides: [`03-dsa/00-big-o.md`](../../03-dsa/00-big-o.md), [`03-dsa/01-arrays-strings.md`](../../03-dsa/01-arrays-strings.md), toolkit: [`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md).
 
-**Method for every problem (start the habit now):** read → restate → 2 examples by hand incl. an edge case →
-brute force + its Big-O → code → test by hand → state final time/space → log in the tracker.
+Rules this week: solve in Java in a plain editor first, then submit on LeetCode. Time limit
+25 min per Easy. If stuck at 25 min, read the pattern guide (not the solution), try 10 more
+minutes, then read the solution and mark `Solved With Solution`. After every solve, say out
+loud: pattern, complexity, one edge case.
 
-| # | Problem | Level | Time limit | Focus |
-|---|---|---|---:|---|
-| 1929 | [Concatenation of Array](https://leetcode.com/problems/concatenation-of-array/) | Beginner | 15 min | array allocation, index arithmetic `ans[i + n]` |
-| 1672 | [Richest Customer Wealth](https://leetcode.com/problems/richest-customer-wealth/) | Beginner | 15 min | 2-D array traversal |
-| 27 | [Remove Element](https://leetcode.com/problems/remove-element/) | Beginner | 20 min | in-place write pointer (preview of two pointers) |
-| 14 | [Longest Common Prefix](https://leetcode.com/problems/longest-common-prefix/) | Beginner → interview | 25 min | `charAt`, `substring`, early exit, O(n·m) |
+| Day | Problem | Difficulty | Limit | Focus |
+|---|---|---|---|---|
+| Mon | [344. Reverse String](https://leetcode.com/problems/reverse-string/) | Easy | 15 min | in-place two-index swap |
+| Mon | [27. Remove Element](https://leetcode.com/problems/remove-element/) | Easy | 20 min | write-pointer overwrite |
+| Tue | [26. Remove Duplicates from Sorted Array](https://leetcode.com/problems/remove-duplicates-from-sorted-array/) | Easy | 25 min | same write-pointer idea |
+| Wed | [283. Move Zeroes](https://leetcode.com/problems/move-zeroes/) | Easy | 25 min | stable in-place |
+| Thu | [485. Max Consecutive Ones](https://leetcode.com/problems/max-consecutive-ones/) | Easy | 20 min | running counter |
+| Thu | [121. Best Time to Buy and Sell Stock](https://leetcode.com/problems/best-time-to-buy-and-sell-stock/) | Easy | 25 min | running minimum; contrast with O(n²) brute force |
 
-**Stretch (only if all four are done):** 1768 Merge Strings Alternately (`StringBuilder`).
+Big-O drills (Mon/Wed, 20 min each): for each kata in §6, write the complexity and justify it. For
+problem 121 write *both* the O(n²) and the O(n) solution and time them on n = 100 000 with
+`System.nanoTime()`.
 
-**Spaced-repetition reviews due this week:** Day 3 reviews of Monday/Tuesday problems (1929, 1672, 27) on Thursday–Sunday. Re-solve from a blank editor; do not look at your old code first.
+**Spaced reviews due this week:** Day-3 reviews of Mon's problems on Thu (344, 27), of Tue's on
+Fri (26), of Wed's on Sat (283). Log everything in [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md)
+with status and next review date.
 
-**When stuck:** at the time limit, read only the problem's hints / the guide's pattern section, try 10 more minutes, then study a solution, close it, and re-type from memory. Log status honestly (`Solved With Hint`, `Solved With Solution`).
+## 8. Project work — foundation exercises
 
-## 8. Project work — setup (no project build this week)
+There is no product this week. "Project" hours = the katas above, done from a blank file, the same
+day you read the concept. Keep the repo tidy anyway:
 
-Per the roadmap, Week 1's "project" is your professional workspace. P1 Ledger starts in Week 3
-([18-projects/p1-ledger/README.md](../../18-projects/p1-ledger/README.md)).
-
-- [ ] GitHub profile: real name (or professional handle), photo optional, short bio stating what you're building now (no invented claims).
-- [ ] Enable 2FA on GitHub; add an SSH key (`ssh-keygen -t ed25519 -C "<your email>"`) and test `ssh -T git@github.com`.
-- [ ] Global Git config: `git config --global user.name`, `user.email`, `init.defaultBranch main`, `pull.rebase false` (you'll revisit in Week 5).
-- [ ] Create repo **`dsa-java`**: `README.md`, `.gitignore`, folders `warmups/`, `arrays/`. One file per problem, named like `P0027RemoveElement.java`, with a header comment: link, pattern, complexity, date.
-- [ ] Put your own copy of the trackers somewhere you commit weekly (fork/clone this roadmap repository and edit [trackers/](../../trackers/dsa-tracker.md) there, or keep a `learning-log` repo).
-- [ ] Skim [PROJECTS.md](../../PROJECTS.md) and [18-projects/README.md](../../18-projects/README.md) so you know where Weeks 3–22 are heading.
+- [ ] `java-foundation-katas` repo created on GitHub, cloned via SSH, `.gitignore` for `*.class`, `.idea/`, `out/`.
+- [ ] One folder per kata; `README.md` at root lists katas with a one-line "what I learned".
+- [ ] Every kata runs with `java -ea <File>.java` and its checks pass.
+- [ ] At least one "Break it" and one "Debug it" note per kata in the README.
 
 ## 9. Git activity
 
-| Practice | Commands |
-|---|---|
-| First repo end-to-end | `git init` → `git add` → `git commit` → `git remote add origin` → `git push -u origin main` |
-| Inspect before acting | `git status`, `git diff`, `git diff --staged`, `git log --oneline -n 10` |
-| Undo safely (uncommitted) | `git restore <file>`, `git restore --staged <file>` |
-| Amend the last local commit | `git commit --amend` (only before pushing) |
-| Ignore build output | `.gitignore` with `*.class`, `out/`, `.idea/` |
+Daily: at least one meaningful commit per kata, [Conventional Commits](https://www.conventionalcommits.org/) from day one:
 
-**Commit convention — Conventional Commits** (use from the first commit):
-`<type>(optional scope): <imperative summary>` with types `feat`, `fix`, `test`, `refactor`, `docs`, `chore`.
-Examples: `feat(arrays): solve 27 remove element`, `docs: add repo conventions to README`, `chore: ignore IntelliJ files`.
+```bash
+git commit -m "feat(kata-02): reverse and palindrome with two indices"
+git commit -m "fix(kata-05): off-by-one in rotate90"
+git commit -m "docs: add break-it notes for kata 3"
+```
 
-**Branches/PRs:** not yet — commit directly to `main` this week. Target: **≥ 10 small commits** on at least 5 different days.
+Friday: `git log --oneline` should read like a story. Saturday: create a branch `refactor/kata-04`,
+change something, merge it back with `git merge` (fast-forward), observe the log. Delete the branch.
+Read [`02-git/workflows.md`](../../02-git/workflows.md) sections on branching only as far as
+fast-forward; branches and merge conflicts are Week 2.
 
 ## 10. Interview preparation
 
-- After each DSA problem, explain it out loud in ≤ 2 minutes: approach, why it works, time, space, one edge case.
-- Draft your **60-second "about me"** (see [16-interview-prep/recruiter-screen.md](../../16-interview-prep/recruiter-screen.md)). Structure: past roles (truthfully, as they were) → time away (one neutral sentence) → what you're doing now (this roadmap, concrete) → what you want. Write it, then say it out loud 3 times. You'll revise it every few weeks.
-- Answer out loud: "What is the difference between JDK, JRE and JVM?", "Why is `String` immutable in Java?", "What does `git commit` actually store?" (cross-check with [17-resume-tech-defense/java.md](../../17-resume-tech-defense/java.md) and [17-resume-tech-defense/git.md](../../17-resume-tech-defense/git.md) — read only their "basics" parts this week).
+Weeks 1–4 ramp: explain every DSA solution out loud after solving it (30 seconds: problem restated,
+approach, complexity, edge case). Record two of them on your phone and listen back — you are
+checking for filler words and for whether you *said the complexity unprompted*.
+
+Draft a **60-second "about me"** (Saturday, 45 min). Structure: past roles in one sentence each →
+the gap stated plainly and briefly → what you are doing now ("building four production-style
+systems in Java/Spring; currently a multi-warehouse fulfillment platform") → what you want. No
+fabrication; the gap is a fact, not a confession. Save it to your notes — you will iterate it in
+Week 8 with [`16-interview-prep/behavioral.md`](../../16-interview-prep/behavioral.md).
+
+Questions to answer out loud this week:
+
+1. What is the difference between `==` and `equals` for `String`s?
+2. Why is `String` immutable in Java and what does that buy us?
+3. What is the time complexity of inserting at index 0 of an array of n elements? Why?
+4. What are the three areas of a Git repository and which commands move changes between them?
+5. What does `git push -u origin main` do exactly?
 
 ## 11. Revision work
 
-First week — revision is **consolidation**:
-- Friday: rewrite your notes on types, `String` vs `StringBuilder`, Git's three areas in your own words (≤ 1 page).
-- Sunday: Day-3 reviews + weekly test. Mark anything you hesitated on as a revision item for Week 2 Monday.
+- Sunday: re-read your own notes for §4.1–4.6, close the file, rewrite the six concepts in
+  five lines each from memory. Compare.
+- Redo Kata 2 from a blank file in under 15 minutes.
+- Update [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md): Java syntax, Git core, Linux basics → current level (honest).
 
 ## 12. Daily plan
 
-| Day | Hrs | Blocks |
-|---|---:|---|
-| **Mon** | 3 | **Core (1.5):** install JDK 21 (Temurin), IntelliJ, Git; terminal navigation drill; `java -version`, `javac`. **Coding (1):** exercises 1–2, run from terminal. **DSA (0.5):** read Big-O guide, analyse your two exercises. |
-| **Tue** | 3 | **DSA (1.5):** 1929, 1672 with the full method; log both. **Core/coding (1.5):** primitives, overflow, casting, `switch` expressions; exercises 3 and 5; Break-it 2. |
-| **Wed** | 3 | **Setup/project (2):** GitHub profile, SSH key, global config, create and push `dsa-java` with README + `.gitignore`; commit Monday/Tuesday work. **DSA review (1):** re-read your solutions, write complexity comments; Big-O guide exercises. |
-| **Thu** | 3 | **Core (1):** arrays, 2-D arrays, `String`/`StringBuilder`. **Coding (1):** exercises 4, 6; Break-it 3–5; Debug-it. **DSA (1):** 27 Remove Element. |
-| **Fri** | 2 | **Light:** revision notes (types, strings, Git areas); update [dsa-tracker](../../trackers/dsa-tracker.md) and [weekly-progress](../../trackers/weekly-progress.md); explain 27 out loud. Day-3 review of 1929/1672. |
-| **Sat** | 5 | **Project/assignments (3):** A1 WordFreq, A2 Matrix, Break-it 6, clean commits. **DSA (1):** 14 Longest Common Prefix. **Interview (1):** "about me" draft + three out-loud questions. |
-| **Sun** | 2 | **Review:** Day-3 review of 27; end-of-week test (below); plan Week 2; rest. |
+Foundation weeks shift ~10 h from project to learning; the daily shape below keeps DSA daily.
 
-## 13. End-of-week test (75 min, closed notes, timer on)
+| Day | Blocks |
+|---|---|
+| **Mon** (8 h) | Learning 3.5: terminal basics, install JDK 21 + IntelliJ, `java Hello.java`, Git init/commit/push, SSH key · Project 2.5: Kata 1 + 2 · DSA 2: Big-O reading, 344, 27 |
+| **Tue** (8 h) | Learning 2.5: syntax, control flow, methods · Project 3.5: Kata 3 + 4 · DSA 1.5: 26 · Interview 0.5: explain 344/27 out loud |
+| **Wed** (8 h) | Learning 3: arrays, Strings, `StringBuilder`, text blocks · Project 3: Kata 5 · DSA 2: 283 + Big-O drill (time 121 both ways after Thu if needed) |
+| **Thu** (8 h) | Learning 2.5: `.gitignore`, `git diff`, `git log`, reading stack traces · Project 3: Kata 6 + Debug-it tasks · DSA 2: 485, 121 · Docs 0.5: kata README notes |
+| **Fri** (5 h) | Project 2: Kata 7 + Break-it tasks · DSA 1.5: Day-3 reviews (344, 27, 26) · Retro 1: what slowed you down; write 5 lines in [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md) · Learning 0.5: Linux exercises |
+| **Sat** (6 h) | Project 3: branch/merge exercise, polish katas, README · Learning 1: re-read Big-O guide, explain complexity of every kata · Interview 2: 60-second "about me" draft + record 2 DSA explanations |
+| **Sun** (2–3 h) | End-of-week test (§13) · Day-3 review of 283 · trackers · plan Week 2 · rest |
 
-**Part A — DSA (35 min):**
-1. Unseen: [1480 Running Sum of 1d Array](https://leetcode.com/problems/running-sum-of-1d-array/) — 10 min.
-2. Re-solve from blank: 14 Longest Common Prefix — 20 min. State complexity for both.
+## 13. End-of-week test (75 min, timed)
 
-**Part B — Concepts (15 min, write answers, then check):**
-1. What does `7 / 2 * 2.0` evaluate to?
-2. Why does `"ab" == new String("ab")` print `false`?
-3. What is the default value of each element in `new boolean[3]` and `new String[3]`?
-4. Complexity of building an n-character string with `+=` in a loop?
-5. Which command shows changes that are staged but not yet committed?
-6. You ran `git add secret.txt` but haven't committed. How do you unstage it?
-7. Is `for (int i = 0; i < n; i++) for (int j = i; j < n; j++)` O(n²)? Why?
-8. What does `java Hello.java` do differently from `javac Hello.java && java Hello`?
+**Part A — DSA (30 min).** Solve from a blank file, no notes:
+[1. Two Sum](https://leetcode.com/problems/two-sum/) with the **brute-force O(n²)** approach (the
+hash approach is Week 2), then [485. Max Consecutive Ones](https://leetcode.com/problems/max-consecutive-ones/)
+again. State complexities.
 
-<details><summary>Answers</summary>
+**Part B — Concepts (20 min).** Write answers, then check.
 
-1. `6.0` — `7 / 2` is integer division = 3, then `3 * 2.0 = 6.0`.
-2. `==` compares references; `new String` always creates a new object distinct from the pooled literal.
-3. `false, false, false` and `null, null, null`.
-4. O(n²) total character copies; `StringBuilder` makes it O(n) amortised.
-5. `git diff --staged` (alias `--cached`).
-6. `git restore --staged secret.txt`.
-7. Yes: n + (n-1) + … + 1 = n(n+1)/2 → O(n²).
-8. It compiles in memory and runs a single source file without writing `.class` files.
+<details>
+<summary>1. What does this print and why? <code>Integer a = 127, b = 127; Integer c = 128, d = 128; System.out.println((a == b) + " " + (c == d));</code></summary>
+
+`true false`. Autoboxing uses `Integer.valueOf`, which caches −128..127, so `a` and `b` are the
+same object; 128 is outside the cache so `c` and `d` are distinct objects and `==` compares references.
 </details>
 
-**Part C — Small coding task (15 min):** `isPalindrome(String s)` ignoring case, without creating a reversed copy. State complexity.
+<details>
+<summary>2. Complexity of building a string of n pieces with <code>+=</code> in a loop versus <code>StringBuilder</code>?</summary>
 
-**Part D — Explain out loud (10 min, record on phone):** "Walk me through what happens from typing `java Hello.java` to seeing output, and how that file gets to GitHub." Listen back: where did you hesitate?
+`+=` is O(n²) total because each concatenation copies the growing string (1 + 2 + … + n characters).
+`StringBuilder.append` is amortised O(1) per append (backing array grows geometrically), O(n) total.
+</details>
+
+<details>
+<summary>3. A commit's SHA changes if you amend its message but not its content. Why?</summary>
+
+The commit object hashes its full content: tree, parent(s), author/committer lines *and* message.
+Changing any of them produces a different object and therefore a different SHA.
+</details>
+
+<details>
+<summary>4. Give an O(n) algorithm for "max profit from one buy and one sell" and explain why it is correct.</summary>
+
+Track the minimum price seen so far and the best `price − min` at each step. Any optimal sale on
+day j buys at the minimum price before j, so the running minimum suffices; one pass, O(1) space.
+</details>
+
+<details>
+<summary>5. <code>int[] a = {1,2,3}; int[] b = a; b[0] = 9;</code> — what is <code>a[0]</code>?</summary>
+
+9. Arrays are objects; `b = a` copies the reference, not the contents. Use `a.clone()` or
+`Arrays.copyOf` for a copy.
+</details>
+
+**Part C — Practical (20 min).** From a blank file: read a text file of `sku,qty` lines, print
+total quantity per SKU using only arrays and sorting, commit it with a Conventional Commit message
+and push. Pass = compiles first or second try, correct output, pushed.
+
+**Part D — Explain out loud (5 min).** "Walk me through what happens when I run `java Foo.java`."
+(source launcher compiles in memory → bytecode → JVM loads class → `main`.)
 
 ## 14. Mastery checklist
 
-- [ ] `java -version` and `javac -version` both report 21 in a fresh terminal.
-- [ ] I can write, compile and run a program with `main`, a static helper, a loop and an array **from a blank file** without looking anything up.
-- [ ] I can explain `==` vs `equals` for `String`, and why `StringBuilder` exists, in under 60 seconds each.
-- [ ] I can predict integer overflow and integer division results in the Break-it tasks.
-- [ ] `dsa-java` exists on GitHub with ≥ 10 Conventional Commits, a README and a working `.gitignore` (no `.class` or `.idea/` files committed).
-- [ ] 4 problems logged in the DSA tracker with status, time taken, pattern and next review date.
-- [ ] I can state time and space complexity for every problem I solved this week.
-- [ ] My "about me" draft exists in writing and I've said it out loud at least 3 times.
+- [ ] I can write, run and debug a single-file Java 21 program from the terminal without an IDE.
+- [ ] I can explain `==` vs `equals`, `String` immutability, and `StringBuilder`.
+- [ ] I can state the Big-O of any kata I wrote this week and justify it.
+- [ ] I can solve the 6 array problems again, independently, in the time limits.
+- [ ] I use `git status`/`diff`/`log` fluently and write Conventional Commit messages.
+- [ ] My SSH key works; `git push` needs no password.
+- [ ] I have a 60-second "about me" that I have said out loud twice.
 
 ## 15. Expected deliverables
 
-- `dsa-java` repo: `warmups/` (exercises + A1 + A2), `arrays/` (4 problems), README with conventions.
-- ≥ 10 commits across ≥ 5 days.
-- [trackers/dsa-tracker.md](../../trackers/dsa-tracker.md): 4 rows (1929, 1672, 27, 14) with Day-3 review dates.
-- [trackers/technology-tracker.md](../../trackers/technology-tracker.md): Java basics, Git basics, terminal rated honestly (1–5).
-- [trackers/weekly-progress.md](../../trackers/weekly-progress.md): Week 1 entry — hours, test score, what to carry forward.
-- [trackers/interview-tracker.md](../../trackers/interview-tracker.md): "about me" v1 logged.
+- `java-foundation-katas` repo on GitHub with 7 katas, README, ≥ 12 commits.
+- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md): 6 problems with status + review dates; Day-3 reviews logged.
+- [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md): Week 1 entry (hours per block, test score, 3 lessons).
+- [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md): Java, Git, Linux rows updated.
+- [`trackers/project-tracker.md`](../../trackers/project-tracker.md): "Foundation" row started (katas done / total).
 
-## 16. If you're behind / stretch goals
+## 16. If you're behind / stretch
 
-**Behind?** Minimum core for this week: JDK working, `dsa-java` pushed, problems 1929 + 27 solved and logged,
-A1 done. Move 1672/14 to Week 2 Monday (but do not skip Week 2's own problems — see [ROADMAP §12](../../ROADMAP.md#12-rules-for-falling-behind)).
+**Behind:** do Katas 1–4 and 6 only; keep all 6 DSA problems (cut kata time, not DSA). Skip the
+matrix kata. Never skip the Sunday test — it is the measurement.
 
-**Ahead? Stretch:**
-- 1768 Merge Strings Alternately; 58 Length of Last Word.
-- Read *Pro Git* ch. 10.2 "Git Objects" and run `git cat-file -p HEAD` to see a real commit object.
-- Configure a shell alias `gs='git status -sb'` and `gl='git log --oneline --graph -n 20'`.
-- Write a tiny Bash script `new-problem.sh 27 RemoveElement` that creates a stub file with the header comment.
+**Stretch:** Kata 6 with a `record WordCount(String word, int count)` and `Arrays.sort` with a
+comparator (a preview of Week 2/3); read [`01-java/05-exceptions-io.md`](../../01-java/05-exceptions-io.md)
+first half; solve [189. Rotate Array](https://leetcode.com/problems/rotate-array/) (the three-reversal trick).

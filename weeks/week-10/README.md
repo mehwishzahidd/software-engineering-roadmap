@@ -1,445 +1,321 @@
-# Week 10 — Persist data properly with JPA
+# Week 10 — LedgerX M2: idempotent, concurrent transfers
 
 [← Week 9](../week-09/) · [Roadmap](../../ROADMAP.md) · [Week 11 →](../week-11/)
 
-**Phase 3 — Backend engineering** (Weeks 9–13) · **Estimated time: ≈21 h**
+**Phase 2 · LedgerX (Weeks 9–13)** — this is the week LedgerX reaches **MVP**: money moves between wallets, retries are safe, and two concurrent $400 withdrawals from a $500 wallet leave exactly one winner and never a negative balance.
 
-| Category | Hours | What goes here |
+| Block | Hours | Notes |
 |---|---:|---|
-| Core learning | 4.0 | Spring Data JPA, Hibernate, relationships, fetch types, Flyway, validation, error handling |
-| Hands-on coding | 3.0 | Scratch JPA app, N+1 reproduction, Compose file, `@RestControllerAdvice` |
-| DSA | 5.5 | Trees — 8 new + spaced reviews |
-| Project | 5.0 | P2 TicketHold M2 |
-| Revision | 1.5 | SQL joins/indexes (W6–W8), Spring DI (W9) |
-| Interview | 2.0 | Think-aloud Medium, résumé-defense drill (3 questions) |
-| **Total** | **21.0** | |
+| Project (LedgerX M2) | 28 | Idempotency store, transfers, ordered pessimistic locking, optimistic comparison, isolation experiments, concurrency test |
+| Learning | 6 | Idempotency done properly, lock ordering, retry semantics, `@Transactional` propagation pitfalls, isolation levels |
+| DSA (BST + Tries) | 7 | 8 new problems + reviews |
+| Interview / review | 4 | **Mock interview #1**, think-aloud, 3 résumé-defense questions |
 
 ---
 
 ## 1. Main objective
 
-Last week TicketHold stored events in a `HashMap`. That is not an application — restart it and the data
-is gone. This week you replace the in-memory store with **PostgreSQL behind Spring Data JPA**, manage the
-schema with **Flyway migrations**, stop leaking entities over HTTP with **DTOs**, reject bad input with
-**Bean Validation**, and return consistent errors as **RFC 7807 `ProblemDetail`** responses.
+Ship `POST /transfers` such that:
 
-Why it matters: "How did you persist data?", "What is the N+1 problem?", "Why not `ddl-auto=update`?" and
-"How do you return errors from your API?" are the first four questions an interviewer asks after you say
-"Spring Boot" on a résumé. After this week you answer all four from code you wrote.
-
-What it unlocks: Week 11 (security needs a `users` table), Week 12 (`@DataJpaTest`, Testcontainers,
-`@Version` all assume JPA), and every later project.
+- a client that retries with the same `Idempotency-Key` gets the **same response** and **no second movement of money**; the same key with a **different body** is rejected (`422`/`409` — you decide and document);
+- concurrent transfers touching the same accounts **serialize correctly** via pessimistic locks taken **in a deterministic order** (no deadlocks), and you can show the measured difference against an optimistic `@Version` approach;
+- a JUnit test proves: balance 500, two concurrent 400 transfers → exactly one `completed`, one `failed` with `InsufficientFunds`, final balance 100, zero-sum invariant intact.
 
 ## 2. Prerequisites
 
-- [Checkpoint 8](../../checkpoints/checkpoint-08.md) passed (or remediation in progress): joins, indexes, transactions, `EXPLAIN`.
-- Week 9 done: TicketHold skeleton with controller → service → repository layers and a Postman collection.
-- JDBC from Week 7 ([`04-sql-databases/08-jdbc-orm.md`](../../04-sql-databases/08-jdbc-orm.md)) — JPA is built on top of it; you need to know what it hides.
-- Docker Desktop (or Docker Engine) installed. No prior Docker knowledge required.
+- Week 9 acceptance criteria green; tag `m1` exists. If withdrawal slipped, finish it **Monday morning** before anything else.
+- You can explain FlowGrid's N-threads-one-unit test ([Week 5](../week-05/)) without looking. This week generalises it.
+- Trees are comfortable (BST problems assume you can traverse).
 
-## 3. Topics & subtopics
+## 3. Learning topics
 
-| Topic | Subtopics | Read |
+| Topic | Subtopics | File |
 |---|---|---|
-| Spring Data JPA | `JpaRepository`, derived queries, `@Query` (JPQL + native), projections, `Pageable`/`Sort`/`Page` | [05-spring-boot/03-data-jpa.md](../../05-spring-boot/03-data-jpa.md) |
-| Hibernate / JPA mapping | `@Entity`, `@Id`/`@GeneratedValue`, `@ManyToOne`/`@OneToMany`, owning side, `mappedBy`, cascade, orphan removal, persistence context, dirty checking | [05-spring-boot/03-data-jpa.md](../../05-spring-boot/03-data-jpa.md) |
-| Fetching | `LAZY` vs `EAGER`, `LazyInitializationException`, **N+1**, `JOIN FETCH`, `@EntityGraph`, open-in-view | [05-spring-boot/03-data-jpa.md](../../05-spring-boot/03-data-jpa.md) · [04-sql-databases/08-jdbc-orm.md](../../04-sql-databases/08-jdbc-orm.md) |
-| Schema migrations | Flyway `V1__init.sql` naming, checksum, `flyway_schema_history`, never edit an applied migration | [05-spring-boot/03-data-jpa.md](../../05-spring-boot/03-data-jpa.md) · [04-sql-databases/04-schema-design.md](../../04-sql-databases/04-schema-design.md) |
-| DTOs & mapping | Request/response records, why not expose entities, manual mappers | [05-spring-boot/02-web-layer.md](../../05-spring-boot/02-web-layer.md) |
-| Validation & errors | `@Valid`, `@NotBlank`, `@Positive`, `@Future`, custom constraint, `@RestControllerAdvice`, `ProblemDetail` | [05-spring-boot/04-validation-errors.md](../../05-spring-boot/04-validation-errors.md) |
-| API design | Pagination (offset vs cursor), sorting, filtering params, 400 vs 404 vs 409 vs 422 | [06-rest-apis/api-design-guide.md](../../06-rest-apis/api-design-guide.md) |
-| Docker minimal | `compose.yaml` for Postgres 16, volumes, ports, env vars, `docker compose up -d / logs / down -v` | [11-docker/compose.md](../../11-docker/compose.md) · [11-docker/README.md](../../11-docker/README.md) |
+| Idempotency done properly | key scope (per user), request fingerprint (SHA-256 of canonical body), stored response + status, in-progress state, TTL, key reuse with different body | [`06-rest-apis/api-design-guide.md`](../../06-rest-apis/api-design-guide.md), [`06-rest-apis/http-for-apis.md`](../../06-rest-apis/http-for-apis.md) |
+| Locking | `SELECT … FOR UPDATE`, `NOWAIT`/`SKIP LOCKED`, lock ordering to avoid deadlocks, deadlock detection in Postgres, `@Version` optimistic locking + retry | [`04-sql-databases/06-transactions.md`](../../04-sql-databases/06-transactions.md), [`05-spring-boot/03-data-jpa.md`](../../05-spring-boot/03-data-jpa.md) |
+| Isolation levels | READ COMMITTED vs REPEATABLE READ vs SERIALIZABLE in Postgres; serialization failures (`40001`), write skew | [`04-sql-databases/06-transactions.md`](../../04-sql-databases/06-transactions.md), [`14-cs-fundamentals/database-internals.md`](../../14-cs-fundamentals/database-internals.md) |
+| Spring transactions deep | propagation (`REQUIRED`, `REQUIRES_NEW`, `NESTED`), self-invocation, checked exceptions and rollback, `TransactionTemplate` | [`05-spring-boot/07-transactions.md`](../../05-spring-boot/07-transactions.md) |
+| Retry semantics | what is safe to retry, exponential backoff + jitter, retry budgets, `@Retryable` vs hand-written loop | [`05-spring-boot/07-transactions.md`](../../05-spring-boot/07-transactions.md), [`15-system-design/fundamentals.md`](../../15-system-design/fundamentals.md) |
+| Redis for idempotency (optional) | `SET NX PX` as a fast in-progress marker; DB stays the source of truth | [`04-sql-databases/redis.md`](../../04-sql-databases/redis.md) |
+| Concurrency testing | `ExecutorService` + `CountDownLatch` barriers, Testcontainers, flaky-test hygiene | [`09-testing/testcontainers.md`](../../09-testing/testcontainers.md), [`01-java/07-concurrency.md`](../../01-java/07-concurrency.md) |
 
 ## 4. Concepts to learn
 
-### 4.1 Postgres in one file (Docker Compose)
+### 4.1 Idempotency store — the real design
 
-```yaml
-# compose.yaml (repo root of TicketHold)
-services:
-  db:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: tickethold
-      POSTGRES_USER: tickethold
-      POSTGRES_PASSWORD: tickethold
-    ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U tickethold"]
-      interval: 5s
-volumes:
-  pgdata:
-```
-
-`docker compose up -d` starts it, `docker compose logs -f db` tails it, `docker compose down` stops it and
-**keeps** the named volume; `down -v` deletes the data. That is all the Docker you need until Week 19.
-
-> **Interview angle:** "Why use Docker for your local DB?" — reproducible version, zero install drift, identical setup for CI and teammates.
-
-### 4.2 Entities and the owning side
-
-```java
-@Entity
-@Table(name = "events")
-public class Event {
-    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
-
-    @Column(nullable = false, length = 200)
-    private String name;
-
-    @Column(name = "starts_at", nullable = false)
-    private Instant startsAt;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)   // owning side: holds the FK
-    @JoinColumn(name = "venue_id")
-    private Venue venue;
-
-    @OneToMany(mappedBy = "event", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<Seat> seats = new ArrayList<>();
-
-    protected Event() {}                                   // JPA needs a no-arg constructor
-    // getters, domain methods…
-}
-```
-
-- The side with `@JoinColumn` owns the relationship; `mappedBy` is the inverse, read-only mirror.
-- `@ManyToOne` defaults to **EAGER** — always set `LAZY` explicitly.
-- Don't use Lombok `@Data` on entities: generated `equals/hashCode/toString` walk lazy collections.
-
-> **Interview angle:** "What does `mappedBy` mean?" — it says which field on the other entity owns the foreign key; only the owner's changes are written.
-
-### 4.3 Persistence context and dirty checking
-
-```java
-@Transactional
-public void rename(Long id, String newName) {
-    Event e = events.findById(id).orElseThrow(() -> new NotFoundException("event", id));
-    e.rename(newName);          // no save() call needed
-}                               // commit → Hibernate compares snapshot → issues UPDATE
-```
-
-Inside a transaction, every loaded entity is *managed*. At flush/commit Hibernate diffs it against a snapshot.
-
-> **Interview angle:** "Why didn't you call `save()`?" — managed entities are dirty-checked at commit; `save()` matters for new (transient) or detached objects.
-
-### 4.4 The N+1 problem
-
-```java
-List<Event> all = eventRepository.findAll();              // 1 query
-all.forEach(e -> System.out.println(e.getVenue().getName())); // +N queries, one per venue
-```
-
-Turn on `spring.jpa.show-sql=true` (or better, `logging.level.org.hibernate.SQL=debug`) and count. Fixes:
-
-```java
-@Query("select e from Event e join fetch e.venue where e.startsAt > :from")
-List<Event> findUpcomingWithVenue(@Param("from") Instant from);
-
-@EntityGraph(attributePaths = "venue")
-Page<Event> findByStartsAtAfter(Instant from, Pageable pageable);
-```
-
-Warning: `JOIN FETCH` of a *collection* + pagination makes Hibernate paginate **in memory** (log warning `HHH90003004`). Paginate IDs first or use a DTO projection.
-
-> **Interview angle:** "How do you detect and fix N+1?" — SQL logging / query-count assertion; fix with fetch join, entity graph, batch size, or a DTO projection.
-
-### 4.5 Flyway, not `ddl-auto`
-
-```
-src/main/resources/db/migration/
-  V1__create_venues_events.sql
-  V2__create_seats_holds_bookings.sql
-  V3__create_users.sql
-```
+FlowGrid's M2 stored key + hash + response. LedgerX adds the **in-progress** state and the **conflict** rule:
 
 ```sql
--- V2__create_seats_holds_bookings.sql
-CREATE TABLE seats (
-  id        BIGSERIAL PRIMARY KEY,
-  event_id  BIGINT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-  row_label VARCHAR(5) NOT NULL,
-  number    INT NOT NULL CHECK (number > 0),
-  status    VARCHAR(20) NOT NULL DEFAULT 'AVAILABLE',
-  UNIQUE (event_id, row_label, number)
+CREATE TABLE idempotency_record (
+  owner_id      UUID        NOT NULL,
+  idem_key      TEXT        NOT NULL,
+  fingerprint   CHAR(64)    NOT NULL,            -- SHA-256 hex of canonical request
+  status        TEXT        NOT NULL CHECK (status IN ('IN_PROGRESS','COMPLETED')),
+  http_status   INT,
+  response_body JSONB,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at    TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (owner_id, idem_key)
 );
-CREATE INDEX idx_seats_event_status ON seats(event_id, status);
 ```
 
-```properties
-spring.jpa.hibernate.ddl-auto=validate
-spring.jpa.open-in-view=false
-```
+Flow: `INSERT ... ON CONFLICT DO NOTHING` in its own short transaction (`REQUIRES_NEW`) → if inserted, you own the key: run the transfer, then store the response. If not inserted: load the row; fingerprint differs → `422 Unprocessable` (same key, different request); status `IN_PROGRESS` → `409 Conflict` with `Retry-After`; `COMPLETED` → replay stored status + body.
 
-`validate` makes Hibernate fail fast if entities and schema disagree. Applied migrations are **immutable** — Flyway stores a checksum; edit V1 after it ran and startup fails.
+Canonical fingerprint: serialize the DTO with sorted keys, no whitespace, then SHA-256. Do **not** hash the raw request bytes (whitespace changes would defeat replay).
 
-> **Interview angle:** "How do you change a production schema?" — new versioned migration, reviewed in a PR, applied automatically on deploy; backward-compatible steps (add nullable column → backfill → add constraint).
+- **Interview angle:** "Why not just make the endpoint naturally idempotent?" → Transfers are not: "move 50" twice is 100. The key turns an unsafe POST into an exactly-once *effect* under retry.
+- **Where LedgerX uses this:** transfers (M2), payment requests (M3), retry-after-crash tests (M4) rely on the `IN_PROGRESS` row surviving a crash.
 
-### 4.6 DTOs + Bean Validation
+### 4.2 Ordered pessimistic locking
+
+Deadlock recipe: T1 locks A then B, T2 locks B then A. Cure: **always lock in a canonical order** (by primary key). Lock the `account_balance` rows, not `account` (the balance row is what you mutate), and lock them *before* reading balances.
 
 ```java
-public record CreateEventRequest(
-        @NotBlank @Size(max = 200) String name,
-        @NotNull @Future Instant startsAt,
-        @NotNull @Positive Long venueId) {}
-
-public record EventResponse(Long id, String name, Instant startsAt, String venueName) {
-    static EventResponse from(Event e) {
-        return new EventResponse(e.getId(), e.getName(), e.getStartsAt(), e.getVenue().getName());
-    }
-}
-
-@PostMapping
-ResponseEntity<EventResponse> create(@Valid @RequestBody CreateEventRequest req, UriComponentsBuilder uri) {
-    EventResponse created = service.create(req);
-    return ResponseEntity.created(uri.path("/api/events/{id}").build(created.id())).body(created);
-}
+// Lock both balance rows in id order — deadlock-free by construction.
+@Query("select b from AccountBalance b where b.accountId in :ids order by b.accountId")
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+List<AccountBalance> lockAllByIdOrdered(@Param("ids") Collection<UUID> ids);
 ```
 
-> **Interview angle:** "Why DTOs?" — decouple API contract from schema, avoid lazy-loading/serialization loops, prevent mass assignment, version independently.
+Note: `ORDER BY` with `FOR UPDATE` in Postgres locks rows in the sorted order for a simple single-table query. Verify with `EXPLAIN` and by reading the generated SQL in the logs (`spring.jpa.show-sql` is fine in tests; use `logging.level.org.hibernate.SQL=DEBUG` in dev).
 
-### 4.7 One error format: `ProblemDetail`
+Alternative escape hatch: `FOR UPDATE NOWAIT` (fail fast, retry at the app) vs waiting (default). Postgres's deadlock detector (`deadlock_timeout`, default 1 s) will abort one transaction with SQLSTATE `40P01` — your test should provoke this once with *unordered* locks so you have seen it.
+
+- **Interview angle:** "How do you prevent deadlocks?" → Ordered acquisition; short transactions; timeouts; retry on `40P01`/`40001`.
+- **Where LedgerX uses this:** `TransferService`; M3 reversals lock the same way; M4's fault hook sits between the lock and the write.
+
+### 4.3 Optimistic comparison (`@Version`)
+
+Implement the same transfer with `@Version` on `AccountBalance` and a retry loop on `OptimisticLockException` (max 5 attempts, jittered backoff). Measure under the same concurrency test: attempts, retries, wall time, failures. Write the result in `docs/DESIGN_DECISIONS.md` — this is the *measured* comparison you will cite in interviews.
+
+- **Interview angle:** "When is optimistic locking better?" → Low contention, short critical sections, no long-held DB locks; worse under hot accounts (retry storms).
+
+### 4.4 Isolation-level experiments
+
+Run the transfer test under `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE` with **no explicit locks**. Record what happens: RC → lost update (both succeed, negative balance — the bug); RR → one transaction fails with `40001` on the balance update *only if you use UPDATE ... WHERE*, but a read-then-insert can still write skew; SERIALIZABLE → aborts one with `40001` (needs retry). Then re-run with `FOR UPDATE` under RC: correct with no retries. Fill the table:
+
+| Isolation | Explicit lock | Outcome | Retries | Notes |
+|---|---|---|---|---|
+| RC | none | ? | ? | |
+| RR | none | ? | ? | |
+| SERIALIZABLE | none | ? | ? | |
+| RC | `FOR UPDATE` ordered | ? | ? | |
+
+- **Where LedgerX uses this:** the table goes in `docs/DESIGN_DECISIONS.md` and is a Checkpoint 12 question.
+
+### 4.5 `@Transactional` propagation pitfalls
 
 ```java
-@RestControllerAdvice
-class ApiExceptionHandler {
-    @ExceptionHandler(NotFoundException.class)
-    ProblemDetail notFound(NotFoundException ex) {
-        ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
-        pd.setTitle("Resource not found");
-        return pd;
-    }
+@Service
+public class TransferService {
+    @Transactional                                  // REQUIRED: joins the caller's txn if any
+    public TransferView transfer(TransferCommand cmd) { ... }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    ProblemDetail invalid(MethodArgumentNotValidException ex) {
-        ProblemDetail pd = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
-        pd.setTitle("Validation failed");
-        pd.setProperty("errors", ex.getBindingResult().getFieldErrors().stream()
-                .map(f -> Map.of("field", f.getField(), "message", f.getDefaultMessage()))
-                .toList());
-        return pd;
-    }
-
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    ProblemDetail conflict(DataIntegrityViolationException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "Duplicate or conflicting resource");
-    }
+    @Transactional(propagation = Propagation.REQUIRES_NEW)   // own txn: commits even if the outer rolls back
+    public void recordFailure(UUID txnId, String reason) { ... }
 }
 ```
 
-> **Interview angle:** "What's RFC 7807?" — a standard JSON error shape (`type`, `title`, `status`, `detail`, `instance`) so clients parse every error the same way.
+Pitfalls to reproduce this week: (1) calling `recordFailure` from inside `transfer` in the same class → proxy bypassed → *not* a new transaction → your failure record rolls back with the transfer; fix by moving to another bean or injecting `TransactionTemplate`. (2) Catching an exception inside a `@Transactional` method and returning normally → the transaction still commits (or is marked rollback-only by an inner `@Transactional`, giving `UnexpectedRollbackException`). (3) Checked exceptions do not roll back by default (`rollbackFor`).
 
-### 4.8 Pagination and sorting
+- **Interview angle:** all three above are standard Spring questions; answer with the LedgerX case you reproduced.
+
+### 4.6 Writing a trustworthy concurrency test
 
 ```java
-@GetMapping
-Page<EventResponse> list(@RequestParam(required = false) Long venueId,
-                         @PageableDefault(size = 20, sort = "startsAt") Pageable pageable) {
-    return service.list(venueId, pageable);
+@Test
+void twoConcurrentTransfersOfFourHundredFromFiveHundred_exactlyOneSucceeds() throws Exception {
+    seedWallet(alice, "500.0000");
+    var start = new CountDownLatch(1);
+    var pool  = Executors.newFixedThreadPool(2);
+    List<Future<Result>> futures = new ArrayList<>();
+    for (int i = 0; i < 2; i++) {
+        String key = "k-" + i;
+        futures.add(pool.submit(() -> { start.await(); return attemptTransfer(alice, bob, "400.0000", key); }));
+    }
+    start.countDown();                                   // release both at once
+    var results = futures.stream().map(this::get).toList();
+    assertThat(results).filteredOn(Result::succeeded).hasSize(1);
+    assertThat(balance(alice)).isEqualByComparingTo("100.0000");
+    assertThat(brokenJournalTxns()).isEmpty();           // zero-sum still holds
 }
-// GET /api/events?page=0&size=20&sort=startsAt,desc
 ```
 
-Cap `size` (`spring.data.web.pageable.max-page-size=100`). Offset pagination gets slow on deep pages (`OFFSET 100000` still scans); cursor/keyset (`WHERE starts_at > :last ORDER BY starts_at LIMIT 20`) doesn't.
-
-> **Interview angle:** "Offset vs cursor pagination?" — offset is simple, supports jumping to page N, but degrades and skips/duplicates on concurrent inserts; keyset is stable and index-friendly.
+Run it **20 times in a loop** (`@RepeatedTest(20)`) before trusting it. Use a real Postgres (Testcontainers) — H2 will lie to you about locking.
 
 ## 5. Resources
 
-| Type | Resource |
-|---|---|
-| Official docs | docs.spring.io — Spring Data JPA reference (repositories, query methods, projections); Spring Boot reference "Data" + "SQL Databases" sections |
-| Official docs | Hibernate ORM User Guide (hibernate.org/orm/documentation) — "Fetching", "Associations" |
-| Official docs | Flyway docs (documentation.red-gate.com/flyway) — "Migrations" concept page |
-| Official docs | docs.docker.com — "Docker Compose: Getting started", "Compose file reference" |
-| Official docs | postgresql.org/docs/16 — `CREATE TABLE`, constraints, indexes |
-| Spec | RFC 9457 / RFC 7807 "Problem Details for HTTP APIs" |
-| Book | *Spring in Action* (Walls), chapters on Spring Data; *High-Performance Java Persistence* (Mihalcea) — N+1 and fetching chapters (optional) |
-| DSA | neetcode.io — Trees section videos; `03-dsa/10-trees.md` |
+- PostgreSQL 16 docs: *Transaction Isolation* (13.2), *Explicit Locking* (13.3), *Deadlocks* — https://www.postgresql.org/docs/16/mvcc.html
+- Spring Framework docs: *Transaction propagation*, *Understanding the Spring Framework's declarative transaction implementation* — https://docs.spring.io/spring-framework/reference/data-access/transaction/declarative.html
+- Stripe API docs, *Idempotent requests* (design reference for the header semantics) — https://docs.stripe.com/api/idempotent_requests
+- IETF draft *The Idempotency-Key HTTP Header Field* (search the IETF datatracker by that title)
+- *Designing Data-Intensive Applications*, ch. 7 (Transactions) — Kleppmann
+- NeetCode 150 — Trees (BST) and Tries; LeetCode problems in §7
 
-## 6. Exercises
+## 6. Exercises and assignments
 
-1. Start Postgres with Compose; connect with `psql -h localhost -U tickethold`; `\dt` after the app boots and read `flyway_schema_history`.
-2. Map `Venue 1—* Event 1—* Seat` in a scratch project. Save a venue with two events via cascade; print the SQL log and explain every statement.
-3. Write three derived queries (`findByNameContainingIgnoreCase`, `countByVenueId`, `existsByVenueIdAndStartsAt`) and predict the SQL before running.
-4. Write one JPQL `@Query` and one `nativeQuery = true` query returning the same result. Compare generated SQL.
-5. Create an interface projection `EventSummary { Long getId(); String getName(); }` and check that only two columns are selected.
-6. Write a custom constraint `@ValidSeatRow` (1–2 uppercase letters) with a `ConstraintValidator`.
+### 6.1 Warm-up exercises (~2.5 h)
 
-### Break it
+1. **Deadlock on purpose (30 min, psql).** Two sessions, two `account_balance` rows, opposite lock order. Observe `40P01`, note which session was killed and why (`pg_stat_activity`, server log).
+2. **Lost update demo (30 min, psql).** Both sessions `SELECT balance` (500), both `UPDATE ... SET balance = 500 - 400`. Result: 100 with 800 moved. Then repeat with `SELECT ... FOR UPDATE` and with `UPDATE ... SET balance = balance - 400 WHERE balance >= 400` — explain why the last one is also safe.
+3. **Propagation lab (45 min, Java).** A tiny `@SpringBootTest` with two beans reproducing pitfalls (1)–(3) in §4.5; assert the surprising behaviour, then the fix.
+4. **Fingerprint kata (20 min).** Canonical JSON → SHA-256 hex; prove `{"a":1,"b":2}` and `{ "b":2, "a":1 }` produce the same hash.
 
-- **B1 — Trigger N+1.** Seed 50 events across 10 venues; call `GET /api/events` mapping `venueName`. Count the queries in the log (expect 1 + up to 10). Fix with `@EntityGraph`; count again.
-- **B2 — Lazy outside a transaction.** Set `spring.jpa.open-in-view=false`, return an entity (not a DTO) and access `getSeats()` in the controller. Read the `LazyInitializationException` fully; explain which session was closed and why.
-- **B3 — Edit an applied migration.** Change a column length in `V1__…sql` after it ran. Read Flyway's checksum-mismatch error. Revert and add `V4__…` instead.
-- **B4 — `ddl-auto=validate` mismatch.** Rename a field in the entity without a migration; read the startup error.
-- **B5 — Remove `@Valid`.** POST `{"name":""}`. Where does the failure surface now (DB constraint? 500?). Restore it.
-- **B6 — `down -v`.** Run `docker compose down -v`, restart, and confirm Flyway rebuilds the schema from scratch (this is why migrations matter).
+### 6.2 Assignment — LedgerX M2
 
-### Debug it
+**Acceptance criteria:**
 
-- **D1.** A `POST /api/events` returns 500 with `DataIntegrityViolationException`. Using only the log, find which constraint failed and map it to a 409 in the advice.
-- **D2.** A `@OneToMany` list shows the child rows twice after a fetch join. Explain the Cartesian product and fix it (`select distinct` / `Set` / separate query).
-- **D3.** `findAll(PageRequest.of(0, 20))` prints the `HHH90003004` warning. Find the `JOIN FETCH` on a collection causing it and restructure.
+- [ ] `POST /transfers` with `Idempotency-Key` header (required; `400` if missing): moves money alice→bob as one journal txn (2 entries, or 3 with a fee if you model one).
+- [ ] Replay: same key + same body → identical status and body, no new `journal_txn`. Same key + different body → `422`. In-progress → `409` + `Retry-After`.
+- [ ] Both balance rows locked in id order; no deadlock under a 16-thread bidirectional test (alice↔bob) — proven by test and by a run with `log_lock_waits = on`.
+- [ ] $500/$400/$400 test passes 20/20 repeats.
+- [ ] Optimistic variant behind a profile/flag, same test passes, comparison table written.
+- [ ] Isolation-level table (§4.4) completed with actual observations.
+- [ ] Insufficient funds → `422` ProblemDetail; journal txn recorded as `failed` (via `REQUIRES_NEW` in a separate bean) so failures are auditable.
+- [ ] Expired idempotency records cleaned by a scheduled job (`@Scheduled`, TTL 24 h) — small, but real.
 
-## 7. Coding assignments (from a blank file)
+### 6.3 Break it
 
-| # | Assignment | Acceptance criteria |
-|---|---|---|
-| A1 | **Library catalogue, JPA from scratch.** New Spring Boot 3 project with `Author 1—* Book`, Flyway `V1`, Compose Postgres. | `ddl-auto=validate` boots; `GET /books?page=0&size=5&sort=title` returns a `Page`; SQL log shows exactly 1 query for listing with author names (use entity graph); no entity class appears in any controller signature. |
-| A2 | **Error contract.** Add `@RestControllerAdvice` for not-found, validation, conflict, and unexpected exceptions. | Every error response is `application/problem+json`; validation errors list each field; unexpected errors return 500 **without** a stack trace in the body but with one in the log. |
-| A3 | **N+1 test.** Write a test (or a counter using Hibernate `Statistics`) that asserts listing 20 books executes ≤ 2 statements. | Test fails before the fix and passes after. |
+- Reverse the lock order for one direction of transfer (alice→bob locks alice first, bob→alice locks bob first). Run the bidirectional test. Collect the deadlock error. Restore.
+- Delete the `ON CONFLICT DO NOTHING` and rely on catching the unique-violation exception inside the *same* transaction. Watch `current transaction is aborted` errors. Understand why the idempotency insert needs its own transaction.
+- Make the fingerprint from raw bytes; send the same request with different whitespace → false conflict.
 
-## 8. DSA — Trees (8 new)
+### 6.4 Debug it
 
-Pattern guide: [`03-dsa/10-trees.md`](../../03-dsa/10-trees.md) · Toolkit: [`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md) · Track in [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md)
+- The concurrency test passes alone, fails when the suite runs. Suspects: shared Testcontainers DB with leftover rows; test ordering; connection pool size 2 with 2 threads + 1 idempotency `REQUIRES_NEW` = **pool exhaustion deadlock** (classic!). Prove it with HikariCP's `leakDetectionThreshold` and by raising `maximumPoolSize`.
+- Transfer succeeds but replay returns `409 IN_PROGRESS` forever: the completion write happened in the outer transaction that rolled back for an unrelated reason. Fix the ordering/propagation and add a test.
 
-Core ideas: DFS returns a value up the tree (height, balanced?, diameter); pass state down (max-so-far); BFS with a queue for level order. Always state the base case (`null`) first.
+## 7. DSA — Binary Search Trees + Tries (8 new problems)
 
-| # | Problem | Level | Pattern note | Time limit |
+Guides: [`03-dsa/11-bst.md`](../../03-dsa/11-bst.md) · [`03-dsa/12-tries.md`](../../03-dsa/12-tries.md) · finish Week 9 leftovers first if any.
+
+| # | Problem | Difficulty | Time limit | Day |
 |---|---|---|---|---|
-| 1 | [100. Same Tree](https://leetcode.com/problems/same-tree/) | Beginner | Parallel DFS | 15 min |
-| 2 | [572. Subtree of Another Tree](https://leetcode.com/problems/subtree-of-another-tree/) | Beginner | Reuse Same Tree at every node | 20 min |
-| 3 | [543. Diameter of Binary Tree](https://leetcode.com/problems/diameter-of-binary-tree/) | Beginner | Return height, update global | 20 min |
-| 4 | [110. Balanced Binary Tree](https://leetcode.com/problems/balanced-binary-tree/) | Beginner | Return -1 sentinel for "unbalanced" | 20 min |
-| 5 | [102. Binary Tree Level Order Traversal](https://leetcode.com/problems/binary-tree-level-order-traversal/) | Interview | BFS, `size` snapshot per level | 25 min |
-| 6 | [199. Binary Tree Right Side View](https://leetcode.com/problems/binary-tree-right-side-view/) | Interview | BFS last-in-level or DFS right-first | 25 min |
-| 7 | [1448. Count Good Nodes in Binary Tree](https://leetcode.com/problems/count-good-nodes-in-binary-tree/) | Interview | Pass max down | 25 min |
-| 8 | [105. Construct Binary Tree from Preorder and Inorder Traversal](https://leetcode.com/problems/construct-binary-tree-from-preorder-and-inorder-traversal/) | Interview | Index map + recursion bounds | 35 min |
+| 700 | Search in a Binary Search Tree | Easy | 10 min | Mon |
+| 235 | Lowest Common Ancestor of a Binary Search Tree | Medium | 15 min | Mon |
+| 98 | Validate Binary Search Tree | Medium | 25 min | Tue |
+| 230 | Kth Smallest Element in a BST | Medium | 20 min | Tue |
+| 105 | Construct Binary Tree from Preorder and Inorder Traversal | Medium | 30 min | Wed |
+| 208 | Implement Trie (Prefix Tree) | Medium | 25 min | Thu |
+| 211 | Design Add and Search Words Data Structure | Medium | 30 min | Thu |
+| 1448 | Count Good Nodes in Binary Tree | Medium | 20 min | Fri (if reviews done) |
 
-Stretch: [124. Binary Tree Maximum Path Sum](https://leetcode.com/problems/binary-tree-maximum-path-sum/) (Hard, 45 min).
+Reviews due: Day-3 of Week 9 Thu/Fri; Day-7 of Week 9 Mon–Wed; Day-14 of Week 8 recursion; Day-30 of Week 6 binary search. Explain #98's min/max-bound approach vs inorder approach out loud — both are interview-standard.
 
-**Spaced reviews due this week** (re-solve from blank, timed; update status):
-- Day 7: Week 9 recursion + tree-intro problems (e.g., Maximum Depth of Binary Tree, Invert Binary Tree, Reverse Linked List recursive).
-- Day 14: Week 8 linked-list problems (e.g., Merge Two Sorted Lists, Linked List Cycle, Reorder List).
-- Day 30: Week 6 stack/binary search problems (e.g., Valid Parentheses, Min Stack, Binary Search, Search a 2D Matrix).
+## 8. Project work — LedgerX M2 (Idempotent concurrent transfers) = MVP
 
-**Rule:** if a new problem exceeds its time limit, read the pattern guide, look at the solution, close it, and re-solve from blank → status `Solved With Solution`, review in 3 days.
+Spec: [`18-projects/ledgerx/README.md`](../../18-projects/ledgerx/README.md) · [`milestones.md`](../../18-projects/ledgerx/milestones.md) (M2) · [`failure-engineering.md`](../../18-projects/ledgerx/failure-engineering.md)
 
-## 9. Project — P2 TicketHold, Milestone 2
+### 8.1 Task checklist
 
-Spec: [`18-projects/p2-tickethold/README.md`](../../18-projects/p2-tickethold/README.md)
+- [ ] **Mon:** milestone `M2 — Idempotent concurrent transfers` + issues; migration `V5__idempotency_record.sql`; `IdempotencyService` (claim/complete/lookup in `REQUIRES_NEW`), fingerprint util + tests.
+- [ ] **Tue:** `TransferService` with ordered `PESSIMISTIC_WRITE` lock, `InsufficientFunds` path with `failed` journal txn; `POST /transfers` + `IdempotencyFilter`/interceptor (or explicit service call — document the choice).
+- [ ] **Wed:** concurrency test harness (Testcontainers, latch, repeated); $500/$400/$400 test; bidirectional 16-thread deadlock-freedom test.
+- [ ] **Thu:** optimistic variant (`@Version` + retry) behind `ledgerx.locking=optimistic`; run both under the same harness; write comparison.
+- [ ] **Fri:** isolation-level experiments and table; TTL cleanup job; `docs/DESIGN_DECISIONS.md` + ADR `0003-locking-strategy.md`.
+- [ ] **Sat:** failure scenarios; PR self-review; tag `m2` and **`mvp`**.
 
-**M2 (W10): PostgreSQL + Spring Data JPA + Flyway; entities Venue, Event, Seat, Hold, Booking, User; DTOs, Bean Validation, global error handler (ProblemDetail / RFC 7807), pagination; Postgres via Docker Compose.**
+### 8.2 Acceptance summary
 
-- [ ] `compose.yaml` with Postgres 16 + named volume + healthcheck; README "Run locally" section updated
-- [ ] Dependencies: `spring-boot-starter-data-jpa`, `postgresql`, `flyway-core` (+ `flyway-database-postgresql`), `spring-boot-starter-validation`
-- [ ] Migrations `V1`–`V3` create `venues`, `events`, `seats`, `holds`, `bookings`, `users` with PKs, FKs, `NOT NULL`, `CHECK`, `UNIQUE(event_id,row_label,number)`, indexes on FK columns
-- [ ] `ddl-auto=validate`, `open-in-view=false`
-- [ ] Entities for all six tables with `LAZY` `@ManyToOne`; no Lombok `@Data`
-- [ ] Repositories replace the Week 9 in-memory maps (service layer signatures unchanged where possible)
-- [ ] Request/response records for venues, events, seats; no entity leaves the service layer
-- [ ] Bean Validation on every request DTO; one custom constraint
-- [ ] `@RestControllerAdvice` producing `ProblemDetail` for 400/404/409/500
-- [ ] `GET /api/events` paginated + sortable + filter by `venueId`; max page size capped
-- [ ] `POST /api/events/{id}/seats/bulk` generates a seat map (rows × numbers)
-- [ ] N+1 checked on the event list endpoint (log shows fixed query count)
-- [ ] Postman collection updated with happy path + 3 error cases
+MVP = §6.2 all green + docs written + CI green + tags. Money can be deposited, withdrawn, transferred; retries are safe; concurrency is proven, not assumed.
 
-## 10. Git activity
+### 8.3 Verification tests you write
 
-- Branch per slice: `feat/postgres-compose`, `feat/jpa-entities`, `feat/flyway-migrations`, `feat/validation-problemdetail`, `feat/pagination`.
-- Each PR description: *What / Why / How to test (curl commands) / Screenshots of log or psql*. Link the milestone.
-- **Squash merge** feature branches into `main` (one clean commit per feature); keep migrations in the same PR as the entity that needs them.
-- Turn on branch protection for `main` now: require PR, disallow force-push. (CI status checks get added in Week 12.)
-- Commit message convention: `feat(events): paginate and sort event listing`.
-- Never commit `.env` or real passwords; Compose credentials here are local-dev-only and documented as such.
-
-## 11. Interview preparation
-
-- **Think-aloud (1×):** one tree Medium from §8 (e.g., 199) using [`16-interview-prep/coding-interview-method.md`](../../16-interview-prep/coding-interview-method.md). Record, then score against [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md).
-- **Résumé-defense drill (3 questions, out loud, recorded)** from [`RESUME_INTERVIEW_QUESTIONS.md`](../../RESUME_INTERVIEW_QUESTIONS.md):
-  1. "Explain how JPA maps an object to a table and what happens on `save()`." → [`17-resume-tech-defense/spring-boot.md`](../../17-resume-tech-defense/spring-boot.md)
-  2. "What is the N+1 problem and how did you find it?" → [`17-resume-tech-defense/postgresql.md`](../../17-resume-tech-defense/postgresql.md)
-  3. "Why run your database in Docker?" → [`17-resume-tech-defense/docker.md`](../../17-resume-tech-defense/docker.md)
-- Questions to answer out loud: LAZY vs EAGER defaults; `mappedBy`; why DTOs; `ddl-auto` values; `PUT` vs `PATCH` validation; 400 vs 422 vs 409.
-- Log it in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
-
-## 12. Revision work
-
-- SQL (Weeks 6–8): write by hand the SQL you expect JPA to generate for "events with venue name, next 30 days, page 2". Run it with `EXPLAIN ANALYZE` against the TicketHold DB. Revisit [`04-sql-databases/05-indexes-performance.md`](../../04-sql-databases/05-indexes-performance.md).
-- Java (Week 4): records, `Optional` — used heavily in DTOs and `findById`.
-- Spring DI (Week 9): explain constructor injection for your repository → service → controller chain.
-
-## 13. Daily plan
-
-| Day | Block | Tasks |
+| Test | Type | Proves |
 |---|---|---|
-| **Mon (3h)** | Core learning 1.5h | Spring Data JPA reference: repositories, entities, relationships; notes in own words |
-| | Hands-on 1h | Compose Postgres up; scratch project with `Author`/`Book`; watch SQL log (Ex 1–2) |
-| | DSA 0.5h | Day-7 reviews: Week 9 tree-intro problems |
-| **Tue (3h)** | DSA 1.5h | #1 Same Tree, #2 Subtree of Another Tree, #3 Diameter |
-| | Core/coding 1.5h | Fetch types + N+1 (Break B1, B2); derived queries (Ex 3–5) |
-| **Wed (3h)** | Project 2h | Compose + Flyway V1–V3 + entities; `ddl-auto=validate` boots |
-| | DSA review 1h | Day-14 reviews: Week 8 linked lists |
-| **Thu (3h)** | Core learning 1h | Bean Validation, `ProblemDetail`, pagination docs |
-| | Hands-on 1h | A2 error contract in the scratch project; custom constraint (Ex 6) |
-| | DSA 1h | #4 Balanced Binary Tree, #5 Level Order |
-| **Fri (2h, light)** | Revision | SQL-vs-JPA exercise (§12); update trackers; explain N+1 out loud in 2 minutes |
-| **Sat (5h)** | Project 3h | Repositories replace in-memory store; DTOs; validation; advice; pagination; PRs merged |
-| | DSA 1h | #6 Right Side View, #7 Count Good Nodes |
-| | Interview 1h | Think-aloud on #6 or #8 (recorded) + résumé-defense drill |
-| **Sun (2h)** | Review | End-of-week test (§14); Day-30 reviews; #8 Construct Tree if not done; plan Week 11 |
+| `IdempotencyReplayIT` | Testcontainers + MockMvc | same key/body → same response, one journal txn |
+| `IdempotencyConflictIT` | same | same key/different body → `422`; in-progress → `409` |
+| `ConcurrentTransfersIT` (`@RepeatedTest(20)`) | Testcontainers | $500/$400/$400 exactly-one; balance 100; zero-sum |
+| `BidirectionalTransfersNoDeadlockIT` | Testcontainers | 16 threads alice↔bob, no `40P01`, sum of balances constant |
+| `OptimisticTransfersIT` | profile `optimistic` | same properties; records retry count |
+| `IsolationLevelExperimentIT` | `@Disabled` by default, run manually | documents RC/RR/SER behaviour with no locks |
+| `TransactionPropagationTest` | `@SpringBootTest` | failure record survives outer rollback |
+| `IdempotencyExpiryTest` | unit + `@Scheduled` invoked directly | expired rows removed, live ones kept |
 
-## 14. End-of-week test (75 min)
+### 8.4 Failure-engineering scenarios this week
 
-**Part A — DSA (30 min).** Solve [543. Diameter of Binary Tree](https://leetcode.com/problems/diameter-of-binary-tree/) from blank, then state time/space complexity. Stretch in remaining time: re-solve [102](https://leetcode.com/problems/binary-tree-level-order-traversal/).
+M2 set from `failure-engineering.md`: (1) pool exhaustion under `REQUIRES_NEW`, (2) deadlock with unordered locks, (3) app killed after idempotency claim but before transfer (leave `IN_PROGRESS`; what should the client see? decide: TTL-based unlock vs manual), (4) Postgres restarted during the 16-thread test — do any journals end up `pending`? (This sets up M3's state machine and M4's crash tests.) Write-ups in `docs/FAILURES.md`.
 
-**Part B — Concepts (15 min).** Answer in writing, then check.
+### 8.5 GitHub expectations
 
-<details><summary>1. What are the default fetch types of @ManyToOne and @OneToMany?</summary>
+- Milestone `M2`, 7–10 issues; PRs: `feat/m2-idempotency`, `feat/m2-transfer-locking`, `test/m2-concurrency`, `feat/m2-optimistic-comparison`, `docs/m2-decisions`.
+- PR descriptions include the *measured* numbers (runs, retries, timing) — copy them into `docs/DESIGN_DECISIONS.md`.
+- Tags `m2`, `mvp`.
 
-`@ManyToOne` and `@OneToOne` default to EAGER; `@OneToMany` and `@ManyToMany` default to LAZY. Best practice: make everything LAZY and fetch explicitly per use case.
-</details>
+## 9. Git activity
 
-<details><summary>2. Why does `ddl-auto=update` not belong in production?</summary>
+- Keep the optimistic variant on a branch first; merge only after the comparison is written (real-world "spike then decide").
+- Use `git stash` and `git worktree add ../ledgerx-opt` to run both variants side by side — 15 min practice.
+- Rebase feature branches onto `main` daily; resolve at least one real conflict this week (there will be one in `TransferService`).
 
-It never drops or renames safely, has no history, no review, no rollback plan, and can differ between environments. Flyway migrations are versioned, reviewed, repeatable and recorded in `flyway_schema_history`.
-</details>
+## 10. Interview preparation
 
-<details><summary>3. You modify a managed entity inside a @Transactional method but never call save(). Is it persisted?</summary>
+- **Mock interview #1 (Sat, 60 min + 30 min review):** follow [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md) — one Medium (suggest LeetCode 98 or 230 family, not one you solved this week), a 10-minute "tell me about a project" (FlowGrid), score against [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md). Log score and 3 fixes in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
+- **Think-aloud (Tue, 45 min):** LeetCode 208 (Trie), recorded.
+- **Résumé-defense drill — this week: Spring Boot, SQL, Redis.** [`17-resume-tech-defense/spring-boot.md`](../../17-resume-tech-defense/spring-boot.md), [`sql.md`](../../17-resume-tech-defense/sql.md), [`redis.md`](../../17-resume-tech-defense/redis.md). Must include: propagation, `FOR UPDATE`, Redis `SET NX`.
+- **Applications (Sun):** 2–3 more early-stage applications; note any OA invitations — they set the priority for [`OA_PREP.md`](../../OA_PREP.md) reading in Week 16–17.
 
-Yes. Dirty checking at flush/commit detects the change and issues an UPDATE.
-</details>
+## 11. Revision work
 
-<details><summary>4. What status code for a duplicate seat (unique constraint) vs a missing event vs a blank name?</summary>
+- Re-implement FlowGrid's idempotency filter *from memory* on paper, then compare with LedgerX's — list 3 differences and why.
+- Flashcards: propagation types, SQLSTATE `40001`/`40P01`/`23505`, HikariCP pool-exhaustion symptom, `compareTo` vs `equals`.
+- Re-read Week 9 sign-convention ADR; confirm transfers obey it.
 
-409 Conflict; 404 Not Found; 400 Bad Request (some APIs use 422 for semantic validation — pick one and be consistent).
-</details>
+## 12. Daily plan
 
-<details><summary>5. Why is JOIN FETCH on a collection combined with pagination dangerous?</summary>
+| Day | Learning | Project | DSA | Interview / other |
+|---|---|---|---|---|
+| **Mon** (8h) | Idempotency design; fingerprinting (2h) | Milestone/issues, idempotency table + service + tests (4.5h) | BST §1–5, #700, #235 (1.5h) | — |
+| **Tue** (8h) | — | TransferService with ordered locks, endpoint, failure path (5h) | #98, #230 + Day-3 reviews (2h) | Think-aloud #208 (1h) |
+| **Wed** (8h) | Locking + deadlocks; psql labs (2h) | Concurrency harness, $500/$400/$400, bidirectional test (4.5h) | #105 (1.5h) | — |
+| **Thu** (8h) | — | Optimistic variant + comparison (5h) | Tries §1–5, #208, #211 + Day-7 reviews (2h) | `docs/DESIGN_DECISIONS.md` (1h) |
+| **Fri** (5h) | Propagation lab (1h, counts as learning) | Isolation experiments, TTL job, ADR (3h) | Reviews + #1448 if time (1h) | Retro prep |
+| **Sat** (6h) | — | Failure scenarios, PR review, tags `m2`/`mvp` (4h) | — | **Mock #1** + review (2h) |
+| **Sun** (2–3h) | — | — | Day-14/30 reviews | End-of-week test, trackers, plan Week 11, applications |
 
-The SQL row count no longer equals the entity count, so Hibernate fetches everything and paginates in memory (HHH90003004) — slow and memory-hungry.
-</details>
+## 13. End-of-week test (Sunday, 75 min)
 
-**Part C — Debug task (20 min).** In your scratch project, return `Book` entities directly from a controller with `open-in-view=false`. Reproduce the error, write a one-paragraph root-cause note, and fix it with a DTO + entity graph.
+**Part A — DSA (30 min).** LeetCode **1448. Count Good Nodes** (if not yet done) or **173. Binary Search Tree Iterator** in ≤ 25 min.
 
-**Part D — Explain out loud (10 min, recorded).** "Walk me from `POST /api/events` with a JSON body to a row in Postgres — every layer, every annotation, and what happens on invalid input."
+**Part B — Concepts (20 min).**
 
-## 15. Mastery checklist
+1. Same idempotency key, different body — which status and why?
+   <details><summary>Answer</summary>`422` (or `409` — but be consistent): the key identifies *one* logical request; a different fingerprint means the client is misusing the key. Never execute; never replay the old response silently.</details>
+2. Why must the idempotency claim run in `REQUIRES_NEW`?
+   <details><summary>Answer</summary>So the claim commits (and becomes visible to concurrent duplicates) before/independently of the long transfer transaction, and so a unique-violation does not abort the main transaction.</details>
+3. T1 holds lock on A and waits for B; T2 holds B and waits for A. What does Postgres do?
+   <details><summary>Answer</summary>After `deadlock_timeout` it detects the cycle and aborts one transaction with SQLSTATE `40P01`; the other proceeds. Prevention: ordered locking.</details>
+4. Under REPEATABLE READ with no explicit locks, two transactions each read balance 500 then insert a −400 entry and update the balance row. Outcome?
+   <details><summary>Answer</summary>The second `UPDATE` of the same balance row fails with `40001` (could not serialize) — RR blocks lost updates on the *same row*. But if you only *insert entries* and never update a shared row, both succeed (write skew) — which is why the balance row lock matters.</details>
+5. `@Transactional` method catches `RuntimeException` from an inner `@Transactional` bean call and returns 200. What happens at commit?
+   <details><summary>Answer</summary>Inner proxy marked the transaction rollback-only; the outer commit throws `UnexpectedRollbackException` → client gets 500, not 200.</details>
+6. Pessimistic vs optimistic for a hot "house" account receiving every fee?
+   <details><summary>Answer</summary>Pessimistic (or batching fees asynchronously): optimistic would retry-storm on the hot row. Cite your measured retry counts.</details>
 
-- [ ] `docker compose up -d` → app boots → Flyway applies all migrations with `ddl-auto=validate`
-- [ ] I can reproduce N+1 on demand and show the query count before/after the fix
-- [ ] I can explain owning side vs inverse side without notes
-- [ ] No entity class appears in any controller method signature in TicketHold
-- [ ] Every error response from TicketHold is `ProblemDetail` JSON
-- [ ] `GET /api/events?page=1&size=5&sort=startsAt,desc` works and the page size is capped
-- [ ] 8 tree problems logged; ≥ 5 `Solved Independently` or `Solved With Hint`
-- [ ] All spaced reviews due this week completed
+**Part C — Practical (20 min).** Write from memory: the JPQL/`@Lock` ordered-lock query, and the SQL of the idempotency claim (`INSERT ... ON CONFLICT DO NOTHING RETURNING ...`).
 
-## 16. Expected deliverables
+**Part D — Explain (5 min).** "Two users hit *Transfer* at the same moment on the same wallet. Walk me through what happens in your system, from HTTP to commit."
 
-- 5+ merged PRs on TicketHold (squash), each with a test/curl section
-- Tag `p2-m2` on `main` after the milestone is complete
-- Updated: [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md), [`trackers/project-tracker.md`](../../trackers/project-tracker.md), [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md) (JPA, Flyway, Docker), [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md), [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md)
-- Scratch repo (Library catalogue) pushed as practice evidence
+Pass: A in time · B ≥ 5/6 · C correct · D covers idempotency claim, ordered locks, balance check, commit, second request's fate.
 
-## 17. If you're behind / stretch goals
+## 14. Mastery checklist
 
-**Behind (minimum viable week):** Compose + Flyway + entities for Venue/Event/Seat only; DTOs + `ProblemDetail`; pagination on events. Push `Hold`, `Booking`, `User` entities to Monday of Week 11 (they're needed there). DSA: problems 1–5 + all reviews.
+- [ ] I can design an idempotency store on a whiteboard including in-progress, conflict and TTL.
+- [ ] I can explain why ordered locking prevents deadlocks and show the query.
+- [ ] I have *measured* pessimistic vs optimistic and can quote the numbers with methodology.
+- [ ] I can list Postgres isolation levels and which anomaly each prevents, with my experiment table.
+- [ ] I reproduced all three `@Transactional` pitfalls and can explain the proxy mechanism.
+- [ ] Concurrency test is repeatable 20/20 and I know the pool-exhaustion trap.
+- [ ] Mock #1 done, scored, with 3 concrete fixes.
+- [ ] 8 BST/Trie problems done; reviews done.
 
-**Stretch:**
-- Keyset pagination endpoint `GET /api/events/after?cursor=…` and compare `EXPLAIN ANALYZE` to deep offset.
-- Enable `hibernate.default_batch_fetch_size=50` and explain how it changes N+1 into N/50+1.
-- Add `pgAdmin` or `adminer` as a second Compose service.
-- [124. Binary Tree Maximum Path Sum](https://leetcode.com/problems/binary-tree-maximum-path-sum/).
+## 15. Expected deliverables
+
+- `ledgerx`: tags `m2`, `mvp`; `docs/DESIGN_DECISIONS.md` (locking comparison + isolation table), `docs/adr/0003-locking-strategy.md`, `docs/FAILURES.md` (+4 scenarios).
+- Trackers updated: [`project-tracker.md`](../../trackers/project-tracker.md) (M2, MVP reached), [`dsa-tracker.md`](../../trackers/dsa-tracker.md), [`technology-tracker.md`](../../trackers/technology-tracker.md) (Spring transactions, Postgres locking → "can defend"), [`interview-tracker.md`](../../trackers/interview-tracker.md) (mock #1), [`weekly-progress.md`](../../trackers/weekly-progress.md).
+
+## 16. If behind / stretch
+
+**Behind?** Order of cuts: TTL cleanup job → isolation table (do the RC vs `FOR UPDATE` rows only) → optimistic comparison (move to Week 12's lighter learning slot) → #1448/#211. **Never cut** the $500/$400/$400 test or the idempotency replay/conflict tests — they *are* the MVP.
+
+**Ahead?** Add a Redis `SET NX PX` fast-path in front of the DB claim and measure its effect on p50 latency under the 16-thread test (document; keep the DB as source of truth). Solve LeetCode 212 (Word Search II) as a Trie + backtracking preview.

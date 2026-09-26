@@ -1,7 +1,7 @@
 # 02 — Asynchronous JavaScript
 
-> Week 14 · ≈ 3.5 hours. Java gave you threads. JavaScript gives you **one thread + an event loop**.
-> Every React data-fetching bug you will hit in TeamBoard and PulseWatch traces back to this file.
+> Week 6 · ≈ 1.5 hours + exercises (SSE section: Week 16). Java gave you threads. JavaScript gives you **one thread + an event loop**.
+> Every data-fetching bug you will hit in the FlowGrid dashboard or ForgeCI's live UI traces back to this file.
 
 ---
 
@@ -108,9 +108,9 @@ function delay(ms) {
 }
 
 delay(100)
-  .then(() => fetch("/api/projects"))
+  .then(() => fetch("/api/warehouses"))
   .then((res) => res.json())               // returning a promise flattens the chain
-  .then((projects) => console.log(projects))
+  .then((warehouses) => console.log(warehouses))
   .catch((err) => console.error("failed", err)) // catches any rejection above
   .finally(() => console.log("done"));
 ```
@@ -119,8 +119,8 @@ delay(100)
 
 | Combinator | Resolves when | Rejects when | Use in projects |
 |---|---|---|---|
-| `Promise.all([...])` | all fulfill (array of values) | **first** rejection | Load project + members + labels for TeamBoard in parallel |
-| `Promise.allSettled([...])` | all settle (array of `{status, value/reason}`) | never | PulseWatch: check 10 monitors, show partial results |
+| `Promise.all([...])` | all fulfill (array of values) | **first** rejection | FlowGrid order detail: load order + lines + pick list in parallel |
+| `Promise.allSettled([...])` | all settle (array of `{status, value/reason}`) | never | FlowGrid dashboard: inventory, low-stock and open-orders widgets — show whichever loaded |
 | `Promise.race([...])` | first to settle | first to settle (if rejection) | Manual timeout (prefer `AbortSignal.timeout`) |
 | `Promise.any([...])` | first fulfillment | all reject (`AggregateError`) | Fastest mirror |
 
@@ -131,8 +131,8 @@ delay(100)
 `async` functions always return a promise. `await` pauses **the function** (not the thread) and resumes it as a microtask.
 
 ```js
-async function loadBoard(projectId) {
-  const res = await fetch(`/api/projects/${projectId}/issues`);
+async function loadOrders(warehouseId) {
+  const res = await fetch(`/api/warehouses/${warehouseId}/orders?status=PICKING`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return res.json();
 }
@@ -142,21 +142,21 @@ async function loadBoard(projectId) {
 
 ```js
 // Sequential: ~ t1 + t2
-const project = await getProject(id);
-const members = await getMembers(id);
+const order = await getOrder(id);
+const pickList = await getPickList(id);
 
 // Parallel: ~ max(t1, t2)
-const [project2, members2] = await Promise.all([getProject(id), getMembers(id)]);
+const [order2, pickList2] = await Promise.all([getOrder(id), getPickList(id)]);
 ```
 
-> **Break it:** add `await delay(500)` inside both `getProject` and `getMembers` and time each version with `console.time`.
+> **Break it:** add `await delay(500)` inside both `getOrder` and `getPickList` and time each version with `console.time`.
 
 ### `await` in loops
 
 ```js
-for (const id of ids) await check(id);            // sequential — intentional throttling
-await Promise.all(ids.map((id) => check(id)));    // parallel
-ids.forEach(async (id) => await check(id));       // BUG: forEach ignores the promises; nothing waits
+for (const id of ids) await confirmPick(id);           // sequential — intentional throttling
+await Promise.all(ids.map((id) => confirmPick(id)));   // parallel
+ids.forEach(async (id) => await confirmPick(id));      // BUG: forEach ignores the promises; nothing waits
 ```
 
 ---
@@ -166,7 +166,7 @@ ids.forEach(async (id) => await check(id));       // BUG: forEach ignores the pr
 ```js
 async function safeLoad() {
   try {
-    const data = await loadBoard(1);
+    const data = await loadOrders(1);
     return { ok: true, data };
   } catch (err) {
     // err is `unknown` in TS — could be TypeError (network), your Error, AbortError...
@@ -177,7 +177,7 @@ async function safeLoad() {
 
 Rules:
 - A rejected promise nobody handles → **unhandled rejection** (console error in browsers; in Node 15+ it crashes the process by default).
-- `try/catch` only catches an async error if you `await` inside the `try`. `try { loadBoard() } catch {}` catches nothing.
+- `try/catch` only catches an async error if you `await` inside the `try`. `try { loadOrders(1) } catch {}` catches nothing.
 - Throw `Error` objects (stack traces), not strings.
 
 ---
@@ -187,10 +187,10 @@ Rules:
 **`fetch` only rejects on network failure** (DNS, CORS block, offline, abort). A `404` or `500` **resolves** with `res.ok === false`.
 
 ```js
-async function http(path, { method = "GET", body, signal } = {}) {
+async function http(path, { method = "GET", body, signal, headers = {} } = {}) {
   const res = await fetch(`${import.meta.env?.VITE_API_URL ?? ""}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: { "Content-Type": "application/json", Accept: "application/json", ...headers },
     body: body !== undefined ? JSON.stringify(body) : undefined,
     signal,
   });
@@ -201,7 +201,7 @@ async function http(path, { method = "GET", body, signal } = {}) {
   const payload = isJson ? await res.json() : await res.text();
 
   if (!res.ok) {
-    // Spring Boot ProblemDetail (RFC 7807): { type, title, status, detail, instance }
+    // Spring Boot ProblemDetail (RFC 9457, formerly 7807): { type, title, status, detail, instance }
     const message = payload?.detail ?? payload?.title ?? `HTTP ${res.status}`;
     const err = new Error(message);
     err.status = res.status;
@@ -210,9 +210,14 @@ async function http(path, { method = "GET", body, signal } = {}) {
   }
   return payload;
 }
+
+// FlowGrid M2: the same Idempotency-Key on a retry must return the same order, not create a second one
+const key = crypto.randomUUID();
+await http("/api/orders", { method: "POST", body: order, headers: { "Idempotency-Key": key } });
 ```
 
 This is the JS seed of the typed client in [08-react/04-api-integration-auth.md](../08-react/04-api-integration-auth.md).
+Generate the idempotency key **once per user intent** (when the form is submitted), and reuse it on retries — a new key per retry defeats the purpose.
 
 ---
 
@@ -220,17 +225,17 @@ This is the JS seed of the typed client in [08-react/04-api-integration-auth.md]
 
 ```js
 const controller = new AbortController();
-const p = fetch("/api/issues?q=login", { signal: controller.signal });
+const p = fetch("/api/skus?q=bolt", { signal: controller.signal });
 controller.abort();                     // p rejects with DOMException name "AbortError"
 
 // Built-in timeout (Node 18+/modern browsers)
-await fetch("/api/monitors", { signal: AbortSignal.timeout(5000) }); // rejects with "TimeoutError"
+await fetch("/api/inventory", { signal: AbortSignal.timeout(5000) }); // rejects with "TimeoutError"
 
 // Combine user-cancel + timeout (AbortSignal.any: Node 20+ / modern browsers)
 const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);
 ```
 
-### Search-as-you-type without races (TeamBoard)
+### Search-as-you-type without races (FlowGrid SKU search)
 
 ```js
 let current;
@@ -238,7 +243,7 @@ async function onSearchInput(q) {
   current?.abort();                     // cancel the previous in-flight request
   current = new AbortController();
   try {
-    const results = await http(`/api/issues?q=${encodeURIComponent(q)}`, { signal: current.signal });
+    const results = await http(`/api/skus?q=${encodeURIComponent(q)}`, { signal: current.signal });
     render(results);
   } catch (err) {
     if (err.name === "AbortError") return; // expected, ignore
@@ -247,11 +252,44 @@ async function onSearchInput(q) {
 }
 ```
 
-Without the abort, a slow response for `"lo"` can arrive **after** the fast one for `"login"` and overwrite the correct results.
+Without the abort, a slow response for `"bo"` can arrive **after** the fast one for `"bolt-m8"` and overwrite the correct results.
 
 ---
 
-## 8. Timers and polling (PulseWatch dashboard)
+## 8. Server-Sent Events (`EventSource`)
+
+Revisited in **Week 16** for ForgeCI's live build logs (and in Week 23 for FlagForge propagation). SSE is a long-lived
+HTTP response (`Content-Type: text/event-stream`) over which the **server pushes** text events. One direction only —
+which is exactly what log streaming needs. ForgeCI chooses SSE over WebSockets for that reason (plain HTTP, automatic
+reconnect, works through most proxies).
+
+```js
+// Browser: stream a job's log; the server sends `id:` = log sequence number
+const es = new EventSource(`/api/jobs/${jobId}/logs/stream`);   // GET; cookies sent for same-origin
+
+es.addEventListener("log", (e) => appendLines(JSON.parse(e.data)));   // named event "log"
+es.addEventListener("status", (e) => setStatus(JSON.parse(e.data)));  // e.g. { status: "SUCCEEDED" }
+es.onerror = () => {
+  // The browser reconnects automatically and sends Last-Event-ID: <last id seen>,
+  // so the server can replay from that sequence number — no duplicated or missing lines.
+  if (es.readyState === EventSource.CLOSED) showError("stream closed");
+};
+
+// Stop when the job finishes or the component unmounts
+es.close();
+```
+
+Facts to know:
+- `EventSource` can't set custom headers (no `Authorization: Bearer`). Options: same-origin cookie auth, a short-lived
+  token in the query string (logged by proxies — keep it short-lived), or a `fetch`-based SSE reader.
+- Browsers limit concurrent HTTP/1.1 connections per origin (≈6); HTTP/2 avoids that. Close streams you don't need.
+- Server side: Spring's `SseEmitter` (MVC) or `Flux<ServerSentEvent<T>>` (WebFlux) — covered in the ForgeCI spec, [18-projects/forgeci/README.md](../18-projects/forgeci/README.md).
+
+---
+
+## 9. Timers and polling
+
+Polling is the simpler alternative to SSE: fine for FlowGrid's low-stock widget (refresh every 30 s).
 
 ```js
 function poll(fn, intervalMs) {
@@ -264,10 +302,17 @@ function poll(fn, intervalMs) {
   tick();
   return () => { stopped = true; clearTimeout(timer); };
 }
-const stop = poll(() => http("/api/status"), 10_000);
+const stop = poll(() => http("/api/inventory/low-stock"), 30_000);
 ```
 
 `setTimeout`-recursion instead of `setInterval` prevents overlapping requests when the API is slow.
+
+| | Polling | SSE |
+|---|---|---|
+| Latency | up to one interval | near-real-time |
+| Server cost | a request per client per interval | one open connection per client |
+| Complexity | trivial | reconnect/replay, connection limits, proxies/timeouts |
+| Good for | dashboards refreshing every 10–60 s | live logs, config push |
 
 ---
 
@@ -279,8 +324,10 @@ const stop = poll(() => http("/api/status"), 10_000);
 | `forEach(async ...)` | Code after loop runs before work finishes | `for...of` or `Promise.all(map)` |
 | Treating 4xx/5xx as rejection | Error UI never shows | check `res.ok` |
 | Sequential awaits for independent calls | Slow page | `Promise.all` |
-| No cancellation | Stale results flash; "state update on unmounted component" | `AbortController` |
+| No cancellation | Stale results flash; updates after unmount | `AbortController` |
 | `setInterval` polling a slow endpoint | Pile-up of concurrent requests | recursive `setTimeout` |
+| New `Idempotency-Key` on every retry | Duplicate orders | one key per user intent |
+| Never closing an `EventSource` | Connection limit hit, stale listeners | `close()` on unmount/finish |
 
 ---
 
@@ -302,8 +349,8 @@ always beat a `setTimeout(0)` queued at the same time.
 
 <details><summary><code>Promise.all</code> vs <code>Promise.allSettled</code>?</summary>
 
-`all` fails fast on the first rejection — right when every result is required. `allSettled` waits for all and
-reports each outcome — right when partial success is useful, e.g. a dashboard showing each monitor's status.
+`all` fails fast on the first rejection — right when every result is required (an order and its lines). `allSettled`
+waits for all and reports each outcome — right when partial success is useful, e.g. independent dashboard widgets.
 </details>
 
 <details><summary>Does <code>fetch</code> reject on HTTP 500?</summary>
@@ -315,6 +362,13 @@ No. It rejects only on network-level failures or abort. You must check `response
 
 Pass `signal` from an `AbortController` to `fetch` and call `abort()`. The promise rejects with an `AbortError`,
 which I ignore in the handler. I use it for search-as-you-type and in React effect cleanups.
+</details>
+
+<details><summary>Polling vs SSE vs WebSockets?</summary>
+
+Polling is simplest and fine when seconds of delay are OK. SSE is a one-way server→client stream over HTTP with built-in
+reconnect and `Last-Event-ID` resume — ideal for ForgeCI's live logs. WebSockets are bidirectional; I'd only need them if
+the client had to push a stream of messages too.
 </details>
 
 <details><summary>Compare to Java's <code>CompletableFuture</code>.</summary>
@@ -334,4 +388,5 @@ event-loop thread, so there are no data races on JS variables — but also no CP
 - [ ] Show sequential vs parallel timing with `console.time`.
 - [ ] Write the `http` helper that handles non-2xx, 204 and ProblemDetail.
 - [ ] Implement search-as-you-type with `AbortController` and prove no stale results.
-- [ ] Implement non-overlapping polling.
+- [ ] Implement non-overlapping polling; explain when SSE is worth it.
+- [ ] (Week 16) Consume an SSE stream with reconnect and explain `Last-Event-ID`.

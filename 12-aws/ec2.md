@@ -1,6 +1,6 @@
 # EC2 + a Minimal VPC
 
-> **Practical use:** one virtual machine running PulseWatch's Docker Compose stack, in a public
+> **Practical use:** one virtual machine running FlowGrid's Docker Compose stack, in a public
 > subnet, reachable on 80/443, SSH only from your IP (or no SSH at all via Session Manager).
 > **Interview use:** security group vs NACL, public vs private subnet, AMI, user data, "how would you scale this?"
 
@@ -10,7 +10,7 @@
 
 ## 1. EC2 vocabulary
 
-| Term | Meaning | P4 choice |
+| Term | Meaning | FlowGrid choice |
 |---|---|---|
 | **AMI** | Machine image: OS + preinstalled software; region-specific ID | Amazon Linux 2023 (latest, looked up via SSM parameter) |
 | **Instance type** | CPU/RAM family + size: `t3.micro` = burstable, 2 vCPU, 1 GiB | `t3.small` (2 GiB) is comfortable; `t3.micro` works with tight JVM limits |
@@ -20,7 +20,7 @@
 | **EBS volume** | Network block storage = the disk. Survives stop; deleted on terminate by default (root) | 20 GiB gp3 |
 | **User data** | Script run once at first boot (as root) via cloud-init | Install Docker + Compose |
 | **Elastic IP** | Static public IPv4 you own until released | Optional; costs money (all public IPv4 is billed hourly since 2024) |
-| **Instance profile** | Attaches an IAM role | `pulsewatch-ec2-profile` |
+| **Instance profile** | Attaches an IAM role | `flowgrid-ec2-profile` |
 | **Stop vs terminate** | Stop = VM off, disk kept, (EBS still billed). Terminate = gone | Terminate at teardown |
 
 Instance families at a glance: `t` burstable general, `m` general, `c` compute, `r` memory,
@@ -38,7 +38,7 @@ Instance families at a glance: `t` burstable general, `m` general, `c` compute, 
 | **Route table** | Rules "destination CIDR → target". Every subnet is associated with exactly one |
 | **Public subnet** | Its route table has `0.0.0.0/0 → igw-…`. That's the whole definition |
 | **Private subnet** | No route to the IGW. Instances can't be reached from the internet |
-| **NAT Gateway** | Lets private instances make *outbound* calls. **~\$30+/month + data** — P4 avoids it |
+| **NAT Gateway** | Lets private instances make *outbound* calls. **~\$30+/month + data** — FlowGrid avoids it |
 | **DB subnet group** | RDS needs subnets in **≥ 2 AZs**, even for single-AZ instances |
 
 ```
@@ -52,7 +52,7 @@ The `local` route is automatic — everything inside the VPC can route to everyt
 groups** decide what's actually allowed.
 
 The default VPC (every region has one, all subnets public) is fine for a first EC2 experiment. For
-P4 build your own so you can explain every piece. Full CLI in [deploy-walkthrough.md](./deploy-walkthrough.md#step-2--network).
+FlowGrid, build your own so you can explain every piece. Full CLI in [deploy-walkthrough.md](./deploy-walkthrough.md#step-2--network).
 
 ### Security group vs Network ACL
 
@@ -65,12 +65,12 @@ P4 build your own so you can explain every piece. Full CLI in [deploy-walkthroug
 | Default | New SG: deny all in, allow all out | Default NACL: allow all |
 | Typical use | Your main tool | Coarse subnet-wide blocks (e.g. deny a malicious CIDR) |
 
-P4 leaves NACLs at default and uses SGs:
+FlowGrid leaves NACLs at default and uses SGs:
 
 | SG | Inbound | Why |
 |---|---|---|
 | `sg-app` | TCP 22 from `MY_IP/32` (or none with SSM) | Admin access |
-| `sg-app` | TCP 80, 443 from `0.0.0.0/0` | Public status page + API through nginx |
+| `sg-app` | TCP 80, 443 from `0.0.0.0/0` | React dashboard + API through nginx |
 | `sg-db` | TCP 5432 **from `sg-app`** | Only the app can reach Postgres |
 
 Note that the API port (8080) and Redis (6379) are **not** opened — nginx on 80 proxies to the API
@@ -98,11 +98,11 @@ aws ec2 run-instances \
   --subnet-id "$SUBNET_PUBLIC_A" \
   --security-group-ids "$SG_APP" \
   --associate-public-ip-address \
-  --iam-instance-profile Name=pulsewatch-ec2-profile \
+  --iam-instance-profile Name=flowgrid-ec2-profile \
   --metadata-options HttpTokens=required,HttpPutResponseHopLimit=2 \
   --block-device-mappings '[{"DeviceName":"/dev/xvda","Ebs":{"VolumeSize":20,"VolumeType":"gp3","DeleteOnTermination":true}}]' \
   --user-data file://user-data.sh \
-  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=pulsewatch-app},{Key=project,Value=pulsewatch}]' \
+  --tag-specifications 'ResourceType=instance,Tags=[{Key=Name,Value=flowgrid-app},{Key=project,Value=flowgrid}]' \
   --query 'Instances[0].InstanceId' --output text
 ```
 
@@ -202,12 +202,12 @@ On the instance, the stack from [`11-docker/compose.md`](../11-docker/compose.md
 production override that drops the local Postgres (RDS replaces it). Keep secrets out of the repo:
 
 ```bash
-# /opt/pulsewatch/.env   (chmod 600, owned by ec2-user; never committed)
+# /opt/flowgrid/.env   (chmod 600, owned by ec2-user; never committed)
 SPRING_PROFILES_ACTIVE=prod
-SPRING_DATASOURCE_URL=jdbc:postgresql://<rds-endpoint>:5432/pulsewatch
-SPRING_DATASOURCE_USERNAME=pulsewatch_app
+SPRING_DATASOURCE_URL=jdbc:postgresql://<rds-endpoint>:5432/flowgrid
+SPRING_DATASOURCE_USERNAME=flowgrid_app
 SPRING_DATASOURCE_PASSWORD=...
-PULSEWATCH_S3_BUCKET=pulsewatch-exports-123456789012
+FLOWGRID_S3_BUCKET=flowgrid-exports-123456789012
 AWS_REGION=eu-west-1
 JAVA_TOOL_OPTIONS=-XX:MaxRAMPercentage=60
 ```
@@ -216,7 +216,7 @@ Better (and a good interview talking point): store the DB password in **SSM Para
 SecureString** or **Secrets Manager** and fetch it at boot with the instance role.
 
 ```bash
-aws ssm get-parameter --name /pulsewatch/prod/db-password --with-decryption \
+aws ssm get-parameter --name /flowgrid/prod/db-password --with-decryption \
   --query Parameter.Value --output text
 ```
 
@@ -254,12 +254,13 @@ subnet-level, ordered allow/deny rules. Stateless means return traffic on epheme
 explicitly allowed.
 </details>
 
-<details><summary>How would you scale P4 beyond one instance?</summary>
+<details><summary>How would you scale FlowGrid beyond one instance?</summary>
 
-Make the API stateless (already JWT + Redis), bake an AMI or move to ECS/Fargate, put an ALB in
-front, run instances in an Auto Scaling Group across two AZs. The scheduler worker needs leader
-election or partitioned monitors so checks aren't duplicated. Redis → ElastiCache. RDS → Multi-AZ,
-add a read replica for the status page.
+The API is already stateless (JWT, Redis cache, Postgres), so: bake an AMI or move to ECS/Fargate,
+put an ALB in front, run instances in an Auto Scaling Group across two AZs. Scheduled jobs (low-stock
+alerts) must run once, not once per instance → ShedLock-style DB lock or a dedicated scheduler.
+Redis → ElastiCache. RDS → Multi-AZ, plus a read replica for dashboard/report queries. Reservations
+stay correct because correctness lives in Postgres row locks, not in JVM memory.
 </details>
 
 <details><summary>Stop vs terminate vs reboot?</summary>
@@ -271,6 +272,6 @@ public IP and the host. Terminate destroys the instance and (by default) its roo
 <details><summary>Why did you run Postgres on RDS but Redis in Compose?</summary>
 
 Postgres holds durable data needing backups and point-in-time recovery; RDS gives that without
-running it myself. Redis in P4 holds cache and rate-limit counters that can be rebuilt, so losing it
-is acceptable and ElastiCache would add cost. I'd move it for production.
+running it myself. Redis in FlowGrid holds the catalog and low-stock caches, which can be rebuilt from Postgres (the
+app degrades to DB reads when Redis is down), so losing it is acceptable and ElastiCache would add cost. I'd move it for production.
 </details>

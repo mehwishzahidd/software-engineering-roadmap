@@ -1,6 +1,6 @@
 # IAM — Identity and Access Management
 
-> **Practical use:** give PulseWatch on EC2 permission to write to *one* S3 bucket and *its own*
+> **Practical use:** give FlowGrid on EC2 permission to write to *one* S3 bucket and *its own*
 > CloudWatch log group — nothing else — without a single access key on disk.
 > **Interview use:** "users vs roles", "least privilege", "how does your app get credentials?"
 
@@ -10,17 +10,17 @@
 
 ## 1. Vocabulary
 
-| Term | What it is | Example in P4 |
+| Term | What it is | Example (FlowGrid) |
 |---|---|---|
 | **Root user** | The email you signed up with. Can do *everything*, including close the account. | Used once: enable MFA, create admin, then lock away |
 | **IAM user** | A long-lived identity for a human (or legacy app) with a password and/or access keys | `saeed-admin` for you |
 | **IAM group** | A collection of users; attach policies to the group, not to each user | `Admins`, `ReadOnly` |
-| **IAM role** | An identity with **no long-lived credentials**. Someone/something *assumes* it and gets temporary credentials (STS) | `pulsewatch-ec2-role` |
-| **Policy** | JSON document of `Allow`/`Deny` statements | `pulsewatch-app-policy` |
+| **IAM role** | An identity with **no long-lived credentials**. Someone/something *assumes* it and gets temporary credentials (STS) | `flowgrid-ec2-role` |
+| **Policy** | JSON document of `Allow`/`Deny` statements | `flowgrid-app-policy` |
 | **Trust policy** | The policy *on a role* saying who may assume it | "EC2 service may assume this role" |
-| **Instance profile** | Container that attaches a role to an EC2 instance | `pulsewatch-ec2-profile` |
-| **Principal** | The entity making a request (user, role session, service) | `arn:aws:sts::123…:assumed-role/pulsewatch-ec2-role/i-0abc…` |
-| **ARN** | Amazon Resource Name — globally unique ID | `arn:aws:s3:::pulsewatch-exports-123456789012` |
+| **Instance profile** | Container that attaches a role to an EC2 instance | `flowgrid-ec2-profile` |
+| **Principal** | The entity making a request (user, role session, service) | `arn:aws:sts::123…:assumed-role/flowgrid-ec2-role/i-0abc…` |
+| **ARN** | Amazon Resource Name — globally unique ID | `arn:aws:s3:::flowgrid-exports-123456789012` |
 | **STS** | Security Token Service — issues temporary credentials | Behind every role assumption |
 
 **Modern alternative for humans:** *IAM Identity Center* (SSO) gives short-lived credentials via
@@ -59,13 +59,13 @@ request ──► explicit Deny? ──yes──► DENIED
       "Sid": "ExportsReadWrite",
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:GetObject"],
-      "Resource": "arn:aws:s3:::pulsewatch-exports-123456789012/reports/*"
+      "Resource": "arn:aws:s3:::flowgrid-exports-123456789012/reports/*"
     },
     {
       "Sid": "ExportsList",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws:s3:::pulsewatch-exports-123456789012",
+      "Resource": "arn:aws:s3:::flowgrid-exports-123456789012",
       "Condition": { "StringLike": { "s3:prefix": ["reports/*"] } }
     }
   ]
@@ -82,7 +82,7 @@ request ──► explicit Deny? ──yes──► DENIED
 
 ---
 
-## 4. The P4 policies
+## 4. The FlowGrid policies
 
 ### 4.1 Trust policy — "EC2 may assume this role"
 
@@ -103,7 +103,7 @@ request ──► explicit Deny? ──yes──► DENIED
 
 ### 4.2 Permissions policy — least privilege for the app
 
-`pulsewatch-app-policy.json` (replace account ID, region, bucket):
+`flowgrid-app-policy.json` (replace account ID, region, bucket):
 
 ```json
 {
@@ -113,20 +113,20 @@ request ──► explicit Deny? ──yes──► DENIED
       "Sid": "S3ReportExports",
       "Effect": "Allow",
       "Action": ["s3:PutObject", "s3:GetObject"],
-      "Resource": "arn:aws:s3:::pulsewatch-exports-123456789012/reports/*"
+      "Resource": "arn:aws:s3:::flowgrid-exports-123456789012/reports/*"
     },
     {
       "Sid": "CloudWatchLogs",
       "Effect": "Allow",
       "Action": ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"],
-      "Resource": "arn:aws:logs:eu-west-1:123456789012:log-group:/pulsewatch/*:*"
+      "Resource": "arn:aws:logs:eu-west-1:123456789012:log-group:/flowgrid/*:*"
     },
     {
       "Sid": "CustomMetrics",
       "Effect": "Allow",
       "Action": "cloudwatch:PutMetricData",
       "Resource": "*",
-      "Condition": { "StringEquals": { "cloudwatch:namespace": "PulseWatch" } }
+      "Condition": { "StringEquals": { "cloudwatch:namespace": "FlowGrid" } }
     }
   ]
 }
@@ -144,23 +144,23 @@ Why these and nothing more:
 
 ```bash
 aws iam create-role \
-  --role-name pulsewatch-ec2-role \
+  --role-name flowgrid-ec2-role \
   --assume-role-policy-document file://trust-ec2.json
 
 aws iam put-role-policy \
-  --role-name pulsewatch-ec2-role \
-  --policy-name pulsewatch-app-policy \
-  --policy-document file://pulsewatch-app-policy.json
+  --role-name flowgrid-ec2-role \
+  --policy-name flowgrid-app-policy \
+  --policy-document file://flowgrid-app-policy.json
 
 # Optional: allow Session Manager (shell without SSH/port 22)
 aws iam attach-role-policy \
-  --role-name pulsewatch-ec2-role \
+  --role-name flowgrid-ec2-role \
   --policy-arn arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
 
-aws iam create-instance-profile --instance-profile-name pulsewatch-ec2-profile
+aws iam create-instance-profile --instance-profile-name flowgrid-ec2-profile
 aws iam add-role-to-instance-profile \
-  --instance-profile-name pulsewatch-ec2-profile \
-  --role-name pulsewatch-ec2-role
+  --instance-profile-name flowgrid-ec2-profile \
+  --role-name flowgrid-ec2-role
 ```
 
 `put-role-policy` = **inline** policy (lives and dies with the role). `create-policy` +
@@ -179,7 +179,7 @@ Spring Boot (AWS SDK v2)
        3. Web identity token (EKS / OIDC)
        4. ~/.aws/credentials profile
        5. Container credentials (ECS task role)
-       6. EC2 Instance Metadata Service (IMDSv2) ◄── P4 lands here
+       6. EC2 Instance Metadata Service (IMDSv2) ◄── FlowGrid on EC2 lands here
 ```
 
 - The instance metadata service at `169.254.169.254` returns **temporary** credentials for the
@@ -194,7 +194,7 @@ Verify identity from the instance:
 
 ```bash
 aws sts get-caller-identity
-# "Arn": "arn:aws:sts::123456789012:assumed-role/pulsewatch-ec2-role/i-0abc..."
+# "Arn": "arn:aws:sts::123456789012:assumed-role/flowgrid-ec2-role/i-0abc..."
 ```
 
 ---
@@ -274,14 +274,14 @@ that expire (typically 1 h for instance roles, auto-refreshed). Apps and service
 
 <details><summary>How does your Spring Boot app on EC2 authenticate to S3?</summary>
 
-An instance profile attaches `pulsewatch-ec2-role`. The AWS SDK's default credentials chain reaches
+An instance profile attaches `flowgrid-ec2-role`. The AWS SDK's default credentials chain reaches
 the EC2 metadata endpoint (IMDSv2) and gets temporary credentials. No keys exist in code, env vars
 or the image. The role's policy only allows Get/Put on the `reports/` prefix of one bucket.
 </details>
 
 <details><summary>What is least privilege and how did you apply it?</summary>
 
-Grant only the actions and resources needed. For P4: two S3 actions on one prefix, three Logs
+Grant only the actions and resources needed. For FlowGrid: two S3 actions on one prefix, three Logs
 actions on one log-group pattern, `PutMetricData` restricted to one namespace. Nothing for IAM, EC2
 or deletes.
 </details>

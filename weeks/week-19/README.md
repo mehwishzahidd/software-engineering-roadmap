@@ -1,448 +1,273 @@
-# Week 19 — Linux and Docker in depth; C++ essentials
+# Week 19 — ForgeCI M6: DAG pipelines + AWS (Advanced Version)
 
 [← Week 18](../week-18/) · [Roadmap](../../ROADMAP.md) · [Week 20 →](../week-20/)
 
-**Phase 5 — Production engineering (Weeks 19–22)** · **Estimated time: ≈21 h**
+**Phase 3 · ForgeCI** (weeks 14–19) · Milestone **M6** · Target: **Advanced Version** on top of `v1.0`
 
-| Category | Hours |
-|---|---:|
-| Core learning (Linux, Docker, C++) | 6.5 |
-| Hands-on coding / labs (Break it, Debug it) | 3.5 |
-| DSA (7 new 2-D DP + spaced reviews) | 5 |
-| Project P4 PulseWatch M1 | 4 |
-| Interview practice (OA sim #1, mock, résumé defense) | 2 |
-| **Total** | **21** |
+| Block | Hours | Focus |
+|---|---:|---|
+| Project | 32 | `needs:` job dependencies, topological scheduling, fan-out/fan-in, fail-fast; AWS deployment of a multi-service app; docs |
+| Learning | 5 | DAGs from DSA to production, Docker-socket security, AWS multi-service deployment, SQS considered vs Redis |
+| DSA | 6 | Advanced Graphs + Bit Manipulation — **7 new** + reviews |
+| Interview / review | 4 | OA simulation #3, weekly mock, **ForgeCI deep-dive rehearsal** |
 
 ---
 
 ## 1. Main objective
 
-By Sunday you can operate a Linux box from the terminal without a GUI (files, permissions, processes, signals, services, SSH, text processing), write a defensive Bash script, and ship a Spring Boot service as a small, non-root, multi-stage Docker image orchestrated with Compose. You start **P4 PulseWatch** (monitors API + checker worker + Postgres + Redis in Compose), spend ≈3 hours on C++ so pointer/reference/memory questions stop being scary, and sit your **first OA simulation (70 min)**.
+Ship ForgeCI's one hard feature — **pipelines as a DAG** — and put the whole system on AWS.
+The topological sort you learned in Week 14 becomes the scheduler; the Docker-socket
+discussion becomes a written security note; the "why Redis and not SQS" question gets an ADR.
+End the week with a 12-minute ForgeCI deep-dive you can deliver without notes.
 
 ## 2. Prerequisites
 
-- [Checkpoint 16](../../checkpoints/checkpoint-16.md) passed (or its remediation scheduled).
-- P3 TeamBoard v1.0 tagged and running with Docker Compose (Week 18); P4 design doc (M0) merged.
-- You already ran Postgres in Compose (Week 10) and wrote a Dockerfile for P2 (Week 12). This week makes that knowledge deliberate.
-- DSA: 1-D DP and the first 2-D DP problems from Week 18 are in the tracker.
+- ForgeCI `v1.0` tagged ([Week 18](../week-18/)) with ITs, failure suite and Compose stack. If not tagged, **finish M5 first** — M6 is Advanced and is the first thing to cut (ROADMAP §8).
+- Topological sort + Union-Find from [Week 14](../week-14/) (`03-dsa/16-topological-sort.md`).
+- AWS deploys done twice already (FlowGrid W8, LedgerX W13): IAM user/roles, EC2 + Compose, RDS, CloudWatch.
 
-## 3. Topics & subtopics
+## 3. Learning topics
 
 | Topic | Subtopics | Read |
 |---|---|---|
-| Linux command line | Filesystem hierarchy, `ls -l` output, permissions (rwx, octal, umask, `chown`), links, `find`, `du`/`df` | [`10-linux/commands.md`](../../10-linux/commands.md) |
-| Processes & services | `ps`, `top`/`htop`, `kill` + signals (SIGTERM, SIGKILL, SIGINT, SIGHUP), exit codes, `systemd` units, `journalctl` | [`10-linux/commands.md`](../../10-linux/commands.md), [`14-cs-fundamentals/operating-systems.md`](../../14-cs-fundamentals/operating-systems.md) |
-| Text processing | `grep -E`, `sed`, `awk`, `sort`, `uniq -c`, `cut`, `xargs`, pipes, redirection, `tee` | [`10-linux/commands.md`](../../10-linux/commands.md) |
-| Networking tools | `ssh`, keys, `scp`, `curl -v`, `ss -tlnp`, `dig` | [`10-linux/commands.md`](../../10-linux/commands.md), [`14-cs-fundamentals/networking.md`](../../14-cs-fundamentals/networking.md) |
-| Bash scripting | Shebang, `set -euo pipefail`, variables/quoting, `if`/`for`/functions, `$?`, `trap`, args | [`10-linux/bash-scripting.md`](../../10-linux/bash-scripting.md), [`10-linux/exercises.md`](../../10-linux/exercises.md) |
-| Docker images | Images vs containers, layers + cache, `.dockerignore`, multi-stage builds, non-root user, `ENTRYPOINT` vs `CMD`, exec form & PID 1 | [`11-docker/README.md`](../../11-docker/README.md), [`11-docker/dockerfiles.md`](../../11-docker/dockerfiles.md) |
-| Docker runtime | Volumes vs bind mounts, bridge networks + DNS by service name, `logs`, `exec`, `inspect`, restart policies, resource limits | [`11-docker/compose.md`](../../11-docker/compose.md), [`11-docker/exercises.md`](../../11-docker/exercises.md) |
-| Compose | Services, `depends_on` + `healthcheck`, env files, profiles, named volumes | [`11-docker/compose.md`](../../11-docker/compose.md) |
-| C++ essentials (≈3h) | Compile/link, stack vs heap, pointers vs references, `new`/`delete`, RAII, `std::unique_ptr`, `std::vector` | [`20-cpp-basics/README.md`](../../20-cpp-basics/README.md) |
-| Résumé defense | Linux, Docker | [`17-resume-tech-defense/linux.md`](../../17-resume-tech-defense/linux.md), [`17-resume-tech-defense/docker.md`](../../17-resume-tech-defense/docker.md) |
+| DAGs in production | Kahn's algorithm as an event-driven scheduler, in-degree tables in Postgres, cycle detection at config-parse time, fan-out/fan-in, fail-fast vs continue-on-error | [`03-dsa/16-topological-sort.md`](../../03-dsa/16-topological-sort.md), [`18-projects/forgeci/milestones.md`](../../18-projects/forgeci/milestones.md) |
+| Docker-socket security | What `/var/run/docker.sock` grants, rootless Docker, socket proxies, running untrusted steps: no privileged, no host mounts, resource limits, network isolation | [`11-docker/README.md`](../../11-docker/README.md), [`10-linux/README.md`](../../10-linux/README.md) |
+| AWS for multi-service apps | One EC2 (api + workers via Compose) vs separate worker EC2; RDS Postgres; Redis on EC2 vs ElastiCache (cost); security groups per role; IAM instance roles; CloudWatch log groups per service; budgets | [`12-aws/deploy-walkthrough.md`](../../12-aws/deploy-walkthrough.md), [`12-aws/ec2.md`](../../12-aws/ec2.md), [`12-aws/rds.md`](../../12-aws/rds.md), [`12-aws/iam.md`](../../12-aws/iam.md), [`12-aws/cloudwatch.md`](../../12-aws/cloudwatch.md), [`12-aws/cost-safety.md`](../../12-aws/cost-safety.md) |
+| SQS considered | Visibility timeout ≈ lease, DLQ ≈ max attempts, FIFO vs standard, why you still chose Redis (pub/sub + counters + one dependency) | [`15-system-design/scalability.md`](../../15-system-design/scalability.md), [`12-aws/README.md`](../../12-aws/README.md) |
+| CI/CD deploy stage | `workflow_dispatch` + environment protection, SSH/SSM deploy, pulling sha-tagged images | [`13-cicd/pipeline-examples.md`](../../13-cicd/pipeline-examples.md) |
 
 ## 4. Concepts to learn
 
-### 4.1 Permissions and ownership
+### 4.1 Kahn's algorithm, but event-driven
 
-```bash
-ls -l deploy.sh
-# -rw-r--r-- 1 alice dev 412 Sep 1 10:00 deploy.sh
-#  u=rw  g=r  o=r   → octal 644
-chmod 750 deploy.sh          # u=rwx g=rx o=---
-chmod u+x,g-w deploy.sh      # symbolic form
-sudo chown app:app /var/lib/pulsewatch
-umask                        # 0022 → new files 644, dirs 755
-```
+In an interview you run Kahn's in a loop. In ForgeCI, jobs finish at unpredictable times, so the
+"queue" step happens **when a dependency completes**, not in a loop:
 
-- `x` on a **directory** means "may enter / traverse"; `r` means "may list names".
-- Containers run processes as a UID; a file owned by root with mode 600 is unreadable by a non-root app user → classic "works as root, breaks as `USER app`".
-
-**Interview angle:** "What does `chmod 755` mean?" / "Why shouldn't a container run as root?" (container escape blast radius, file writes to mounted host paths).
-
-### 4.2 Processes, signals, exit codes
-
-```bash
-ps aux | grep java                # find the JVM
-pgrep -f pulsewatch-worker        # PID only
-kill -TERM 4312                   # polite: app runs shutdown hooks
-kill -KILL 4312                   # cannot be caught; no cleanup
-echo $?                           # exit code of last command: 0 ok, 1–255 error
-                                   # 128+N = killed by signal N (137 = SIGKILL, 143 = SIGTERM)
-```
-
-- `docker stop` sends SIGTERM, waits 10 s, then SIGKILL. Spring Boot with `server.shutdown=graceful` finishes in-flight requests on SIGTERM.
-- If your `ENTRYPOINT` is shell form (`ENTRYPOINT java -jar app.jar`), `/bin/sh` is PID 1 and **does not forward SIGTERM** → every stop takes 10 s and ends with exit 137.
-
-**Interview angle:** "Difference between SIGTERM and SIGKILL?" "Your container exits with 137 — what happened?" (OOM-killed or SIGKILL after stop timeout; check `docker inspect --format '{{.State.OOMKilled}}'`).
-
-### 4.3 systemd and journald
-
-```ini
-# /etc/systemd/system/pulsewatch.service
-[Unit]
-Description=PulseWatch compose stack
-After=docker.service network-online.target
-Requires=docker.service
-
-[Service]
-WorkingDirectory=/opt/pulsewatch
-ExecStart=/usr/bin/docker compose up
-ExecStop=/usr/bin/docker compose down
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
-
-```bash
-sudo systemctl daemon-reload && sudo systemctl enable --now pulsewatch
-systemctl status pulsewatch
-journalctl -u pulsewatch -f --since "10 min ago"
-```
-
-You will use exactly this on EC2 in Week 21.
-
-**Interview angle:** "How would you make a service start on boot and restart if it crashes?"
-
-### 4.4 Text processing on real logs
-
-```bash
-# Top 5 endpoints returning 5xx in an access log (space-separated, status in field 9)
-awk '$9 ~ /^5/ {print $7}' access.log | sort | uniq -c | sort -rn | head -5
-
-# All ERROR lines from the worker in the last run, with 2 lines of context
-docker compose logs worker | grep -E -A2 'ERROR|Exception'
-
-# Replace a config value in place (GNU sed)
-sed -i 's/^CHECK_INTERVAL=.*/CHECK_INTERVAL=30/' .env
-
-# Which process holds port 8080?
-sudo ss -tlnp | grep ':8080'
-```
-
-**Interview angle:** "How would you find which endpoint produces the most errors from a log file?" — say the pipeline out loud.
-
-### 4.5 Defensive Bash
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail            # exit on error, unset var, failed pipe stage
-IFS=$'\n\t'
-
-readonly BACKUP_DIR="${1:?usage: backup.sh <dir>}"
-readonly TS="$(date +%Y%m%dT%H%M%S)"
-tmp="$(mktemp)"
-trap 'rm -f "$tmp"' EXIT     # cleanup even on failure
-
-docker compose exec -T postgres pg_dump -U pulsewatch pulsewatch > "$tmp"
-mkdir -p "$BACKUP_DIR"
-gzip -c "$tmp" > "$BACKUP_DIR/pulsewatch-$TS.sql.gz"
-# keep last 7
-ls -1t "$BACKUP_DIR"/pulsewatch-*.sql.gz | tail -n +8 | xargs -r rm --
-echo "backup ok: $BACKUP_DIR/pulsewatch-$TS.sql.gz"
-```
-
-Quote every variable (`"$x"`); unquoted variables split on spaces and glob.
-
-**Interview angle:** "What does `set -euo pipefail` do and why?"
-
-### 4.6 Images, layers, multi-stage builds
-
-```dockerfile
-# syntax=docker/dockerfile:1
-FROM eclipse-temurin:21-jdk AS build
-WORKDIR /src
-COPY mvnw pom.xml ./
-COPY .mvn .mvn
-RUN ./mvnw -q dependency:go-offline          # cached unless pom.xml changes
-COPY src src
-RUN ./mvnw -q -DskipTests package
-
-FROM eclipse-temurin:21-jre
-RUN useradd --system --uid 10001 app
-WORKDIR /app
-COPY --from=build /src/target/*.jar app.jar
-USER app
-EXPOSE 8080
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "app.jar"]   # exec form → java is PID 1
-```
-
-- Each instruction is a layer; order from least- to most-frequently changing so `COPY src` doesn't invalidate the dependency layer.
-- Final image contains a JRE + jar only — no Maven, no sources. Compare `docker image ls` sizes of single-stage vs multi-stage and record both numbers in the P4 README.
-- `.dockerignore`: `target/`, `.git/`, `node_modules/`, `.env`.
-
-**Interview angle:** "Image vs container?" "Why multi-stage?" "Why did my build re-download all dependencies on every code change?"
-
-### 4.7 Volumes, networks, Compose healthchecks
-
-```yaml
-# compose.yaml (P4 PulseWatch M1)
-services:
-  postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: pulsewatch
-      POSTGRES_USER: pulsewatch
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
-    volumes: [pgdata:/var/lib/postgresql/data]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pulsewatch"]
-      interval: 5s
-      retries: 10
-  redis:
-    image: redis:7
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-  api:
-    build: ./api
-    ports: ["8080:8080"]
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pulsewatch   # service name = DNS name
-      SPRING_DATA_REDIS_HOST: redis
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-  worker:
-    build: ./worker
-    environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/pulsewatch
-    depends_on:
-      postgres: { condition: service_healthy }
-    restart: unless-stopped
-volumes:
-  pgdata:
-```
-
-- Named volume `pgdata` survives `docker compose down`; `down -v` deletes it.
-- Inside the Compose network, `localhost` is the container itself — use the service name.
-- Only `api` publishes a port; Postgres and Redis are reachable only inside the network.
-
-**Interview angle:** "How do two containers talk to each other?" "Where does Postgres data live when the container is deleted?" "Does `depends_on` wait for the DB to be ready?" (only with `condition: service_healthy`).
-
-### 4.8 C++ essentials (≈3 h, awareness level)
-
-```cpp
-#include <iostream>
-#include <memory>
-#include <vector>
-
-struct Monitor { std::string url; int intervalSec; };
-
-void bump(int x)      { x++; }        // copy: caller unchanged
-void bumpRef(int& x)  { x++; }        // reference: caller changed
-void bumpPtr(int* x)  { (*x)++; }     // pointer: caller changed, may be nullptr
-
-int main() {
-    int a = 1; bump(a); bumpRef(a); bumpPtr(&a);          // a == 3
-    Monitor* raw = new Monitor{"https://x.io", 30};       // heap, manual
-    delete raw;                                            // forget → leak; twice → UB
-    auto m = std::make_unique<Monitor>(Monitor{"https://y.io", 60}); // RAII: freed at scope end
-    std::vector<int> v{3, 1, 2};                           // like ArrayList<Integer>, but values not refs
-    std::cout << a << " " << m->url << " " << v.size() << "\n";
+```java
+// on job completion, inside one transaction
+void onJobFinished(UUID buildId, String finishedJob, JobStatus status) {
+    for (String dependent : dag.dependentsOf(finishedJob)) {
+        int remaining = jobRepo.decrementPendingDeps(buildId, dependent); // UPDATE ... RETURNING pending_deps
+        if (remaining == 0 && status == SUCCESS) queue.enqueue(buildId, dependent);
+    }
 }
 ```
 
-Compile: `g++ -std=c++20 -Wall -Wextra -g main.cpp -o main && ./main`. Run once with `-fsanitize=address` after adding a double `delete` to see the error.
+- `pending_deps` lives in the `jobs` table so a crashed api does not lose the in-degree; the decrement is a single atomic `UPDATE … SET pending_deps = pending_deps - 1 … RETURNING pending_deps`.
+- Jobs with in-degree 0 are enqueued when the build is created — that is the "initial queue" in Kahn's.
+- **Cycle detection** happens at parse time: run full Kahn's over the config; if processed < job count, reject the pipeline with a `ProblemDetail` listing the jobs in the cycle.
+- **Interview angle:** "How would you schedule a pipeline with dependencies?" — in-degrees, enqueue zeros, decrement on completion; then say where the in-degree is stored and what happens on crash.
+- **Where ForgeCI uses this:** `.forgeci.yml` `jobs.<name>.needs: [a, b]`; `DagScheduler`; `PipelineConfigParser`.
 
-**Interview angle:** "Java has no pointers — true?" (Java has references, no pointer arithmetic, GC instead of `delete`). "Pass-by-value in Java vs pass-by-reference in C++."
+### 4.2 Fan-out / fan-in and fail-fast
+
+- Fan-out: `test-unit`, `test-it`, `lint` all `needs: [build]` → three jobs become runnable at once → per-project concurrency limit (M4) throttles them.
+- Fan-in: `deploy` `needs: [test-unit, test-it, lint]` → runs only when `pending_deps` hits 0.
+- Fail-fast: when any job fails, mark every **not-yet-started** transitive dependent `SKIPPED`; running siblings either continue (`fail_fast: false`) or are cancelled via M4's cancel path (`fail_fast: true`). Build status = `FAILED` either way.
+- **Interview angle:** "What is the difference between a skipped job and a cancelled job in your data model?" — skipped never got a queue entry; cancelled had one and may have had a container.
+
+### 4.3 Minimal `.forgeci.yml` with dependencies
+
+```yaml
+image: maven:3.9-eclipse-temurin-21
+jobs:
+  build:   { steps: ["mvn -q -DskipTests package"] }
+  unit:    { needs: [build], steps: ["mvn -q test"] }
+  lint:    { needs: [build], steps: ["mvn -q checkstyle:check"] }
+  package: { needs: [unit, lint], steps: ["docker build -t app ."] }
+fail_fast: true
+```
+
+Parser rules: unknown `needs` target → 400; self-dependency → 400; cycle → 400 with the cycle path; job names `[a-z0-9-]{1,40}`.
+
+### 4.4 Docker socket: the security note you must write
+
+The worker talks to Docker through the mounted socket. Anyone who controls a step command controls
+the container, but **not** the host — unless you let them. The note in `docs/SECURITY.md` must state:
+
+- steps run with `--privileged=false`, no host bind mounts except the workspace volume, `--memory`/`--cpus` limits, `--network` restricted or none for untrusted repos, non-root user where the image allows it;
+- the socket is never mounted into *step* containers (only the worker has it);
+- the honest limitation: a step can still consume host resources; production systems use rootless Docker, a socket proxy, or a VM/firecracker boundary — you did not, and you say why (scope).
+- **Interview angle:** "Is it safe to run user code in your CI?" — the right answer starts with "no, and here is the boundary I chose and the one I would add next."
+
+### 4.5 SQS vs Redis: write the ADR
+
+| Concern | Redis (chosen) | SQS |
+|---|---|---|
+| Lease / visibility | `BLMOVE` + TTL key you manage | visibility timeout built in |
+| Retry limit / DLQ | your counter | redrive policy + DLQ built in |
+| Pub/sub for logs, per-project counters | same server | need extra services |
+| Local dev / Testcontainers | trivial | LocalStack or mocks |
+| Durability | AOF/RDB you configure | managed, multi-AZ |
+
+Use [`18-projects/templates/adr.md`](../../18-projects/templates/adr.md). Decision: Redis for one-dependency simplicity and local testability; migration path to SQS documented (queue port interface already isolates it).
+
+### 4.6 Deploying a multi-service stack on AWS
+
+- **Topology (cheap):** one `t3.small` (or similar) EC2 running Compose with api + 2 workers + Redis; RDS Postgres (smallest class, no multi-AZ); S3 for artifacts if you export logs; CloudWatch agent shipping `docker logs`.
+- **Security groups:** `sg-api` allows 443/80 from the internet (or only your IP), `sg-rds` allows 5432 from `sg-api` only; Redis not exposed.
+- **Secrets:** `.env` on the instance via SSM Parameter Store or written manually — never in the image or the repo.
+- **Budget alarm first**, deploy second ([`12-aws/cost-safety.md`](../../12-aws/cost-safety.md)).
+- **Interview angle:** "How is it deployed?" — say the topology, the SG rules, where secrets live, and what you would change for HA (separate worker instances, ElastiCache, ALB).
 
 ## 5. Resources
 
-- Linux: `man` pages (`man 1 chmod`, `man 7 signal`), *The Linux Command Line* (William Shotts, free online edition), systemd docs (`man systemd.service`).
-- Bash: GNU Bash Reference Manual (gnu.org/software/bash/manual); ShellCheck (shellcheck.net) — run it on every script.
-- Docker: docs.docker.com — "Dockerfile reference", "Multi-stage builds", "Compose file reference", "Networking overview".
-- Java in containers: docs.spring.io — Spring Boot reference, "Container Images" and "Graceful Shutdown" sections.
-- C++: cppreference.com (`std::unique_ptr`, `std::vector`), learncpp.com chapters on pointers/references.
-- DSA: neetcode.io 2-D DP section; [`03-dsa/21-dp-2d.md`](../../03-dsa/21-dp-2d.md).
+- Docker docs: "Docker daemon attack surface", rootless mode.
+- AWS docs: EC2 instance roles, RDS security groups, CloudWatch agent for Docker logs, SQS visibility timeout & DLQ (for the ADR).
+- Redis docs: persistence (AOF `appendfsync everysec`).
+- Kahn (1962) as summarised in [`03-dsa/16-topological-sort.md`](../../03-dsa/16-topological-sort.md); NeetCode "Advanced Graphs" list.
+- [`RESOURCES.md`](../../RESOURCES.md).
 
-## 6. Exercises and coding assignments
+## 6. Exercises and assignments
 
-| # | Task | Acceptance criteria |
-|---|---|---|
-| E1 | Complete the permissions + process sections of [`10-linux/exercises.md`](../../10-linux/exercises.md) | You can predict `ls -l` output for `chmod 640`; you killed a process with SIGTERM and SIGKILL and recorded both exit codes |
-| E2 | Log analysis one-liners: given P3's nginx access log, produce top 10 paths, count of 4xx vs 5xx, and requests per minute | Three commands saved in `scripts/log-report.sh`; passes `shellcheck` |
-| E3 | `backup.sh` from §4.5 for P4's Postgres + `restore.sh` | Restore into a fresh volume and the monitor rows are back; script fails loudly on a missing arg |
-| E4 | Dockerfile for P4 `api` and `worker`, multi-stage, non-root, exec-form entrypoint | `docker image ls` shows < 300 MB; `docker exec api id` shows uid 10001; `docker stop api` takes < 3 s (graceful) |
-| E5 | C++: write the snippet in §4.8 plus a `Stack<int>` class wrapping `std::vector` | Compiles with `-Wall -Wextra` and no warnings; ASan run shows the double-free when you plant one |
+### Exercise A — DAG parser (1.5 h)
 
-### Break it
+Parse the YAML above into a `PipelineGraph`; unit-test: valid graph → topological order; cycle `a→b→a` → error naming both; unknown target → error. Acceptance: pure Java, no Spring, 100 % branch coverage of the parser's error paths.
 
-1. **Kill a container.** With the stack up, `docker kill pulsewatch-postgres-1`. Predict: what does the API return on `GET /api/monitors`? What does the worker log? Does it recover on `docker compose start postgres` without restarting Java? (HikariCP should reconnect; write down how long it took.)
-2. **Fill the disk.** In a throwaway container: `docker run --rm -it --tmpfs /data:size=50m ubuntu bash` then `fallocate -l 60M /data/big` or `dd if=/dev/zero of=/data/big bs=1M`. Observe `No space left on device`. Then on your host run `docker system df` and reclaim with `docker system prune` (read what it deletes first).
-3. **Shell-form entrypoint.** Change `ENTRYPOINT` to shell form, rebuild, `time docker stop api`. Record 10 s + exit 137. Revert.
-4. **Wrong permissions.** `chmod 600` a config file owned by root and mount it into the non-root container. Read the stack trace; fix with ownership, not by running as root.
+### Exercise B — AWS dry run on paper (45 min)
+
+Draw the topology with SG arrows and the IAM instance-role permissions (CloudWatch logs write, S3 put to one bucket, SSM read of one path). Acceptance: no `*` in any policy.
+
+### Break it (inside ForgeCI)
+
+- Submit a config with a 3-job cycle. Predict the error message and HTTP status before you push.
+- Fan-out of 6 jobs with per-project limit 2: predict the order and the queue-wait numbers; compare with the M5 benchmark.
+- Kill the api **between** `decrementPendingDeps` and `enqueue`. Predict: is the job lost? (It should not be — either the enqueue happens in the same transaction via an outbox/DB-backed queue entry, or a reconciler re-enqueues `pending_deps = 0 AND status = PENDING`.)
+- On EC2: stop Redis. Predict what the api returns and what CloudWatch shows.
 
 ### Debug it
 
-- Worker can't reach Postgres: set `SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/...` in the worker. Diagnose with `docker compose exec worker getent hosts postgres` and `docker network inspect`. Write the root cause in one sentence.
-- Build cache busting: move `COPY src src` above the dependency step; time two builds after a one-line code change. Explain the difference from the layer list (`docker history`).
+- A fan-in job never starts although all dependencies succeeded. Query `SELECT name, pending_deps, status FROM jobs WHERE build_id = …` — is `pending_deps` stuck at 1 (a double-decrement guard bug?) or 0 with status `PENDING` (enqueue lost)?
+- Deploy works but the UI shows no live logs: SSE through a reverse proxy needs buffering off (`X-Accel-Buffering: no` for nginx) and the security group must allow long-lived connections (it does; check the proxy first).
 
-## 7. DSA — 2-D Dynamic Programming (7 new)
+## 7. DSA — Advanced Graphs + Bit Manipulation (7 new)
 
-Guide: [`03-dsa/21-dp-2d.md`](../../03-dsa/21-dp-2d.md) · Toolkit: [`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md) · Tracker: [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md)
+Guides: [`03-dsa/22-advanced-graphs.md`](../../03-dsa/22-advanced-graphs.md), [`03-dsa/23-bit-manipulation.md`](../../03-dsa/23-bit-manipulation.md).
 
-Method for every problem: define `dp[i][j]` in one English sentence → recurrence → base cases → iteration order → space optimize only after a correct 2-D version.
+| # | Problem | Pattern note | Time limit |
+|---|---|---|---|
+| 743 | Network Delay Time | Dijkstra with `PriorityQueue<int[]>`; adjacency list | 30 min |
+| 1584 | Min Cost to Connect All Points | Prim's (O(n²) is fine) — MST awareness | 30 min |
+| 787 | Cheapest Flights Within K Stops | Bellman-Ford with k+1 relaxations (Dijkstra breaks with the stop limit — explain why) | 35 min |
+| 136 | Single Number | XOR identity | 10 min |
+| 191 | Number of 1 Bits | `n & (n - 1)` trick; `Integer.bitCount` for comparison | 10 min |
+| 338 | Counting Bits | `dp[i] = dp[i >> 1] + (i & 1)` | 15 min |
+| 268 | Missing Number | XOR or sum; explain overflow-safety | 10 min |
 
-| # | Problem | Difficulty | Time limit | Key idea |
-|---|---|---|---:|---|
-| 1 | [518. Coin Change II](https://leetcode.com/problems/coin-change-ii/) | Medium | 30 min | Unbounded knapsack, coins outer loop to count combinations not permutations |
-| 2 | [494. Target Sum](https://leetcode.com/problems/target-sum/) | Medium | 30 min | Reduce to subset-sum count: `(total + target) / 2` |
-| 3 | [97. Interleaving String](https://leetcode.com/problems/interleaving-string/) | Medium | 35 min | `dp[i][j]` = first i of s1 + first j of s2 form first i+j of s3 |
-| 4 | [72. Edit Distance](https://leetcode.com/problems/edit-distance/) | Medium | 35 min | min of insert/delete/replace from three neighbours |
-| 5 | [309. Best Time to Buy and Sell Stock with Cooldown](https://leetcode.com/problems/best-time-to-buy-and-sell-stock-with-cooldown/) | Medium | 30 min | State machine: hold / sold / rest |
-| 6 | [329. Longest Increasing Path in a Matrix](https://leetcode.com/problems/longest-increasing-path-in-a-matrix/) | Hard | 40 min | DFS + memo on grid |
-| 7 | [115. Distinct Subsequences](https://leetcode.com/problems/distinct-subsequences/) | Hard | 40 min | Take-or-skip matching char |
+Reviews due: Day-3 of W18 2-D DP, Day-7 of W17 Greedy, Day-14 of W16 Intervals/1-D DP, Day-30 of W14 Topological Sort + Union-Find (which you are also using in the project this week — note in the tracker how the production use changed your understanding).
 
-If any of these was already solved in Week 18, swap in: [312. Burst Balloons](https://leetcode.com/problems/burst-balloons/) or [10. Regular Expression Matching](https://leetcode.com/problems/regular-expression-matching/).
+## 8. Project work — ForgeCI M6
 
-**Spaced reviews due this week** (from the tracker): Day-3/7 reviews of Week 18's greedy + 2-D DP (e.g. 62 Unique Paths, 1143 Longest Common Subsequence, 55 Jump Game), Day-14 reviews of Week 17's 1-D DP/intervals, Day-30 reviews of Week 15's topological sort / union-find. Reviews are re-solves from blank, timed at 20 min for Mediums.
+Spec: [`18-projects/forgeci/README.md`](../../18-projects/forgeci/README.md) · [`milestones.md`](../../18-projects/forgeci/milestones.md) · [`failure-engineering.md`](../../18-projects/forgeci/failure-engineering.md) · [`docs-and-resume.md`](../../18-projects/forgeci/docs-and-resume.md) · [`interview-questions.md`](../../18-projects/forgeci/interview-questions.md).
 
-## 8. Project work — P4 PulseWatch, Milestone 1
+### Weekly task checklist
 
-Spec: [`18-projects/p4-pulsewatch/README.md`](../../18-projects/p4-pulsewatch/README.md) · Tracker: [`trackers/project-tracker.md`](../../trackers/project-tracker.md)
+- [ ] Milestone `M6 – DAG pipelines + AWS`; issues per item
+- [ ] Config parser: `jobs.<name>.needs`, validation, cycle detection with cycle path in the error
+- [ ] Schema: `jobs.pending_deps`, `job_dependencies(build_id, job, needs)`, `builds.fail_fast`
+- [ ] `DagScheduler`: enqueue in-degree-0 jobs at build creation; decrement-and-enqueue on completion (transactional, crash-safe)
+- [ ] Fail-fast: transitive `SKIPPED`, optional cancel of running siblings, build status roll-up
+- [ ] UI: DAG view (a simple layered list is acceptable; a graph drawing is stretch), `SKIPPED` badge
+- [ ] Tests: parser unit tests; `DagSchedulingIT` (diamond graph), `FailFastIT`, `CrashBetweenDecrementAndEnqueueIT`
+- [ ] ADR: Redis vs SQS; ADR: SSE vs WebSockets (if not written in M3)
+- [ ] `docs/SECURITY.md`: Docker-socket note, step-container hardening, secrets handling
+- [ ] AWS: budget alarm → IAM role → RDS → EC2 with Compose → CloudWatch logs → HTTPS (or documented HTTP + IP allow-list) → smoke test via a real GitHub push
+- [ ] CI: deploy job (`workflow_dispatch`, environment `production` with required reviewer = you)
+- [ ] `docs/DEPLOYMENT.md`; README updated with the live URL (or "deployed on demand; see DEPLOYMENT.md" if you tear down for cost)
+- [ ] Tag `v1.1-dag` (Advanced) — `v1.0` remains the résumé anchor
 
-**M1 (W19): monitors CRUD API, scheduled checker worker (HTTP checks with timeouts, executor/virtual threads), `check_results` table, Compose stack (api, worker, postgres, redis).**
+### Acceptance summary
 
-- [ ] Maven multi-module or two modules: `api` (Spring Boot web + JPA + Flyway) and `worker` (Spring Boot, no web).
-- [ ] Flyway `V1__monitors.sql`: `monitors(id, name, url, method, interval_seconds, timeout_ms, expected_status, enabled, created_at)`; `V2__check_results.sql`: `check_results(id bigserial, monitor_id, checked_at timestamptz, status_code, latency_ms, success boolean, error text)`.
-- [ ] Monitors CRUD with DTOs, Bean Validation (URL format, `interval_seconds >= 30`, `timeout_ms <= 10000`), ProblemDetail errors, pagination.
-- [ ] Worker: `@Scheduled(fixedDelay = 5000)` loop selects due monitors and submits checks to `Executors.newVirtualThreadPerTaskExecutor()`; `java.net.http.HttpClient` with connect + request timeouts; each result inserted into `check_results`.
+- Diamond pipeline (build → {unit, lint} → package) runs in the correct order with correct fan-in; cycle configs rejected with a clear error.
+- Fail-fast behaviour matches the config flag and is tested.
+- A crash between dependency decrement and enqueue does not lose a job (test proves it).
+- Stack reachable on AWS; a real push to a registered repo produces a green build with live logs.
+- SECURITY.md and both ADRs merged.
 
-```java
-HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(3)).build();
-HttpRequest req = HttpRequest.newBuilder(URI.create(m.url()))
-        .timeout(Duration.ofMillis(m.timeoutMs())).GET().build();
-long start = System.nanoTime();
-try {
-    HttpResponse<Void> res = client.send(req, HttpResponse.BodyHandlers.discarding());
-    save(m, res.statusCode(), elapsedMs(start), res.statusCode() == m.expectedStatus(), null);
-} catch (HttpTimeoutException e) {
-    save(m, null, elapsedMs(start), false, "timeout");
-} catch (IOException e) {
-    save(m, null, elapsedMs(start), false, e.getClass().getSimpleName());
-}
-```
+### Verification tests
 
-- [ ] Compose stack from §4.7 starts with one command; README "Run locally" section.
-- [ ] Tests: `@WebMvcTest` for the controller, unit test for "is monitor due?" logic, Testcontainers test for the repository; worker test against a local stub (WireMock or a `HttpServer` in the test) returning 200, 500 and a delayed response that trips the timeout.
+| Test | Given | When | Then |
+|---|---|---|---|
+| `PipelineConfigParserTest` | cycle `a→b→c→a` | parse | error lists `[a, b, c]` |
+| `DagSchedulingIT` | diamond graph | build runs with 2 workers | `package` starts only after both `unit` and `lint` finish; order recorded |
+| `FailFastIT` | `lint` exits 1, `fail_fast: true` | | `package` = `SKIPPED`, `unit` cancelled if running, build `FAILED` |
+| `ContinueOnFailureIT` | same, `fail_fast: false` | | `unit` completes; `package` `SKIPPED`; build `FAILED` |
+| `CrashBetweenDecrementAndEnqueueIT` | failure point `scheduler.afterDecrement` | | reconciler enqueues `pending_deps = 0` job; runs exactly once |
+| `DeploySmokeTest` (manual, documented) | AWS stack | push to demo repo | green build, logs visible, CloudWatch has worker logs |
 
-**Definition of done:** create 3 monitors via curl (one to a URL that 500s, one that times out) → within a minute `SELECT monitor_id, success, count(*) FROM check_results GROUP BY 1,2;` shows both outcomes.
+### Failure scenarios to run
+
+1. Cycle in config (parse-time).
+2. Crash between decrement and enqueue.
+3. Two workers finish the two parents of a fan-in at the same instant — double decrement race (atomic `UPDATE` protects; test with the failure point + latch).
+4. Redis down on AWS while a DAG is mid-flight — build stays consistent in Postgres; jobs resume after Redis returns (or documented behaviour).
+5. EC2 reboot — Compose `restart: unless-stopped`, workers re-register, orphan recovery kicks in.
+
+### GitHub expectations
+
+- Milestone M6 closed; ADRs under `docs/adr/`; `docs/SECURITY.md`, `docs/DEPLOYMENT.md`.
+- Release `v1.1-dag` notes: what is new, what remains out of scope (matrix jobs, artifacts between jobs, secrets management UI).
 
 ## 9. Git activity
 
-- Branch per feature: `feat/monitors-crud`, `feat/checker-worker`, `chore/compose-stack`; PR into `main` with a description + checklist; squash-merge.
-- Conventional commits (`feat(worker): add http check with timeout`).
-- Add `scripts/` (backup/restore, log-report) with a `README` line each.
-- Target: ≥ 10 meaningful commits across ≥ 4 days; at least 3 PRs merged.
+- Branches: `feat/m6-dag-parser`, `feat/m6-scheduler`, `feat/m6-fail-fast`, `docs/m6-adr-security`, `ops/m6-aws-deploy`.
+- Never commit `.env`, keys, or `terraform.tfstate`-like files; add a pre-commit secret scan if you have not.
+- Tag `v1.1-dag`; keep `v1.0` intact — your résumé links the release, not `main`.
 
 ## 10. Interview preparation
 
-- **OA simulation #1 (70 min)** — follow [`OA_PREP.md`](../../OA_PREP.md): 2 problems (1 Easy/Medium array-hash, 1 Medium DP/graph), HackerRank/CodeSignal-style editor, no IDE autocomplete, hidden tests. Log score, time per problem and failure causes in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
-- **Weekly mock** (per [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md)): 45 min, one Medium from this week's DP + 10 min "walk me through TeamBoard" ([`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md)).
-- **Résumé defense:** Linux + Docker — answer 5 questions each out loud from [`RESUME_INTERVIEW_QUESTIONS.md`](../../RESUME_INTERVIEW_QUESTIONS.md) using [`RESUME_TECH_DEFENSE.md`](../../RESUME_TECH_DEFENSE.md); record one answer, cite PulseWatch Compose + P3 Dockerfile as current evidence.
-- **Behavioral:** add one story ("a time you debugged a production-like failure") to your bank per [`16-interview-prep/behavioral.md`](../../16-interview-prep/behavioral.md) — use this week's shell-form entrypoint or disk-full lab honestly as a learning story, not as fake work experience.
-- **Applications:** OA-ready stage per [`JOB_READINESS.md`](../../JOB_READINESS.md) → **10 applications** this week (internships + junior roles with OAs). Log them.
+- **ForgeCI deep-dive rehearsal** (Sat, 2 h): record yourself doing the 12-minute walkthrough per [`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md), then answer 10 questions from [`18-projects/forgeci/interview-questions.md`](../../18-projects/forgeci/interview-questions.md) cold. Watch the recording; note every "um, I think". Redo the weakest 3 answers.
+- **OA simulation #3** (Fri or Sat, 90–120 min): [`OA_PREP.md`](../../OA_PREP.md) — include one graph problem and one buggy-library task ([`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md)).
+- **Weekly mock** (Tue): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md). Target score ≥ 3/4 — the junior-ready criterion.
+- **Résumé defense:** AWS and Redis this week — [`17-resume-tech-defense/aws.md`](../../17-resume-tech-defense/aws.md), [`17-resume-tech-defense/redis.md`](../../17-resume-tech-defense/redis.md).
+- **Applications:** with three projects (two deployed, ForgeCI deploying this week) you are at the **junior-role-ready** threshold of [`JOB_READINESS.md`](../../JOB_READINESS.md) — raise weekly application volume to that tier's target and start tracking response rates in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
+- **Recruiter screen** prep: 20 min reading [`16-interview-prep/recruiter-screen.md`](../../16-interview-prep/recruiter-screen.md); update your 60-second "about me" to mention ForgeCI.
 
-## 11. Revision work
+## 11. Revision
 
-- Re-read your Week 10 Compose file and Week 12 Dockerfile; list three things you'd now do differently and apply one to P2.
-- Explain out loud: HTTP request path from `curl` → Docker port mapping → container → Spring `DispatcherServlet`.
-- CS: processes vs threads, virtual memory, context switches — re-read [`14-cs-fundamentals/operating-systems.md`](../../14-cs-fundamentals/operating-systems.md) sections tied to signals.
+- Re-explain out loud: lease-based queue, retry taxonomy, SSE replay — the three ForgeCI pillars the deep-dive will hit.
+- Re-read [`14-cs-fundamentals/operating-systems.md`](../../14-cs-fundamentals/operating-systems.md) sections on processes/signals (why SIGTERM → graceful shutdown works).
+- DSA reviews as scheduled.
 
 ## 12. Daily plan
 
-| Day | Hours | Blocks |
-|---|---:|---|
-| **Mon** | 3 | 1.5 h Linux filesystem, permissions, processes, signals ([`10-linux/commands.md`](../../10-linux/commands.md)) · 1 h E1 in a Docker `ubuntu` container · 0.5 h DSA reviews |
-| **Tue** | 3 | 1.5 h DSA: 518, 494 · 1.5 h Bash scripting + E2 log one-liners + ShellCheck |
-| **Wed** | 3 | 2 h P4: Flyway schema + monitors CRUD API + controller tests · 1 h DSA reviews |
-| **Thu** | 3 | 1 h Dockerfiles/Compose deep read · 1 h E4 multi-stage images + Break it #1, #3 · 1 h DSA: 97 |
-| **Fri** | 2 | Light: C++ essentials (§4.8, E5) 1.5 h · tracker update + explain SIGTERM vs SIGKILL out loud 0.5 h |
-| **Sat** | 5 | 3 h P4: checker worker (virtual threads, timeouts), Compose stack, E3 backup/restore · 1 h DSA: 72, 309 · 1 h **OA simulation #1 (70 min)** |
-| **Sun** | 2 | End-of-week test (below) 1.5 h · plan Week 20 + DSA: 329/115 carry-over if not done Thu 0.5 h. Rest. |
+| Day | Plan |
+|---|---|
+| **Mon (8 h)** | Learning 2: DAG scheduling + parser design · Project 4.5: parser + schema + unit tests · DSA 1.5: 743 |
+| **Tue (8 h)** | Project 5: `DagScheduler` transactional decrement/enqueue, `DagSchedulingIT` · DSA 2: 1584, 136 + reviews · Mock 1 h |
+| **Wed (8 h)** | Learning 2: Docker-socket security, SQS vs Redis · Project 4.5: fail-fast + tests, ADRs · DSA 1.5: 787 |
+| **Thu (8 h)** | Project 5: AWS — budget alarm, IAM, RDS, EC2, Compose, CloudWatch · DSA 2: 191, 338 · Docs 1: SECURITY.md |
+| **Fri (5 h)** | Project 3: deploy job in CI, smoke test via real push, DEPLOYMENT.md · OA sim #3 (counts toward interview hours) · Retro |
+| **Sat (7 h)** | Project 5: UI DAG view, crash test, release `v1.1-dag` · Deep-dive rehearsal 2 h |
+| **Sun (2–3 h)** | End-of-week test · reviews (268 as warm-up) · trackers · plan W20 · rest |
 
-C++ total this week: Fri 1.5 h + 1.5 h spread (Mon/Thu evenings reading [`20-cpp-basics/README.md`](../../20-cpp-basics/README.md)) ≈ 3 h. Mock: schedule in Sat interview hour on alternate weeks, or add 45 min Thu if your partner's only free then.
+## 13. End-of-week test
 
-## 13. End-of-week test (≈90 min, timed)
+1. Implement Kahn's algorithm on paper for a 6-node graph, then explain how your scheduler differs (event-driven, persisted in-degree).
+2. Given `fail_fast: true` and a failing job with two running siblings and three pending dependents, list every job's final status.
+3. Write the SG rules for api / worker / RDS / Redis from memory.
+4. Why does Dijkstra fail for LeetCode 787, and what did you use instead?
+5. Explain what the Docker socket mount grants and the three hardening measures you applied to step containers.
 
-**Part A — DSA (45 min):** solve [1143. Longest Common Subsequence](https://leetcode.com/problems/longest-common-subsequence/) (20 min) and [518. Coin Change II](https://leetcode.com/problems/coin-change-ii/) from blank (25 min). Pass = both accepted, complexity stated.
-
-**Part B — Concepts (20 min):** answer, then check.
-
-<details><summary>1. A container exits with code 137. Two possible causes?</summary>
-
-137 = 128 + 9 (SIGKILL). Either the kernel OOM-killer killed it (`State.OOMKilled=true`), or `docker stop` escalated to SIGKILL after the grace period because the process ignored SIGTERM (often shell-form entrypoint).
-</details>
-
-<details><summary>2. Why order Dockerfile instructions from least to most frequently changing?</summary>
-
-Layers are cached; a change invalidates that layer and every layer after it. Copying `pom.xml` and resolving dependencies before copying `src` keeps the dependency layer cached across code changes.
-</details>
-
-<details><summary>3. `chmod 640 secrets.env` owned by root:root. Can a process running as uid 10001 read it?</summary>
-
-No. Owner root has rw, group root has r, others nothing. uid 10001 is "other" (unless in group root). Fix with `chown 10001` or a group the app belongs to.
-</details>
-
-<details><summary>4. What does `set -o pipefail` change?</summary>
-
-A pipeline's exit status becomes the last non-zero status of any stage, instead of only the last command's. Without it, `false | true` succeeds, hiding failures.
-</details>
-
-<details><summary>5. Volume vs bind mount?</summary>
-
-Named volumes are managed by Docker (`/var/lib/docker/volumes`), portable, right for DB data. Bind mounts map a specific host path, right for dev source code/config; they carry host permissions and paths.
-</details>
-
-<details><summary>6. Why does `depends_on` alone not prevent "connection refused" on API startup?</summary>
-
-Without a condition it only waits for the container to start, not for Postgres to accept connections. Use `condition: service_healthy` with a `pg_isready` healthcheck (and still have retry logic in the app).
-</details>
-
-<details><summary>7. C++ reference vs pointer in one sentence each.</summary>
-
-A reference is an alias that must be bound at initialization and can't be null or reseated; a pointer is an address value that can be null, reassigned and does arithmetic.
-</details>
-
-<details><summary>8. Why use virtual threads for the checker?</summary>
-
-HTTP checks are blocking I/O; virtual threads let you write simple blocking code while thousands of checks wait concurrently without a platform thread each. CPU-bound work gains nothing.
-</details>
-
-**Part C — Practical (15 min):** on a fresh clone, `docker compose up -d`, add a monitor via curl, then write a one-liner that prints the failure count per monitor from `docker compose exec postgres psql`. Then `docker compose down` and prove data survives `up` again.
-
-**Part D — Explain out loud (10 min, recorded):** "Walk me through what happens from `docker compose up` to the first check result being written." Cover image build, network, DNS, healthchecks, scheduler, virtual threads, JDBC insert.
+Pass: 4/5.
 
 ## 14. Mastery checklist
 
-- [ ] I can read `ls -l` and set permissions in octal and symbolic form.
-- [ ] I can find and stop a process, and explain SIGTERM/SIGKILL/exit codes 137/143.
-- [ ] I can write a systemd unit and read its logs with `journalctl`.
-- [ ] I can answer a log question with a `grep`/`awk`/`sort`/`uniq` pipeline.
-- [ ] My Bash scripts use `set -euo pipefail`, quoting, `trap`, and pass ShellCheck.
-- [ ] I can write a multi-stage, non-root Dockerfile from memory and explain each layer.
-- [ ] I can explain volumes vs bind mounts and Compose DNS by service name.
-- [ ] I can explain pointer vs reference vs Java reference, and RAII.
-- [ ] P4 M1 is merged and runs with one command.
-- [ ] 7 new 2-D DP problems logged with status + next review date.
-- [ ] OA sim #1 done and logged with failure causes.
+- [ ] I can explain DAG scheduling with persisted in-degrees and crash-safety
+- [ ] I can state the fail-fast semantics of my system precisely (skipped vs cancelled)
+- [ ] I can deploy a Compose-based multi-service app to AWS with least-privilege IAM and correct SGs
+- [ ] I can argue Redis vs SQS with concrete trade-offs and a migration path
+- [ ] I can give the ForgeCI deep-dive in 12 minutes without notes and answer "how did you test X?" for every pillar
+- [ ] Dijkstra, Prim, Bellman-Ford(k), XOR tricks — solved independently
 
 ## 15. Expected deliverables
 
-- P4 repo with M1 merged (PRs linked) — update [`trackers/project-tracker.md`](../../trackers/project-tracker.md).
-- 7 new problems + reviews in [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md).
-- Linux, Docker, C++ rows updated in [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md).
-- OA sim #1, mock, 10 applications in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
-- Weekly entry in [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md) with test score.
+- ForgeCI `v1.1-dag` released; live (or on-demand) AWS deployment documented.
+- [`trackers/project-tracker.md`](../../trackers/project-tracker.md): ForgeCI phase closed — hours actually spent vs 170–200 target.
+- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md), [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md) (OA #3, mock, deep-dive self-score), [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md), [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md).
 
-## 16. If you're behind / stretch goals
+## 16. If behind / stretch
 
-**Behind (priority order):** keep DSA reviews → keep P4 M1 core (CRUD + worker + Compose) → keep OA sim #1 → cut C++ to 1.5 h (pointers/references only) → cut E2/E3 to one script each → drop problems 6–7 (move to Week 21's mixed review).
+**Behind:** DAG scheduling without fail-fast cancellation (skip only) is acceptable; deploy with HTTP + IP allow-list instead of TLS; but the deep-dive rehearsal is not optional — CP-20 asks "is ForgeCI shipped and explainable?".
 
-**Stretch:**
-- Add a Compose `profiles: [debug]` service with `adminer` or `redis-commander`.
-- Build the image with `docker buildx` for `linux/amd64` and `linux/arm64` (useful if EC2 is Graviton in Week 21).
-- Add `HEALTHCHECK` using Actuator in the Dockerfile and resource limits (`mem_limit`, `cpus`) in Compose; watch the JVM respect them with `-XX:+PrintFlagsFinal | grep MaxHeapSize`.
-- DSA: 312 Burst Balloons, 10 Regular Expression Matching.
+**Stretch:** artifacts between jobs via a shared S3 prefix; matrix jobs; `needs` with `if: failure()` semantics; GitHub Checks API status back to the PR.

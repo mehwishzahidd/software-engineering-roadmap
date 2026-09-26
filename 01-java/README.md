@@ -24,7 +24,7 @@ prove it with a small experiment."
 | 7 | [07-concurrency.md](./07-concurrency.md) | **W13** | Threads, race conditions (runnable demo + fix), `synchronized`, `volatile`, happens-before, `ReentrantLock`, atomics, `ExecutorService`, `CompletableFuture`, virtual threads, `ConcurrentHashMap`, deadlock + fix |
 | 8 | [08-maven-build.md](./08-maven-build.md) | **W3** (revisited W9, W12) | POM anatomy, coordinates, scopes, lifecycle, surefire/failsafe/jar/spring-boot plugins, dependency tree & conflicts, `mvnw`, multi-module, Gradle comparison |
 | 9 | [09-debugging-java.md](./09-debugging-java.md) | **W4** (revisited W18) | Reading stack traces incl. `Caused by`, IntelliJ debugger, conditional breakpoints, evaluate expression, drop frame, `jstack`/`jcmd`/heap dumps, logging-first debugging, systematic method |
-| — | [exercises.md](./exercises.md) | W1–W13 | 45 graded exercises with acceptance criteria |
+| — | [exercises.md](./exercises.md) | W1–W13 | 46 graded exercises with acceptance criteria |
 | — | [interview-questions.md](./interview-questions.md) | W4 onward, weekly | 70 Java interview Q&A, grouped by topic |
 
 ---

@@ -1,11 +1,13 @@
 # 07 — JavaScript & TypeScript
 
-> **Weeks 14–15** of the [ROADMAP](../ROADMAP.md). Budget: ≈ 14 hours of the 45-hour JS/TS/React allocation.
-> Goal: write JavaScript and TypeScript you can **defend line by line** — not framework-shaped guesswork.
+> **JavaScript in Week 6, TypeScript in Week 7** ([ROADMAP §6](../ROADMAP.md#6-just-in-time-learning-map)) — just before
+> **FlowGrid M4**, the React/TS operations dashboard. Revisited in **Week 16** (ForgeCI's live build-log UI over SSE)
+> and **Week 23** (FlagForge's admin dashboard).
+> Budget: ≈ 3–4 h of Week 6's learning block for JS, ≈ 2–3 h of Week 7's for TS; everything else is practice inside FlowGrid.
 
-This is **not** a frontend-specialist track. You are a Java backend engineer who must be able to
-build, debug and explain the React client of **P3 TeamBoard** and the dashboard of **P4 PulseWatch**,
-and survive the JavaScript/TypeScript questions an interviewer will ask because both are on your résumé.
+This is **not** a frontend-specialist track. You are a Java backend engineer who must build, debug and explain the
+dashboards of your own projects, and survive the JavaScript/TypeScript questions an interviewer will ask because both
+are on your résumé.
 
 ---
 
@@ -15,8 +17,8 @@ and survive the JavaScript/TypeScript questions an interviewer will ask because 
 |---|---|
 | JS core (scope, closures, `this`) | Stale-closure bugs in React effects you can't explain |
 | The event loop | "Why did my `console.log` run before the fetch finished?" |
-| Promises / `async` | Unhandled rejections, race conditions between requests |
-| TypeScript narrowing | `as any` sprinkled everywhere, runtime crashes on API data |
+| Promises / `async` | Unhandled rejections; out-of-order responses overwriting newer ones |
+| TypeScript narrowing | `as any` everywhere, runtime crashes on API data |
 
 ---
 
@@ -24,22 +26,22 @@ and survive the JavaScript/TypeScript questions an interviewer will ask because 
 
 | File | Topic | Time | Week |
 |---|---|---:|---:|
-| [01-javascript-core.md](./01-javascript-core.md) | Types, coercion, `===`, scope, hoisting, closures, `this`, prototypes, array/object methods, destructuring, ESM | 4 h | 14 |
-| [02-async-javascript.md](./02-async-javascript.md) | Event loop, micro/macrotasks, promises, `async`/`await`, errors, `fetch`, `AbortController` | 3.5 h | 14 |
-| [03-typescript.md](./03-typescript.md) | TS 5: types, interfaces vs aliases, unions, narrowing, generics, utility types, `unknown`, strict mode, typing API responses, zod | 4 h | 15 |
-| [04-html-css-minimum.md](./04-html-css-minimum.md) | Just enough HTML/CSS: semantic markup, forms, tables, flexbox | 3 h (total) | 14 |
-| [exercises.md](./exercises.md) | Predict-the-output drills, build tasks, break/debug tasks | 3 h | 14–15 |
+| [01-javascript-core.md](./01-javascript-core.md) | Types, coercion, `===`, scope, hoisting, closures, `this`, prototypes, array/object methods, destructuring, ESM | 1.5 h | 6 |
+| [02-async-javascript.md](./02-async-javascript.md) | Event loop, micro/macrotasks, promises, `async`/`await`, errors, `fetch`, `AbortController`, `EventSource` (SSE) | 1.5 h | 6 (SSE revisited W16) |
+| [03-typescript.md](./03-typescript.md) | TS 5: types, interfaces vs aliases, unions, narrowing, discriminated unions, generics, utility types, `unknown`, strict mode, typing API responses, zod | 2 h | 7 |
+| [04-html-css-minimum.md](./04-html-css-minimum.md) | Just enough HTML/CSS: semantic markup, forms, tables, flexbox | ≈ 3 h total | 6–7 |
+| [exercises.md](./exercises.md) | Predict-the-output drills, build tasks, break/debug tasks | 3 h | 6–7 |
 
 ---
 
 ## Environment setup (30 min)
 
 ```bash
-# Node 20+ (LTS). Use a version manager so projects can pin versions.
+# Node 20+ (LTS). Use a version manager (nvm, fnm, volta) so projects can pin versions.
 node --version     # v20.x or v22.x
 npm --version
 
-# Scratch playground for this folder
+# Scratch playground for this folder (throwaway — not a portfolio repo)
 mkdir js-lab && cd js-lab
 npm init -y
 npm pkg set type=module          # enable ESM (import/export) in .js files
@@ -52,27 +54,16 @@ Use the browser DevTools console for quick checks and **Node + `tsx`** for anyth
 
 ---
 
-## Week plan
+## Where this fits in the week
 
-### Week 14 (JavaScript)
+Weeks 6–7 are FlowGrid weeks (≈ 28 h project, ≈ 7 h learning). JS/TS learning uses the Mon/Wed learning blocks:
 
-| Day | Block |
-|---|---|
-| Mon | [01-javascript-core](./01-javascript-core.md) §1–§4 (types, coercion, scope, hoisting) |
-| Tue | §5–§7 (closures, `this`, prototypes) + exercises 1–6 |
-| Wed | P3 TeamBoard backend work (design doc, schema) |
-| Thu | [02-async-javascript](./02-async-javascript.md) event loop + promises; ordering puzzle |
-| Fri | Light: [04-html-css-minimum](./04-html-css-minimum.md) forms + flexbox |
-| Sat | P3 + exercises 7–14 (async, `fetch` against your Spring API with `curl`-equivalent JS) |
-| Sun | Review: predict-the-output quiz, explain the event loop out loud |
-
-### Week 15 (TypeScript + start React)
-
-| Day | Block |
-|---|---|
-| Mon | [03-typescript](./03-typescript.md) §1–§5 |
-| Tue | §6–§10 (generics, utility types, API typing) + exercises 15–20 |
-| Thu–Sat | Move into [08-react](../08-react/README.md) |
+| Week | Mon learning (2 h) | Wed learning (2 h) | Project tie-in |
+|---|---|---|---|
+| 6 | [01-javascript-core](./01-javascript-core.md) + exercises Part A | [02-async-javascript](./02-async-javascript.md) + exercises Part B | Call your FlowGrid API from a Node script with `fetch` (list SKUs, create an order with an `Idempotency-Key`, read a ProblemDetail) |
+| 7 | [03-typescript](./03-typescript.md) + exercises Part C | [08-react](../08-react/README.md) begins | FlowGrid M4: typed API client + dashboard; HTML/CSS as needed ([04](./04-html-css-minimum.md)) |
+| 16 | revisit [02 §8 SSE](./02-async-javascript.md#8-server-sent-events-eventsource) | — | ForgeCI M3: live log view |
+| 23 | revisit [03 §5 discriminated unions](./03-typescript.md#5-discriminated-unions-the-most-useful-ts-pattern) | — | FlagForge M4: rules editor types |
 
 ---
 
@@ -80,12 +71,13 @@ Use the browser DevTools console for quick checks and **Node + `tsx`** for anyth
 
 | Concept | Where you use it |
 |---|---|
-| Closures, `this` | React event handlers and effects in TeamBoard |
-| Event loop, promises | Debugging request ordering on the PulseWatch dashboard (polling) |
-| `AbortController` | Cancelling a stale issue search when the user keeps typing |
-| Discriminated unions | Modelling `IssueStatus` and `CheckResult` (`UP` / `DOWN` / `DEGRADED`) |
+| Closures, `this` | Event handlers and effects in the FlowGrid dashboard |
+| Event loop, promises | Debugging request ordering on the orders list; polling low-stock alerts |
+| `AbortController` | Cancelling a stale SKU search when the operator keeps typing |
+| `EventSource` (SSE) | ForgeCI live build logs with reconnect + replay; FlagForge config propagation |
+| Discriminated unions | FlowGrid `OrderStatus`, ForgeCI `JobResult` (`SUCCEEDED` / `FAILED` / `TIMED_OUT` / `CANCELLED`), FlagForge evaluation reasons |
 | `unknown` + zod | Validating API JSON before trusting it |
-| Utility types | `CreateIssueRequest = Omit<Issue, "id" \| "createdAt">` |
+| Utility types | `CreateOrderRequest = Omit<Order, "id" \| "status" \| "createdAt">` |
 
 ---
 
@@ -116,12 +108,12 @@ and [17-resume-tech-defense/typescript.md](../17-resume-tech-defense/typescript.
 
 ---
 
-## Exit criteria (before Week 16)
+## Exit criteria (before FlowGrid M4 work starts in earnest)
 
 - [ ] I can predict the output of a mixed `setTimeout` / `Promise` / `await` snippet and explain why.
 - [ ] I can write a closure-based counter and explain the `var`-in-loop bug.
 - [ ] I can explain `this` for method call, detached call, arrow function, and `bind`.
-- [ ] I can write a typed `fetch` wrapper with timeouts, error handling and `AbortController`.
+- [ ] I can write a typed `fetch` wrapper that handles non-2xx, ProblemDetail and `AbortController`.
 - [ ] I can model an API response with a discriminated union and narrow it without casts.
 - [ ] I know when to reach for `unknown`, and why `any` is a smell.
 - [ ] I can build a form + table page with flexbox without Googling every property.

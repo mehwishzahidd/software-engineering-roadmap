@@ -122,12 +122,7 @@ Spread `{...o}` / `[...a]` / `Object.assign` copy one level; nested objects are 
 `fetch` only rejects on network failure/abort/CORS failure. A 404 or 500 **resolves** — you must check `res.ok` / `res.status`. `res.json()` is itself async and throws on invalid JSON. Cancellation with `AbortController` (or `AbortSignal.timeout(ms)`).
 </details>
 
-<details><summary><b>I8. What are debounce and throttle?</b></summary>
-
-Debounce: run once after input has been quiet for N ms (search boxes). Throttle: run at most once per N ms (scroll/resize). Both are closures holding a timer id.
-</details>
-
-<details><summary><b>I9. <code>Map</code>/<code>Set</code> vs plain objects?</b></summary>
+<details><summary><b>I8. <code>Map</code>/<code>Set</code> vs plain objects?</b></summary>
 
 `Map` keys can be any type, preserves insertion order, has `size`, no prototype key collisions, better for frequent add/remove. Objects are fine for fixed-shape records and JSON. `WeakMap` holds keys weakly (metadata caches without leaks).
 </details>
@@ -167,11 +162,6 @@ Dynamic vs static typing; prototypes vs classes; single-threaded event loop vs t
 <details><summary><b>R6. "Why is <code>0.1 + 0.2 !== 0.3</code>, and how do you handle money?"</b></summary>
 
 IEEE-754 binary floats. For money: keep amounts as integer minor units (cents) or strings from the API, format with `Intl.NumberFormat`. Tie to Ledger: the backend uses `BigDecimal`; the frontend never does arithmetic on money it doesn't need to.
-</details>
-
-<details><summary><b>R7. "When would you use <code>Promise.all</code> vs <code>allSettled</code>?"</b></summary>
-
-`all` when every result is required (fail-fast). `allSettled` when partial results are useful — PulseWatch dashboard shows monitors even if the incidents call fails.
 </details>
 
 ## 4. Practical tasks (doable live)

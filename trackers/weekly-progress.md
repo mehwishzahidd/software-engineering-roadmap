@@ -3,42 +3,43 @@
 Fill this in every **Sunday** after the end-of-week test. Be honest — this file is for you,
 and it's the input to every checkpoint decision.
 
-[← README](../README.md) · [Roadmap](../ROADMAP.md) · [DSA tracker](./dsa-tracker.md) · [Project tracker](./project-tracker.md)
+[← README](../README.md) · [Roadmap](../ROADMAP.md) · [DSA tracker](./dsa-tracker.md) · [Project tracker](./project-tracker.md) · [Interview tracker](./interview-tracker.md)
 
 ---
 
 ## Summary
 
-| Wk | Phase | Hours | DSA new | DSA reviews | Week test % | Project milestone | Mood (1–5) | On track? |
-|---:|---|---:|---:|---:|---:|---|---:|---|
-| 1 | 1 | | /4 | | | Setup | | |
-| 2 | 1 | | /7 | | | P1 design sketch | | |
-| 3 | 1 | | /7 | | | P1-M1 | | |
-| 4 | 1 | | /7 | | | P1-M2 · **CP-4** | | |
-| 5 | 2 | | /7 | | | P1-M3 | | |
-| 6 | 2 | | /8 | | | P1-M3 | | |
-| 7 | 2 | | /8 | | | P1-M4 | | |
-| 8 | 2 | | /6 | | | P1-M5 · **CP-8** | | |
-| 9 | 3 | | /7 | | | P2-M1 | | |
-| 10 | 3 | | /8 | | | P2-M2 | | |
-| 11 | 3 | | /8 | | | P2-M3 | | |
-| 12 | 3 | | /8 | | | P2-M4 · **CP-12** | | |
-| 13 | 3 | | /8 | | | P2-M5 | | |
-| 14 | 4 | | /8 | | | P3-M1 | | |
-| 15 | 4 | | /8 | | | P3-M2 | | |
-| 16 | 4 | | /8 | | | P3-M3 · **CP-16** | | |
-| 17 | 4 | | /8 | | | P3-M4 | | |
-| 18 | 4 | | /8 | | | P3-M5 · P4-M0 | | |
-| 19 | 5 | | /7 | | | P4-M1 | | |
-| 20 | 5 | | /7 | | | P4-M2 · **CP-20** | | |
-| 21 | 5 | | /6 | | | P4-M3 | | |
-| 22 | 5 | | /6 | | | P4-M4 | | |
-| 23 | 6 | | /6 | | | Polish | | |
-| 24 | 6 | | /6 | | | Polish · **CP-24** | | |
-| 25 | 6 | | /5 | | | Small feature | | |
-| 26 | 6 | | /4 | | | — | | |
+| Wk | Phase | Hours (P/L/D/I) | DSA new (Py) | Java rep | Reviews | Week test % | Project milestone | Mood 1–5 | On track? |
+|---:|---|---|---:|:-:|---:|---:|---|---:|---|
+| 1 | 0 | | /6 | | | | Foundation katas | | |
+| 2 | 0 | | /8 | | | | Foundation katas | | |
+| 3 | 0 | | /8 | | | | Tiny Spring API | | |
+| 4 | 1 | | /8 | | | | FlowGrid M1 · **CP-4** | | |
+| 5 | 1 | | /8 | | | | FlowGrid M2 | | |
+| 6 | 1 | | /8 | | | | FlowGrid M3 | | |
+| 7 | 1 | | /8 | | | | FlowGrid M4 (+ Python tools) | | |
+| 8 | 1 | | /6 | | | | FlowGrid M5 v1.0 · **CP-8** | | |
+| 9 | 2 | | /8 | | | | LedgerX M1 | | |
+| 10 | 2 | | /8 | | | | LedgerX M2 | | |
+| 11 | 2 | | /8 | | | | LedgerX M3 | | |
+| 12 | 2 | | /8 | | | | LedgerX M4 (+ Python verifier) · **CP-12** | | |
+| 13 | 2 | | /8 | | | | LedgerX M5 v1.0 | | |
+| 14 | 3 | | /8 | | | | ForgeCI M1 | | |
+| 15 | 3 | | /8 | | | | ForgeCI M2 | | |
+| 16 | 3 | | /8 | | | | ForgeCI M3 · **CP-16** | | |
+| 17 | 3 | | /8 | | | | ForgeCI M4 | | |
+| 18 | 3 | | /7 | | | | ForgeCI M5 v1.0 (+ Python tools) | | |
+| 19 | 3 | | /7 | | | | ForgeCI M6 (DAG, AWS) | | |
+| 20 | 4 | | /6 | | | | FlagForge M1 · **CP-20** | | |
+| 21 | 4 | | /6 | | | | FlagForge M2 | | |
+| 22 | 4 | | /6 | | | | FlagForge M3 (Java SDK + Python SDK) | | |
+| 23 | 4 | | /6 | | | | FlagForge M4 v1.0 | | |
+| 24 | 5 | | /6 | | | | Polish I · **CP-24** | | |
+| 25 | 5 | | /5 | | | | Polish II (benchmarks, diagrams) | | |
+| 26 | 5 | | /4 | | | | Résumé bullets · maintenance plan | | |
 
-**"On track?"** = ✅ on plan · ⚠️ ≤ 1 week behind · ❌ > 1 week behind (apply [the falling-behind rules](../ROADMAP.md#12-rules-for-falling-behind)).
+**Hours (P/L/D/I)** = project / learning / DSA / interview-review, e.g. `26/8/7/4`.
+**"On track?"** = ✅ on plan · ⚠️ ≤ 1 week behind · ❌ > 1 week behind (apply [the falling-behind rules](../ROADMAP.md#13-rules-for-falling-behind)).
 
 ---
 
@@ -49,12 +50,14 @@ Copy this block for each week below the summary.
 ```markdown
 ### Week N — YYYY-MM-DD
 
-**Hours:** core __ · coding __ · DSA __ · project __ · revision __ · interview __ = __ total
+**Hours:** project __ · learning __ · DSA __ · interview/review __ = __ total
 
 **Done**
 - [ ] Main objective met
-- [ ] DSA new: __ / target __   ·   reviews done: __ / due __
-- [ ] Project milestone: ______  (PR: link)
+- [ ] DSA new (Python): __ / target __   ·   reviews done: __ / due __   ·   Java rep: ______
+- [ ] Project milestone: ______  (PR: link · tag: ______)
+- [ ] Python component tasks (if scheduled this week): ______
+- [ ] Failure-engineering scenarios run: ______
 - [ ] End-of-week test: __ %
 - [ ] Mastery checklist: __ / __ items ticked
 
@@ -64,13 +67,13 @@ Copy this block for each week below the summary.
 **What broke and how I debugged it** (the most useful thing I learned this week)
 -
 
-**What I explained out loud — and where I stumbled**
+**What I explained out loud — and where I stumbled** (Track A coding / Track B engineering)
 -
 
 **Weakest area → action next week**
 -
 
-**Carry-over** (unfinished items, and which revision block absorbs them)
+**Carry-over** (unfinished items, and which review block absorbs them)
 -
 ```
 

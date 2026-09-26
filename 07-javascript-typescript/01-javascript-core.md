@@ -1,6 +1,6 @@
 # 01 — JavaScript Core
 
-> Week 14 · ≈ 4 hours · Prereq: you know Java. This file focuses on **where JavaScript differs from Java**,
+> Week 6 · ≈ 1.5 hours + exercises · Prereq: you know Java. This file focuses on **where JavaScript differs from Java**,
 > because that is where both bugs and interview questions live.
 
 ---
@@ -28,16 +28,16 @@ Array.isArray([]);           // true — use this, not typeof
 Number.isNaN(NaN);           // true;  NaN === NaN is false
 ```
 
-**Practical:** if a TeamBoard/PulseWatch backend ever returns a `BIGINT` id above 2^53, serialize it as a string.
-For money, never use floats in JS either — send amounts as strings or integer cents (same lesson as P1 Ledger's `BigDecimal`).
+**Practical:** if a FlowGrid/LedgerX backend ever returns a `BIGINT` id above 2^53, serialize it as a string.
+For money, never use floats in JS either — LedgerX sends amounts as **strings** (from `BigDecimal`) and the UI formats them without arithmetic.
 
 ### Primitives are copied, objects are shared by reference
 
 ```js
-const a = { status: "TODO" };
+const a = { status: "RESERVED" };
 const b = a;           // same reference (like Java)
-b.status = "DONE";
-console.log(a.status); // "DONE"
+b.status = "SHIPPED";
+console.log(a.status); // "SHIPPED"
 ```
 
 `const` means the **binding** can't be reassigned — the object is still mutable. Same as `final` in Java.
@@ -63,14 +63,14 @@ null === undefined; // false
 **Falsy values** (exactly 8): `false`, `0`, `-0`, `0n`, `""`, `null`, `undefined`, `NaN`. Everything else is truthy — including `"0"`, `"false"`, `[]`, `{}`.
 
 ```js
-const count = 0;
-const label = count || "none";   // "none"  ← bug if 0 is valid
-const label2 = count ?? "none";  // 0       ← ?? only falls back on null/undefined
-const title = issue?.assignee?.name ?? "Unassigned"; // optional chaining
+const available = 0;
+const label = available || "—";   // "—"  ← bug: 0 units available is real data
+const label2 = available ?? "—";  // 0    ← ?? only falls back on null/undefined
+const picker = order?.assignee?.name ?? "Unassigned"; // optional chaining
 ```
 
-> **Break it:** In a PulseWatch dashboard, `responseTimeMs || "—"` displays "—" when the check took 0 ms.
-> Replace with `??` and observe the difference.
+> **Break it:** In the FlowGrid inventory table, render `level.available || "—"` for a SKU with 0 available.
+> The out-of-stock row shows "—" instead of 0 — an operator can't tell "no data" from "sold out". Replace with `??`.
 
 ---
 
@@ -139,7 +139,7 @@ c.get(); // 2 — `count` is not accessible any other way
 handlers close over that render's state).
 
 ```js
-// Debounce: used for TeamBoard's issue search box
+// Debounce: used for FlowGrid's SKU search box
 function debounce(fn, ms) {
   let timer;
   return (...args) => {
@@ -147,7 +147,7 @@ function debounce(fn, ms) {
     timer = setTimeout(() => fn(...args), ms);
   };
 }
-const search = debounce((q) => console.log("search", q), 300);
+const searchSkus = debounce((q) => console.log("search", q), 300);
 ```
 
 ### The classic loop bug
@@ -174,17 +174,17 @@ for (let i = 0; i < 3; i++) setTimeout(() => console.log(i), 0); // 0 1 2
 | arrow function | `this` of the enclosing scope (lexical) |
 
 ```js
-const board = {
-  name: "Sprint 12",
+const station = {
+  name: "Pack station 3",
   print() { console.log(this.name); },
   printLater() { setTimeout(() => console.log(this.name), 0); },     // arrow: works
-  printLaterBroken() { setTimeout(function () { console.log(this?.name); }, 0); }, // NOT "Sprint 12": this = window (browser) / Timeout (Node)
+  printLaterBroken() { setTimeout(function () { console.log(this?.name); }, 0); }, // NOT "Pack station 3": this = window (browser) / Timeout (Node)
 };
-board.print();              // "Sprint 12"
-const p = board.print;
+station.print();            // "Pack station 3"
+const p = station.print;
 p();                        // TypeError in strict mode (this is undefined)
-const bound = board.print.bind(board);
-bound();                    // "Sprint 12"
+const bound = station.print.bind(station);
+bound();                    // "Pack station 3"
 ```
 
 **Why it matters for you:** React function components avoid `this` entirely — but you'll still meet it in
@@ -197,16 +197,16 @@ older code, class components, and interview questions.
 Every object has an internal `[[Prototype]]` link. Property lookup walks the chain. `class` is syntax sugar over this.
 
 ```js
-class Monitor {
-  #failures = 0;                        // truly private field
-  constructor(url) { this.url = url; }
-  recordFailure() { this.#failures++; }
-  get failures() { return this.#failures; }
+class BuildJob {                        // a ForgeCI job as the UI sees it
+  #attempts = 0;                        // truly private field
+  constructor(id) { this.id = id; }
+  recordAttempt() { this.#attempts++; }
+  get attempts() { return this.#attempts; }
 }
-const m = new Monitor("https://example.com");
-Object.getPrototypeOf(m) === Monitor.prototype; // true
-m.hasOwnProperty("url");        // true
-m.hasOwnProperty("recordFailure"); // false — lives on the prototype
+const j = new BuildJob(42);
+Object.getPrototypeOf(j) === BuildJob.prototype; // true
+j.hasOwnProperty("id");                // true
+j.hasOwnProperty("recordAttempt");     // false — lives on the prototype
 ```
 
 Interview one-liner: *"JS uses prototypal inheritance: objects delegate missing property lookups to their prototype.
@@ -217,29 +217,30 @@ Interview one-liner: *"JS uses prototypal inheritance: objects delegate missing 
 ## 8. Arrays and objects — the methods you'll use daily
 
 ```js
-const issues = [
-  { id: 1, title: "Login fails", status: "TODO", points: 3 },
-  { id: 2, title: "Add labels", status: "DONE", points: 5 },
-  { id: 3, title: "CSV export", status: "IN_PROGRESS", points: 2 },
+// FlowGrid orders as the dashboard receives them
+const orders = [
+  { id: 1, number: "SO-1001", status: "RESERVED", units: 3 },
+  { id: 2, number: "SO-1002", status: "SHIPPED", units: 5 },
+  { id: 3, number: "SO-1003", status: "PICKING", units: 2 },
 ];
 
-issues.map(i => i.title);                        // ["Login fails", ...]
-issues.filter(i => i.status !== "DONE");         // open issues
-issues.find(i => i.id === 2);                    // object or undefined
-issues.some(i => i.points > 4);                  // true
-issues.every(i => i.points > 0);                 // true
-issues.reduce((sum, i) => sum + i.points, 0);    // 10
-issues.findIndex(i => i.id === 3);               // 2
-issues.toSorted((a, b) => b.points - a.points);  // ES2023: non-mutating sort
+orders.map(o => o.number);                       // ["SO-1001", ...]
+orders.filter(o => o.status !== "SHIPPED");      // open orders
+orders.find(o => o.id === 2);                    // object or undefined
+orders.some(o => o.units > 4);                   // true
+orders.every(o => o.units > 0);                  // true
+orders.reduce((sum, o) => sum + o.units, 0);     // 10
+orders.findIndex(o => o.id === 3);               // 2
+orders.toSorted((a, b) => b.units - a.units);    // ES2023: non-mutating sort
 
 // Group by status (Object.groupBy is ES2024 / Node 21+; reduce works everywhere)
-const byStatus = issues.reduce((acc, i) => {
-  (acc[i.status] ??= []).push(i);
+const byStatus = orders.reduce((acc, o) => {
+  (acc[o.status] ??= []).push(o);
   return acc;
 }, {});
 
-Object.keys(byStatus);    // ["TODO", "DONE", "IN_PROGRESS"]
-Object.entries(byStatus); // [["TODO", [...]], ...]
+Object.keys(byStatus);    // ["RESERVED", "SHIPPED", "PICKING"]
+Object.entries(byStatus); // [["RESERVED", [...]], ...]
 ```
 
 **Mutating vs non-mutating** (critical for React):
@@ -253,32 +254,32 @@ Object.entries(byStatus); // [["TODO", [...]], ...]
 ## 9. Destructuring, spread, rest
 
 ```js
-const { id, title, assignee = null } = issues[0];   // default if undefined
-const { status: s } = issues[0];                    // rename
-const [first, ...rest] = issues;                    // array rest
+const { id, number, assignee = null } = orders[0];  // default if undefined
+const { status: s } = orders[0];                    // rename
+const [first, ...rest] = orders;                    // array rest
 
-const updated = { ...issues[0], status: "IN_PROGRESS" }; // shallow copy + override
-const all = [...issues, { id: 4, title: "New", status: "TODO", points: 1 }];
+const updated = { ...orders[0], status: "PICKING" }; // shallow copy + override
+const all = [...orders, { id: 4, number: "SO-1004", status: "RESERVED", units: 1 }];
 
-function renderIssue({ title, status }) { return `${title} (${status})`; }
+function renderOrder({ number, status }) { return `${number} (${status})`; }
 ```
 
-> **Break it:** spread is **shallow**. `const copy = { ...issue }; copy.labels.push("bug");` mutates
-> the original's `labels` array too. Use `structuredClone(issue)` for a deep copy.
+> **Break it:** spread is **shallow**. `const copy = { ...order }; copy.lines.push(newLine);` mutates
+> the original's `lines` array too. Use `structuredClone(order)` for a deep copy.
 
 ---
 
 ## 10. Modules (ESM)
 
 ```js
-// api/issues.js
-export async function listIssues(projectId) { /* ... */ }
+// api/orders.js
+export async function listOrders(warehouseId) { /* ... */ }
 export const PAGE_SIZE = 20;
-export default function IssueCard() {}
+export default function OrderCard() {}
 
 // app.js
-import IssueCard, { listIssues, PAGE_SIZE } from "./api/issues.js";
-import * as issuesApi from "./api/issues.js";
+import OrderCard, { listOrders, PAGE_SIZE } from "./api/orders.js";
+import * as ordersApi from "./api/orders.js";
 ```
 
 - ESM is **static** (imports resolved before execution), **strict mode by default**, and each module evaluates once (singletons).
@@ -326,7 +327,7 @@ idiom some teams allow, to check both `null` and `undefined`.
 <details><summary>What is a closure? Give a real use.</summary>
 
 A function that retains access to variables from the scope it was created in, even after that scope
-has returned. Real use: my debounced search in TeamBoard keeps its `timer` variable private inside a
+has returned. Real use: my debounced SKU search in FlowGrid keeps its `timer` variable private inside a
 closure; React hooks also rely on closures — each render's handlers see that render's state.
 </details>
 
@@ -360,10 +361,10 @@ link to other objects and delegate property lookups at runtime. `class`/`extends
 ## Mastery checklist
 
 - [ ] List the 8 falsy values from memory.
-- [ ] Explain `??` vs `||` with a PulseWatch example.
+- [ ] Explain `??` vs `||` with a FlowGrid "0 available" example.
 - [ ] Write `debounce` from a blank file and explain its closure.
 - [ ] Explain the `var` loop bug and two fixes.
 - [ ] Predict `this` in 5 call forms.
-- [ ] Group, sum and sort an issue array with `reduce`/`toSorted` without mutation.
+- [ ] Group, sum and sort an order array with `reduce`/`toSorted` without mutation.
 - [ ] Explain shallow vs deep copy; use `structuredClone`.
 - [ ] Split code into ESM modules with named + default exports.

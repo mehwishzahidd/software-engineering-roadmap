@@ -198,37 +198,37 @@ What junior / new-grad backend-leaning interviews actually expect:
   question each, recorded. Rehearse the four gap templates from §3.
 - **Week 24:** mock "résumé grill" — have a peer (or strictly-prompted AI) pick any 4 techs and
   probe 5 levels deep. Fix anything scoring < 3.
-- **Week 25:** re-drill only techs whose matrix status is not ✅.
+- **Week 25:** re-drill only techs whose matrix status is still ☐.
 - **Week 26:** 10-minute daily "random tech" drill; carry into the maintenance plan.
 
 ---
 
 ## 8. Readiness matrix
 
-Tick **Status** only when you score ≥ 3 on three consecutive recorded answers for that tech
+Change **Status** from ☐ to ☑ (GitHub does not render `- [ ]` inside tables) only when you score ≥ 3 on three consecutive recorded answers for that tech
 *and* can point to the project evidence.
 
 | Tech | Target level | Week learned | Project evidence | Status |
 |---|---|---|---|---|
-| [Java](./17-resume-tech-defense/java.md) | L4 | 1–4, 6, 13 | P1 domain model + streams; P2 concurrency test; P4 virtual-thread checker | - [ ] |
-| [Spring Boot](./17-resume-tech-defense/spring-boot.md) | L3/L4 | 9–12 | P2 layered API, security, `@Transactional`; P3 RBAC; P4 scheduled worker | - [ ] |
-| [Maven](./17-resume-tech-defense/maven.md) | L2/L3 | 3 | P1 `pom.xml`; P2 Surefire/Failsafe + `mvn verify` in CI | - [ ] |
-| [JUnit](./17-resume-tech-defense/junit.md) | L3 | 2, 12 | P1 CSV import tests; P2 slice + Testcontainers tests | - [ ] |
-| [REST APIs](./17-resume-tech-defense/rest-apis.md) | L4 | 9–10 | P2 ProblemDetail errors, pagination, Idempotency-Key; P4 rate-limited public API | - [ ] |
-| [Git](./17-resume-tech-defense/git.md) | L3 | 1, 2, 5 | PR workflow from P1 M3; tagged releases v1.0 | - [ ] |
-| [GitHub](./17-resume-tech-defense/github.md) | L2 | 1, 5, 12 | PR history, Actions workflows in P2/P4 | - [ ] |
-| [SQL](./17-resume-tech-defense/sql.md) | L4 | 5–8 | P1 report queries; P3 filters/search; P4 check_results queries | - [ ] |
-| [PostgreSQL](./17-resume-tech-defense/postgresql.md) | L3 | 5–8 | P1 schema + `EXPLAIN`; P2 Flyway; P4 composite index on RDS | - [ ] |
-| [MySQL](./17-resume-tech-defense/mysql.md) | L2 | 8 | Ledger schema ported to MySQL 8 exercise | - [ ] |
-| [JavaScript](./17-resume-tech-defense/javascript.md) | L3 | 14 | P3 frontend | - [ ] |
-| [TypeScript](./17-resume-tech-defense/typescript.md) | L2 | 15 | P3 typed API client | - [ ] |
-| [React](./17-resume-tech-defense/react.md) | L3 | 15–17 | P3 board + auth; P4 dashboard | - [ ] |
-| [Docker](./17-resume-tech-defense/docker.md) | L3 | 10, 19 | P2 Dockerfile; P3/P4 Compose stacks | - [ ] |
-| [Redis](./17-resume-tech-defense/redis.md) | L2/L3 | 20 | P4 status-page cache + token-bucket rate limiter | - [ ] |
-| [AWS](./17-resume-tech-defense/aws.md) | L2 | 21 | P4 on EC2 + RDS + S3 + CloudWatch | - [ ] |
-| [CI/CD](./17-resume-tech-defense/cicd.md) | L2 | 12, 22 | P2 `mvn verify` CI; P4 build → push → deploy | - [ ] |
-| [Linux](./17-resume-tech-defense/linux.md) | L2 | 1, 19 | P4 EC2 ops, logs, systemd/Compose | - [ ] |
-| [Python](./17-resume-tech-defense/python.md) | L1/L2 | 13 | Utility scripts (e.g. CSV generation for P1 tests) | - [ ] |
+| [Java](./17-resume-tech-defense/java.md) | L4 | 1–4, 6, 13 | P1 domain model + streams; P2 concurrency test; P4 virtual-thread checker | ☐ |
+| [Spring Boot](./17-resume-tech-defense/spring-boot.md) | L3/L4 | 9–12 | P2 layered API, security, `@Transactional`; P3 RBAC; P4 scheduled worker | ☐ |
+| [Maven](./17-resume-tech-defense/maven.md) | L2/L3 | 3 | P1 `pom.xml`; P2 Surefire/Failsafe + `mvn verify` in CI | ☐ |
+| [JUnit](./17-resume-tech-defense/junit.md) | L3 | 2, 12 | P1 CSV import tests; P2 slice + Testcontainers tests | ☐ |
+| [REST APIs](./17-resume-tech-defense/rest-apis.md) | L4 | 9–10 | P2 ProblemDetail errors, pagination, Idempotency-Key; P4 rate-limited public API | ☐ |
+| [Git](./17-resume-tech-defense/git.md) | L3 | 1, 2, 5 | PR workflow from P1 M3; tagged releases v1.0 | ☐ |
+| [GitHub](./17-resume-tech-defense/github.md) | L2 | 1, 5, 12 | PR history, Actions workflows in P2/P4 | ☐ |
+| [SQL](./17-resume-tech-defense/sql.md) | L4 | 5–8 | P1 report queries; P3 filters/search; P4 check_results queries | ☐ |
+| [PostgreSQL](./17-resume-tech-defense/postgresql.md) | L3 | 5–8 | P1 schema + `EXPLAIN`; P2 Flyway; P4 composite index on RDS | ☐ |
+| [MySQL](./17-resume-tech-defense/mysql.md) | L2 | 8 | Ledger schema ported to MySQL 8 exercise | ☐ |
+| [JavaScript](./17-resume-tech-defense/javascript.md) | L3 | 14 | P3 frontend | ☐ |
+| [TypeScript](./17-resume-tech-defense/typescript.md) | L2 | 15 | P3 typed API client | ☐ |
+| [React](./17-resume-tech-defense/react.md) | L3 | 15–17 | P3 board + auth; P4 dashboard | ☐ |
+| [Docker](./17-resume-tech-defense/docker.md) | L3 | 10, 19 | P2 Dockerfile; P3/P4 Compose stacks | ☐ |
+| [Redis](./17-resume-tech-defense/redis.md) | L2/L3 | 20 | P4 status-page cache + token-bucket rate limiter | ☐ |
+| [AWS](./17-resume-tech-defense/aws.md) | L2 | 21 | P4 on EC2 + RDS + S3 + CloudWatch | ☐ |
+| [CI/CD](./17-resume-tech-defense/cicd.md) | L2 | 12, 22 | P2 `mvn verify` CI; P4 build → push → deploy | ☐ |
+| [Linux](./17-resume-tech-defense/linux.md) | L2 | 1, 19 | P4 EC2 ops, logs, systemd/Compose | ☐ |
+| [Python](./17-resume-tech-defense/python.md) | L1/L2 | 13 | Utility scripts (e.g. CSV generation for P1 tests) | ☐ |
 
 ---
 
