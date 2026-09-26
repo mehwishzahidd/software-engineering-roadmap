@@ -1,9 +1,9 @@
-# 13 — Heap / PriorityQueue
+# 13 — Heap / Priority Queue
 
-> **Week 12** · NeetCode section: **Heap / Priority Queue** · Target: **8 new problems** + stretch pool
-> Back to [DSA overview](./README.md) · Tracker: [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md#13--heap--priorityqueue) · Java APIs: [toolkit §7 PriorityQueue & comparators](./java-dsa-toolkit.md#7-priorityqueue-and-comparators)
+> **Week 11** · NeetCode section: **Heap / Priority Queue** · Target: **8 new problems** + stretch pool · Java rep: **973** (Week 11)
+> Back to [DSA overview](./README.md) · Tracker: [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md#13--heap--priorityqueue) · Python: [`19-python/02-interview-toolkit.md`](../19-python/02-interview-toolkit.md) (`heapq`) · Java: [quick reference §4](./java-dsa-toolkit.md#4-comparators-and-the-a---b-trap)
 
-A heap gives you the min (or max) element in O(1) and lets you insert/remove in O(log n). Whenever a problem asks for "the k best", "the next most urgent", or "merge many sorted streams", a heap is usually the answer. You'll use the same idea in [P4 PulseWatch](../18-projects/p4-pulsewatch/README.md)'s scheduler (next check due first) and Java's `ScheduledThreadPoolExecutor` uses a heap-based delay queue internally.
+A heap gives you the min (or max) element in O(1) and lets you insert/remove in O(log n). Whenever a problem asks for "the k best", "the next most urgent", or "merge many sorted streams", a heap is usually the answer. Schedulers use the same idea: [ForgeCI](../18-projects/forgeci/README.md)'s job queue and Java's `ScheduledThreadPoolExecutor` (a heap-based delay queue) both pick "the next job due".
 
 ---
 
@@ -11,18 +11,19 @@ A heap gives you the min (or max) element in O(1) and lets you insert/remove in 
 
 | Concept | Key facts |
 |---|---|
-| Binary heap | Complete binary tree stored in an array; parent `(i-1)/2`, children `2i+1`, `2i+2` |
-| Heap property | Min-heap: every parent ≤ its children (only the root is guaranteed minimum; the array is **not** sorted) |
-| Sift up / sift down | Insert at end + sift up: O(log n). Remove root: move last to root + sift down: O(log n) |
-| Heapify | Build from an array bottom-up in **O(n)** (not O(n log n)) |
-| Java `PriorityQueue` | Min-heap by default; `Collections.reverseOrder()` or a comparator for max-heap; `remove(Object)` is O(n) |
-| Top-k largest | **Min**-heap of size k: push, and pop when size > k → O(n log k). The root is the k-th largest |
-| Top-k smallest / closest | **Max**-heap of size k |
+| Binary heap | Complete binary tree stored in an array; parent `(i - 1) // 2`, children `2i + 1`, `2i + 2` |
+| Heap property | Min-heap: every parent ≤ its children (only the root is guaranteed minimum; the list is **not** sorted) |
+| Sift up / sift down | Push at end + sift up: O(log n). Pop root: move last to root + sift down: O(log n) |
+| Heapify | Build from a list bottom-up in **O(n)** (not O(n log n)) — `heapq.heapify(lst)` |
+| `heapq` API | Functions on a plain `list`: `heappush`, `heappop`, `heapify`, `heappushpop`, `heapreplace`, `nlargest`, `nsmallest`, `merge`. `h[0]` is the min |
+| Min-heap only | Max-heap: push `-x` and negate on pop. For tuples: `(-priority, ...)` |
+| Tuple ordering | Heaps compare tuples lexicographically: `(dist, node)`. If the first fields tie, the second is compared → must be comparable, or add a tie-breaker counter `(dist, seq, obj)` |
+| Top-k largest | **Min**-heap of size k: push, pop when size > k → O(n log k). Root = k-th largest |
+| Top-k smallest / closest | Max-heap (negated keys) of size k |
 | Two heaps | Max-heap for the lower half, min-heap for the upper half → running median |
 | K-way merge | Heap holds the current head of each list: O(N log k) |
-| Lazy deletion | Mark as stale and skip when popped (instead of O(n) remove) |
+| Lazy deletion | Mark as stale and skip when popped (heapq has no decrease-key / arbitrary delete) |
 | Heap vs sort vs quickselect | Sort O(n log n); heap O(n log k); quickselect O(n) average, O(n²) worst |
-| Heap vs BST | Heap: only min/max fast, O(n) heapify, array-backed. `TreeMap`: any order query, O(log n) all ops |
 
 ---
 
@@ -31,155 +32,188 @@ A heap gives you the min (or max) element in O(1) and lets you insert/remove in 
 - [`10-trees.md`](./10-trees.md) — complete binary trees, levels.
 - [`02-hashing.md`](./02-hashing.md) — counting before top-k (347 revisited).
 - [`08-linked-lists.md`](./08-linked-lists.md) — needed for 23.
-- [Toolkit §7](./java-dsa-toolkit.md#7-priorityqueue-and-comparators) — comparators and the `a - b` overflow trap.
 
 ---
 
-## 3. Java implementation
+## 3. Python implementation
 
 ### 3.1 A min-heap from scratch
 
-```java
-import java.util.*;
+```python
+class MinHeap:
+    def __init__(self, values: list[int] | None = None) -> None:
+        self.a: list[int] = list(values) if values else []   # copy: don't alias the caller's list
+        for i in range(len(self.a) // 2 - 1, -1, -1):        # O(n) bottom-up heapify
+            self._sift_down(i)
 
-class MinHeap {
-    private int[] a;
-    private int size;
+    def push(self, x: int) -> None:
+        self.a.append(x)
+        self._sift_up(len(self.a) - 1)
 
-    MinHeap(int capacity) { a = new int[Math.max(1, capacity)]; }
+    def peek(self) -> int:
+        return self.a[0]
 
-    // O(n) bottom-up heapify
-    MinHeap(int[] values) {
-        a = Arrays.copyOf(values, Math.max(1, values.length));
-        size = values.length;
-        for (int i = size / 2 - 1; i >= 0; i--) siftDown(i);
-    }
+    def pop(self) -> int:
+        a = self.a
+        top = a[0]
+        last = a.pop()
+        if a:
+            a[0] = last
+            self._sift_down(0)
+        return top
 
-    void offer(int x) {
-        if (size == a.length) a = Arrays.copyOf(a, size * 2);
-        a[size] = x;
-        siftUp(size++);
-    }
+    def __len__(self) -> int:
+        return len(self.a)
 
-    int peek() {
-        if (size == 0) throw new NoSuchElementException();
-        return a[0];
-    }
+    def _sift_up(self, i: int) -> None:
+        a = self.a
+        while i > 0:
+            p = (i - 1) // 2
+            if a[p] <= a[i]:
+                break
+            a[p], a[i] = a[i], a[p]
+            i = p
 
-    int poll() {
-        if (size == 0) throw new NoSuchElementException();
-        int top = a[0];
-        a[0] = a[--size];
-        siftDown(0);
-        return top;
-    }
+    def _sift_down(self, i: int) -> None:
+        a, n = self.a, len(self.a)
+        while True:
+            l, r, smallest = 2 * i + 1, 2 * i + 2, i
+            if l < n and a[l] < a[smallest]:
+                smallest = l
+            if r < n and a[r] < a[smallest]:
+                smallest = r
+            if smallest == i:
+                return
+            a[i], a[smallest] = a[smallest], a[i]
+            i = smallest
 
-    int size() { return size; }
 
-    private void siftUp(int i) {
-        while (i > 0) {
-            int p = (i - 1) / 2;
-            if (a[p] <= a[i]) break;
-            swap(i, p);
-            i = p;
-        }
-    }
-
-    private void siftDown(int i) {
-        while (true) {
-            int l = 2 * i + 1, r = l + 1, smallest = i;
-            if (l < size && a[l] < a[smallest]) smallest = l;
-            if (r < size && a[r] < a[smallest]) smallest = r;
-            if (smallest == i) return;
-            swap(i, smallest);
-            i = smallest;
-        }
-    }
-
-    private void swap(int i, int j) { int t = a[i]; a[i] = a[j]; a[j] = t; }
-
-    public static void main(String[] args) {
-        MinHeap h = new MinHeap(new int[]{9, 4, 7, 1, 8, 2});
-        h.offer(0); h.offer(5);
-        StringBuilder sb = new StringBuilder();
-        while (h.size() > 0) sb.append(h.poll()).append(' ');
-        System.out.println(sb.toString().trim());         // 0 1 2 4 5 7 8 9  (heap sort!)
-    }
-}
+h = MinHeap([9, 4, 7, 1, 8, 2])
+h.push(0)
+h.push(5)
+assert [h.pop() for _ in range(len(h))] == [0, 1, 2, 4, 5, 7, 8, 9]   # heap sort!
+print("MinHeap ok")
 ```
 
-### 3.2 PriorityQueue templates
+### 3.2 `heapq` templates
+
+```python
+import heapq
+from itertools import count
+
+
+def kth_largest(nums: list[int], k: int) -> int:
+    """Top-k largest: min-heap of size k — O(n log k)."""
+    heap: list[int] = []
+    for x in nums:
+        heapq.heappush(heap, x)
+        if len(heap) > k:
+            heapq.heappop(heap)              # drop the smallest → keep the k largest
+    return heap[0]
+
+
+def k_closest(points: list[list[int]], k: int) -> list[list[int]]:
+    """Max-heap by distance via NEGATED keys; keep size k."""
+    heap: list[tuple[int, int, int]] = []
+    for x, y in points:
+        heapq.heappush(heap, (-(x * x + y * y), x, y))
+        if len(heap) > k:
+            heapq.heappop(heap)              # removes the FARTHEST (most negative key)
+    return [[x, y] for _, x, y in heap]
+
+
+def merge_sorted(arrays: list[list[int]]) -> list[int]:
+    """K-way merge: heap of (value, array index, element index)."""
+    heap = [(arr[0], i, 0) for i, arr in enumerate(arrays) if arr]
+    heapq.heapify(heap)
+    out = []
+    while heap:
+        val, i, j = heapq.heappop(heap)
+        out.append(val)
+        if j + 1 < len(arrays[i]):
+            heapq.heappush(heap, (arrays[i][j + 1], i, j + 1))
+    return out
+
+
+def last_stone(stones: list[int]) -> int:
+    """Max-heap simulation (LC 1046 shape)."""
+    heap = [-s for s in stones]
+    heapq.heapify(heap)
+    while len(heap) > 1:
+        y, x = -heapq.heappop(heap), -heapq.heappop(heap)
+        if y != x:
+            heapq.heappush(heap, -(y - x))
+    return -heap[0] if heap else 0
+
+
+class Task:                                   # not comparable: no __lt__
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+
+def schedule(tasks: list[tuple[int, Task]]) -> list[str]:
+    """Tie-breaker counter so equal priorities never compare Task objects."""
+    seq = count()
+    heap = [(prio, next(seq), task) for prio, task in tasks]
+    heapq.heapify(heap)
+    return [heapq.heappop(heap)[2].name for _ in range(len(heap))]
+
+
+assert kth_largest([3, 2, 1, 5, 6, 4], 2) == 5
+assert k_closest([[1, 3], [-2, 2]], 1) == [[-2, 2]]
+assert merge_sorted([[1, 4, 5], [1, 3, 4], [2, 6]]) == [1, 1, 2, 3, 4, 4, 5, 6]
+assert last_stone([2, 7, 4, 1, 8, 1]) == 1
+assert schedule([(2, Task("b")), (1, Task("a")), (2, Task("c"))]) == ["a", "b", "c"]
+assert heapq.nlargest(2, [5, 1, 9, 3]) == [9, 5] and heapq.nsmallest(1, [5, 1, 9]) == [1]
+print("heapq templates ok")
+```
+
+---
+
+## 4. The same in Java (occasional reps)
+
+**This week's Java rep (Week 11): 973 K Closest Points to Origin.**
+
+| Python | Java |
+|---|---|
+| `heapq` on a list (min-heap) | `PriorityQueue<T>` (min-heap) |
+| max-heap via `-x` | `new PriorityQueue<>(Collections.reverseOrder())` or a reversed comparator |
+| tuple `(dist, x, y)` ordering | `PriorityQueue<int[]>((a, b) -> Integer.compare(b[0], a[0]))` |
+| tie-breaker `count()` | `thenComparingLong(...)` on a sequence field |
+| `heap[0]` | `pq.peek()` |
 
 ```java
 import java.util.*;
 
-class HeapTemplates {
-    // Top-k largest: min-heap of size k — O(n log k)
-    static int kthLargest(int[] nums, int k) {
-        PriorityQueue<Integer> minHeap = new PriorityQueue<>();
-        for (int x : nums) {
-            minHeap.offer(x);
-            if (minHeap.size() > k) minHeap.poll();      // drop the smallest → keep the k largest
-        }
-        return minHeap.peek();
-    }
-
-    // k closest points: max-heap by distance of size k (distance squared as long, no sqrt)
+class KClosestRep {
     static int[][] kClosest(int[][] points, int k) {
         PriorityQueue<int[]> maxHeap = new PriorityQueue<>(
-                (p, q) -> Long.compare(dist(q), dist(p)));  // reversed → max-heap
+                (p, q) -> Long.compare(dist(q), dist(p)));   // farthest on top; never (a, b) -> b - a
         for (int[] p : points) {
             maxHeap.offer(p);
             if (maxHeap.size() > k) maxHeap.poll();
         }
         return maxHeap.toArray(new int[0][]);
     }
+
     private static long dist(int[] p) { return (long) p[0] * p[0] + (long) p[1] * p[1]; }
 
-    // K-way merge of sorted arrays: heap holds {value, arrayIndex, elementIndex}
-    static List<Integer> mergeSorted(int[][] arrays) {
-        PriorityQueue<int[]> pq = new PriorityQueue<>((x, y) -> Integer.compare(x[0], y[0]));
-        for (int i = 0; i < arrays.length; i++) if (arrays[i].length > 0) pq.offer(new int[]{arrays[i][0], i, 0});
-        List<Integer> out = new ArrayList<>();
-        while (!pq.isEmpty()) {
-            int[] cur = pq.poll();
-            out.add(cur[0]);
-            int i = cur[1], j = cur[2] + 1;
-            if (j < arrays[i].length) pq.offer(new int[]{arrays[i][j], i, j});
-        }
-        return out;
-    }
-
-    // Simulation: repeatedly take the two largest (LC 1046 shape)
-    static int lastStone(int[] stones) {
-        PriorityQueue<Integer> max = new PriorityQueue<>(Collections.reverseOrder());
-        for (int s : stones) max.offer(s);
-        while (max.size() > 1) {
-            int y = max.poll(), x = max.poll();
-            if (y != x) max.offer(y - x);
-        }
-        return max.isEmpty() ? 0 : max.peek();
-    }
-
     public static void main(String[] args) {
-        System.out.println(kthLargest(new int[]{3, 2, 1, 5, 6, 4}, 2));                               // 5
-        System.out.println(Arrays.deepToString(kClosest(new int[][]{{1, 3}, {-2, 2}}, 1)));           // [[-2, 2]]
-        System.out.println(mergeSorted(new int[][]{{1, 4, 5}, {1, 3, 4}, {2, 6}}));                   // [1, 1, 2, 3, 4, 4, 5, 6]
-        System.out.println(lastStone(new int[]{2, 7, 4, 1, 8, 1}));                                   // 1
+        System.out.println(Arrays.deepToString(kClosest(new int[][]{{1, 3}, {-2, 2}}, 1)));  // [[-2, 2]]
     }
 }
 ```
 
 ---
 
-## 4. Common patterns (sub-variants)
+## 5. Common patterns (sub-variants)
 
 | Sub-pattern | Heap type | Problems |
 |---|---|---|
 | Stream: k-th largest so far | min-heap size k | 703 |
-| Simulation: repeatedly take extremes | max-heap | 1046 |
-| Top-k by a key (distance, frequency) | max-heap size k (or min for largest) | 973, 347 (revisited) |
-| k-th element in array | min-heap size k / quickselect | 215 |
+| Simulation: repeatedly take extremes | max-heap (negated) | 1046 |
+| Top-k by a key (distance, frequency) | max-heap size k (or `nsmallest`) | 973, 347 (revisited) |
+| k-th element in an array | min-heap size k / quickselect | 215 |
 | Greedy scheduling by count | max-heap of counts + cooldown queue (or math formula) | 621, 767 |
 | Merge k sorted / k-way feed | min-heap of heads | 23, 355 |
 | Running median | two heaps | 295 |
@@ -187,144 +221,158 @@ class HeapTemplates {
 
 ---
 
-## 5. How to recognise the pattern
+## 6. How to recognise the pattern
 
 - "k largest / smallest / closest / most frequent", "k-th largest".
 - "Continuously", "stream", "add numbers and query the median/max".
 - "Merge k sorted lists/arrays", "news feed of the 10 most recent posts from followed users".
 - Scheduling: "process the task with the smallest processing time among available ones".
 - n up to 10⁵ with k ≪ n → O(n log k) beats sorting.
-- Need both ends / arbitrary deletions → `TreeMap` instead.
+- Need arbitrary deletions or ordered iteration → a sorted structure (Java `TreeMap`), or a heap + lazy deletion in Python.
 
 ---
 
-## 6. Beginner problems (Week 12)
+## 7. Beginner problems (Week 11)
 
 | # | Problem | Difficulty | Hint |
 |---:|---|---|---|
-| 703 | [Kth Largest Element in a Stream](https://leetcode.com/problems/kth-largest-element-in-a-stream/) | Easy | Min-heap capped at size k; `peek()` is the answer after each `add`. |
-| 1046 | [Last Stone Weight](https://leetcode.com/problems/last-stone-weight/) | Easy | Max-heap with `Collections.reverseOrder()`; smash the two largest until ≤ 1 stone. |
+| 703 | [Kth Largest Element in a Stream](https://leetcode.com/problems/kth-largest-element-in-a-stream/) | Easy | Min-heap capped at size k (`heapify`, then pop down to k); `heap[0]` after each `add`. |
+| 1046 | [Last Stone Weight](https://leetcode.com/problems/last-stone-weight/) | Easy | Negate values for a max-heap; smash the two largest until ≤ 1 stone. |
 
 ---
 
-## 7. Interview problems (Week 12)
+## 8. Interview problems (Week 11)
 
 | # | Problem | Difficulty | Week | Key insight |
 |---:|---|---|---:|---|
-| 973 | [K Closest Points to Origin](https://leetcode.com/problems/k-closest-points-to-origin/) | Medium | 12 | <details><summary>show</summary>Max-heap of size k keyed by x² + y² (no sqrt, compare as `long` or `Integer.compare`).</details> |
-| 215 | [Kth Largest Element in an Array](https://leetcode.com/problems/kth-largest-element-in-an-array/) | Medium | 12 | <details><summary>show</summary>Min-heap size k → O(n log k). Follow-up: quickselect O(n) average (randomise the pivot).</details> |
-| 621 | [Task Scheduler](https://leetcode.com/problems/task-scheduler/) | Medium | 12 | <details><summary>show</summary>Max-heap of counts + queue of (count, readyTime) for cooling tasks; or formula `max(n_tasks, (maxCount−1)(n+1) + numWithMaxCount)`.</details> |
-| 355 | [Design Twitter](https://leetcode.com/problems/design-twitter/) | Medium | 12 | <details><summary>show</summary>Per-user tweet lists with a global timestamp; news feed = k-way merge of followees' most recent tweets with a max-heap, stop at 10.</details> |
-| 295 | [Find Median from Data Stream](https://leetcode.com/problems/find-median-from-data-stream/) | Hard | 12 | <details><summary>show</summary>Max-heap `low`, min-heap `high`; keep `low.size() == high.size()` or one more; median from the tops.</details> |
-| 23 | [Merge k Sorted Lists](https://leetcode.com/problems/merge-k-sorted-lists/) | Hard | 12 | <details><summary>show</summary>Min-heap of list heads (`Comparator.comparingInt(n -> n.val)`); pop, append, push its `next`. O(N log k).</details> |
+| 973 | [K Closest Points to Origin](https://leetcode.com/problems/k-closest-points-to-origin/) | Medium | 11 | <details><summary>show</summary>Max-heap of size k keyed by `-(x² + y²)` (no sqrt). `heapq.nsmallest(k, points, key=...)` is the one-liner.</details> |
+| 215 | [Kth Largest Element in an Array](https://leetcode.com/problems/kth-largest-element-in-an-array/) | Medium | 11 | <details><summary>show</summary>Min-heap of size k → O(n log k). Follow-up: quickselect O(n) average (random pivot; three-way partition for duplicates).</details> |
+| 621 | [Task Scheduler](https://leetcode.com/problems/task-scheduler/) | Medium | 11 | <details><summary>show</summary>Max-heap of counts + `deque` of `(count, ready_time)`; or formula `max(len(tasks), (max_count - 1) * (n + 1) + num_with_max_count)`.</details> |
+| 355 | [Design Twitter](https://leetcode.com/problems/design-twitter/) | Medium | 11 | <details><summary>show</summary>Per-user tweet lists with a global decreasing timestamp; the news feed is a k-way merge of followees' most recent tweets, stop at 10.</details> |
+| 295 | [Find Median from Data Stream](https://leetcode.com/problems/find-median-from-data-stream/) | Hard | 11 | <details><summary>show</summary>Max-heap `low` (negated), min-heap `high`; keep `len(low) == len(high)` or one more; median from the tops.</details> |
+| 23 | [Merge k Sorted Lists](https://leetcode.com/problems/merge-k-sorted-lists/) | Hard | 11 | <details><summary>show</summary>Heap of `(node.val, i, node)` — the index `i` breaks ties so `ListNode`s are never compared. O(N log k).</details> |
 
-### Stretch pool (Weeks 21–26 mixed review)
+### Stretch pool (Weeks 20–26 mixed review)
 
 | # | Problem | Difficulty | Key insight |
 |---:|---|---|---|
-| 767 | [Reorganize String](https://leetcode.com/problems/reorganize-string/) | Medium | <details><summary>show</summary>Max-heap of (count, char); place the top char, hold it out for one step, re-insert. Impossible if max count > (n+1)/2.</details> |
-| 1834 | [Single-Threaded CPU](https://leetcode.com/problems/single-threaded-cpu/) | Medium | <details><summary>show</summary>Sort tasks by enqueue time; heap of available tasks by (processing time, index); jump time forward when idle. Use `long` time.</details> |
+| 767 | [Reorganize String](https://leetcode.com/problems/reorganize-string/) | Medium | <details><summary>show</summary>Max-heap of `(-count, char)`; place the top char, hold it out for one step, re-insert. Impossible if max count > (n + 1) // 2.</details> |
+| 1834 | [Single-Threaded CPU](https://leetcode.com/problems/single-threaded-cpu/) | Medium | <details><summary>show</summary>Sort tasks by enqueue time (keep indices); heap of available `(processing_time, index)`; jump time forward when idle.</details> |
 
 ---
 
-## 8. Recommended NeetCode / LeetCode practice order
+## 9. Recommended NeetCode / LeetCode practice order
 
 NeetCode 150 **Heap / Priority Queue**: 703 → 1046 → 973 → 215 → 621 → 355 → 295. (23 is in NeetCode's Linked List section; it's assigned here because it's a heap technique.)
-Here: `MinHeap` from memory → 703 → 1046 → 973 → 215 → 23 → 621 → 355 → 295 (W12) → (W21–26) 767, 1834.
+Here: `MinHeap` from memory → 703 → 1046 → 973 → 215 → 23 → 621 → 355 → 295 → Java rep 973 → (W20–26) 767, 1834.
 
 ---
 
-## 9. Target number of problems
+## 10. Target number of problems
 
-**8 new** in Week 12 + 2 stretch.
-
----
-
-## 10. Mistakes beginners commonly make
-
-- Forgetting Java's `PriorityQueue` is a **min**-heap.
-- Comparator `(a, b) -> b - a` → overflow for large magnitudes. Use `Integer.compare(b, a)` / `Collections.reverseOrder()`.
-- Distances as `int` `x*x + y*y` with coordinates up to 10⁴ is fine (2·10⁸) — but know when it isn't; use `long` by habit.
-- Iterating a `PriorityQueue` (for-each / `toString`) expecting sorted order. Only `poll()` gives order.
-- Using `pq.remove(obj)` in a loop → O(n) each; use lazy deletion.
-- Top-k largest with a **max**-heap of all n elements (O(n log n) + O(k log n)) when a size-k min-heap is O(n log k).
-- 295: not rebalancing after each add; computing median with integer division (`(a + b) / 2` → use `/ 2.0`).
-- 23: pushing `null` lists into the heap → `NullPointerException` in the comparator.
-- Mutating an object's priority field while it's inside the heap — the heap doesn't re-sort. Remove and re-insert.
+**8 new** in Week 11 + 2 stretch.
 
 ---
 
-## 11. Mastery criteria
+## 11. Mistakes beginners commonly make
 
-- [ ] Implement `MinHeap` with `offer`, `poll`, `siftUp`, `siftDown` and O(n) heapify from memory in ≤ 15 min.
-- [ ] Explain why top-k largest uses a **min**-heap.
-- [ ] Solve 295 in ≤ 20 min and 23 in ≤ 15 min from blank.
-- [ ] Solve 2 unseen heap Mediums in ≤ 25 min each and compare heap vs sort vs quickselect complexity.
+**Python-specific**
+- Forgetting `heapq` is a **min**-heap → negate for max (`-x`), and negate back on pop.
+- **Tuple comparison crashes:** `(dist, node)` where dists tie → Python compares the `ListNode`s → `TypeError: '<' not supported`. Add a unique tie-breaker `(dist, i, node)` or `itertools.count()`.
+- Negating the wrong field in a tuple (`(-x, y)` vs `(x, -y)`) — decide which field drives the order.
+- Treating the heap list as sorted (`heap[1]` is **not** the second smallest; `heap[-1]` is not the max).
+- `heapq.heappush(h, x)` on a list you haven't `heapify`'d → invariants broken; always start from `[]` or `heapify`.
+- `heapify` returns `None` (in place): `h = heapq.heapify(xs)` is a bug.
+- Removing an arbitrary element with `h.remove(x)` → O(n) + must `heapify` again; prefer lazy deletion.
+- 295: median with `//` on negatives or ints → use `/ 2` for a float result.
+
+**General**
+- Top-k largest with a max-heap of all n elements when a size-k min-heap is O(n log k).
+- Mutating an item's priority while it's inside the heap — the heap doesn't re-order. Push a new entry and skip stale ones.
+
+**Java-rep traps (973):** comparator `(a, b) -> b - a` overflows — use `Integer.compare`/`Long.compare`; distances in `long`.
 
 ---
 
-## 12. Revision schedule
+## 12. Mastery criteria
 
-| Review | Week 12 set |
+- [ ] Implement `MinHeap` with `push`, `pop`, `_sift_up`, `_sift_down` and O(n) heapify from memory in ≤ 15 min.
+- [ ] Explain why top-k largest uses a **min**-heap, and how to get a max-heap from `heapq`.
+- [ ] Solve 295 in ≤ 20 min and 23 in ≤ 15 min from blank (including the tie-breaker).
+- [ ] Solve 2 unseen heap Mediums in ≤ 25 min each and compare heap vs sort vs quickselect.
+- [ ] Java rep: 973 in Java with a safe comparator.
+
+---
+
+## 13. Revision schedule
+
+| Review | Week 11 set |
 |---|---|
-| Day 0 | W12 |
-| Day 3 | W12/W13 |
-| Day 7 | W13 |
-| Day 14 | W14 |
-| Day 30 | W16 (Checkpoint 16) |
+| Day 0 | W11 |
+| Day 3 | W11/W12 |
+| Day 7 | W12 |
+| Day 14 | W13 |
+| Day 30 | W15 |
 
-**Revisit:** Week 17 (intervals: 253 meeting rooms uses a min-heap of end times), Week 20 (Dijkstra = BFS with a heap, [22](./22-advanced-graphs.md)), Weeks 21–26 (767, 1834), OA sims (heap simulations are common).
+**Revisit:** Week 15 (ForgeCI job queue — explain FIFO vs priority scheduling), Week 16 (intervals: 253 uses a min-heap of end times), Week 19 (Dijkstra = BFS with a heap, [22](./22-advanced-graphs.md)), Weeks 20–26 (767, 1834), OA sims (heap simulations are common).
 
 ---
 
 ## Worked example — 295. Find Median from Data Stream
 
-**Clarify.** `addNum(int)` up to 5·10⁴ calls; `findMedian()` returns a `double` — middle value, or the mean of the two middle values when the count is even. `findMedian` is only called when at least one number exists. Values in [−10⁵, 10⁵].
+**Clarify.** `addNum(num)` up to 5·10⁴ calls; `findMedian()` returns a float — the middle value, or the mean of the two middle values when the count is even. `findMedian` is only called when at least one number exists. Values in [−10⁵, 10⁵].
 
-**Brute force.** Keep a list; sort on every `findMedian` → O(n log n) per query. Or insertion into a sorted `ArrayList` → O(n) per add (shifting). With 5·10⁴ operations, O(n) per add is ~10⁹ total shifts in the worst case — too slow.
+**Brute force.** Keep a list; sort on every `findMedian` → O(n log n) per query. Or `bisect.insort` into a sorted list → O(n) per add (shifting) → up to ~10⁹ element moves in the worst case. Too slow.
 
-**Optimise.** Split the numbers into a lower half (max-heap `low`) and an upper half (min-heap `high`). Invariants: every element of `low` ≤ every element of `high`; `low.size() == high.size()` or `low.size() == high.size() + 1`. Median = `low.peek()` (odd count) or the mean of both tops. Add: push into `low`, move `low`'s max to `high` (fixes ordering), then if `high` got bigger, move its min back (fixes sizes). O(log n) per add, O(1) per median.
+**Optimise.** Split the numbers into a lower half (max-heap `low`, stored negated) and an upper half (min-heap `high`). Invariants: every element of `low` ≤ every element of `high`; `len(low) == len(high)` or `len(low) == len(high) + 1`. Median = `-low[0]` (odd count) or the mean of both tops. Add: push into `low`, move `low`'s max to `high` (fixes ordering), then if `high` got bigger, move its min back (fixes sizes). O(log n) per add, O(1) per median.
 
-**Code.**
+**Code (Python).**
 
-```java
-import java.util.*;
+```python
+import heapq
 
-class MedianFinder {
-    private final PriorityQueue<Integer> low = new PriorityQueue<>(Collections.reverseOrder()); // max-heap
-    private final PriorityQueue<Integer> high = new PriorityQueue<>();                          // min-heap
 
-    public void addNum(int num) {
-        low.offer(num);
-        high.offer(low.poll());                  // largest of the low half moves up → ordering invariant
-        if (high.size() > low.size()) {
-            low.offer(high.poll());              // size invariant: low has equal or one more
-        }
-    }
+class MedianFinder:
+    def __init__(self) -> None:
+        self.low: list[int] = []    # max-heap via negation: -low[0] is the largest of the low half
+        self.high: list[int] = []   # min-heap: high[0] is the smallest of the high half
 
-    public double findMedian() {
-        if (low.size() > high.size()) return low.peek();
-        return (low.peek() + (double) high.peek()) / 2.0;   // double arithmetic avoids int overflow/truncation
-    }
+    def addNum(self, num: int) -> None:
+        heapq.heappush(self.low, -num)
+        heapq.heappush(self.high, -heapq.heappop(self.low))   # ordering invariant
+        if len(self.high) > len(self.low):
+            heapq.heappush(self.low, -heapq.heappop(self.high))  # size invariant
 
-    public static void main(String[] args) {
-        MedianFinder m = new MedianFinder();
-        m.addNum(1); m.addNum(2);
-        System.out.println(m.findMedian());   // 1.5
-        m.addNum(3);
-        System.out.println(m.findMedian());   // 2.0
-        MedianFinder n = new MedianFinder();
-        for (int x : new int[]{5, -1, 5, 5, -1}) n.addNum(x);
-        System.out.println(n.findMedian());   // 5.0
-        MedianFinder single = new MedianFinder();
-        single.addNum(-7);
-        System.out.println(single.findMedian()); // -7.0
-    }
-}
+    def findMedian(self) -> float:
+        if len(self.low) > len(self.high):
+            return float(-self.low[0])
+        return (-self.low[0] + self.high[0]) / 2
+
+
+m = MedianFinder()
+m.addNum(1); m.addNum(2)
+assert m.findMedian() == 1.5
+m.addNum(3)
+assert m.findMedian() == 2.0
+n = MedianFinder()
+for x in (5, -1, 5, 5, -1):
+    n.addNum(x)
+assert n.findMedian() == 5.0
+s = MedianFinder()
+s.addNum(-7)
+assert s.findMedian() == -7.0
+d = MedianFinder()
+for x in (3, 2, 1):
+    d.addNum(x)
+assert d.findMedian() == 2.0
+e = MedianFinder()
+e.addNum(-1); e.addNum(-2)
+assert e.findMedian() == -1.5
+print("295 worked example passed")
 ```
 
-**Test cases.** `add 1, add 2 → 1.5, add 3 → 2.0` · duplicates and negatives `[5,-1,5,5,-1]` → 5.0 · single element → itself · descending inserts `3,2,1` → 2.0 · even count with negatives `[-1,-2]` → −1.5.
+**Test cases.** `add 1, add 2 → 1.5, add 3 → 2.0` · duplicates and negatives `[5,-1,5,5,-1]` → 5.0 · single element → itself · descending inserts `3,2,1` → 2.0 · even count with negatives `[-1,-2]` → −1.5 (true division, not `//`).
 
 **Complexity.** `addNum` O(log n) (three heap operations), `findMedian` O(1). Space O(n).
 
-**Follow-ups interviewers ask.** "All numbers in [0, 100]?" → counting array of 101 buckets, O(100) median. "99% of numbers in [0, 100]?" → buckets plus two overflow counters/heaps.
+**Follow-ups interviewers ask.** "All numbers in [0, 100]?" → 101 counting buckets, O(100) median. "99% of numbers in [0, 100]?" → buckets plus two overflow heaps.
