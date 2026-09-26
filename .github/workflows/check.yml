@@ -1,0 +1,25 @@
+name: check
+on: [push, pull_request]
+jobs:
+  links:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Relative Markdown links resolve
+        run: python3 scripts/check_links.py
+  buggy-library-compiles:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      # The practice project ships with deliberately failing tests, so only compile here.
+      - name: Compile debugging exercise (tests are meant to fail)
+        run: mvn -q -B test-compile
+        working-directory: 21-debugging-code-reading/exercises/buggy-library
