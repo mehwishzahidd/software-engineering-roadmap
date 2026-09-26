@@ -1,6 +1,6 @@
 # SQL — Résumé Defense
 
-**Target level:** L4 · **Learned:** Weeks 5–8 (basics → joins/aggregation → schema design, CTEs, window functions, indexes → transactions, `EXPLAIN`) · Dialect used: PostgreSQL 16 (MySQL 8 differences in [mysql.md](./mysql.md))
+**Target level:** L4 · **Learned:** Week 3 (basics, `psql`), Week 4 (joins, aggregation), Week 5 (transactions, isolation), Week 6 (schema design, CTEs, window functions, indexes, `EXPLAIN`), Week 9 (constraints, triggers, internals for LedgerX) · Dialect used: PostgreSQL 16 (MySQL 8 differences in [mysql.md](./mysql.md))
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md)
 
 ---
@@ -49,10 +49,10 @@ Unknown: `NULL = NULL` is not true; use `IS NULL`. Aggregates ignore NULLs excep
 
 Compute over a set of related rows without collapsing them:
 ```sql
-SELECT category, month, total,
-       RANK() OVER (PARTITION BY month ORDER BY total DESC) AS rnk,
-       SUM(total) OVER (PARTITION BY category ORDER BY month) AS running_total
-FROM monthly_category_totals;
+SELECT account_id, created_at, amount,
+       SUM(amount) OVER (PARTITION BY account_id ORDER BY created_at, id) AS running_balance,
+       RANK() OVER (PARTITION BY account_id ORDER BY abs(amount) DESC) AS size_rank
+FROM ledger_entry;
 ```
 `ROW_NUMBER`, `RANK`, `DENSE_RANK`, `LAG`/`LEAD`, running sums.
 </details>
@@ -72,9 +72,9 @@ Denormalize deliberately for read performance with a clear reason.
 
 <details><summary><b>Q10. How does a B-tree index help, and what's a composite index's column order rule?</b></summary>
 
-Sorted tree → O(log n) lookup, range scans, and sorted output. Composite `(monitor_id, checked_at)`
-serves `WHERE monitor_id = ?` and `WHERE monitor_id = ? AND checked_at > ? ORDER BY checked_at`,
-but not `WHERE checked_at > ?` alone (leftmost-prefix rule). Put equality columns first, then range/sort.
+Sorted tree → O(log n) lookup, range scans, and sorted output. Composite `(account_id, created_at)`
+serves `WHERE account_id = ?` and `WHERE account_id = ? AND created_at > ? ORDER BY created_at`,
+but not `WHERE created_at > ?` alone (leftmost-prefix rule). Put equality columns first, then range/sort.
 </details>
 
 <details><summary><b>Q11. What are ACID and isolation anomalies?</b></summary>
@@ -98,25 +98,28 @@ User input concatenated into SQL changes the query. Prevent with parameterized q
 
 ## 3. Realistic interview questions
 
-<details><summary><b>R1. "Write a query: top 3 spending categories per month."</b></summary>
+<details><summary><b>R1. "Write a query: top 3 SKUs by shipped quantity per warehouse per month."</b></summary>
 
 ```sql
 WITH t AS (
-  SELECT date_trunc('month', occurred_on) AS month, category_id, SUM(amount) AS total
-  FROM transactions WHERE amount > 0
-  GROUP BY 1, 2)
+  SELECT date_trunc('month', s.shipped_at) AS month, a.warehouse_id, a.sku_id, SUM(a.quantity) AS qty
+  FROM shipments s JOIN allocations a ON a.shipment_id = s.id
+  WHERE s.status = 'SHIPPED'
+  GROUP BY 1, 2, 3)
 SELECT * FROM (
-  SELECT t.*, DENSE_RANK() OVER (PARTITION BY month ORDER BY total DESC) AS r FROM t) x
-WHERE r <= 3 ORDER BY month, r;
+  SELECT t.*, DENSE_RANK() OVER (PARTITION BY month, warehouse_id ORDER BY qty DESC) AS r FROM t) x
+WHERE r <= 3 ORDER BY month, warehouse_id, r;
 ```
-Mention tie handling (`DENSE_RANK` vs `ROW_NUMBER`). Evidence: Ledger monthly reports.
+Mention tie handling (`DENSE_RANK` vs `ROW_NUMBER`). Evidence: FlowGrid's fulfillment reports (exported to S3 in M5).
 </details>
 
 <details><summary><b>R2. "How much SQL did you write in your previous roles?"</b></summary>
 
 - Honest: e.g. "mostly simple queries through an ORM; occasionally debugging reports". Don't inflate.
-- Now: "I wrote raw SQL through JDBC for Ledger — schema, constraints, report queries with CTEs and window
-  functions — and tuned PulseWatch's slowest query with `EXPLAIN ANALYZE` and a composite index."
+- Now: "I wrote every migration by hand in Flyway for FlowGrid and LedgerX — constraints, triggers, indexes —
+  plus report queries with CTEs and window functions (running balances, top SKUs per warehouse), a reconciliation
+  query proving every journal transaction sums to zero, and I tuned the slowest queries with `EXPLAIN ANALYZE`
+  and composite indexes."
 </details>
 
 <details><summary><b>R3. "This query is slow. What do you do?"</b></summary>
@@ -133,11 +136,12 @@ Mention tie handling (`DENSE_RANK` vs `ROW_NUMBER`). Evidence: Ledger monthly re
 - Second highest: `SELECT DISTINCT salary FROM emp ORDER BY salary DESC OFFSET 1 LIMIT 1` or `DENSE_RANK() = 2`.
 </details>
 
-<details><summary><b>R5. "Design the schema for a seat booking system."</b></summary>
+<details><summary><b>R5. "Design the schema for a multi-warehouse inventory system with reservations."</b></summary>
 
-- `venues`, `events(venue_id)`, `seats(event_id, row, number, UNIQUE(event_id,row,number), version)`,
-  `holds(seat_id, user_id, expires_at)`, `bookings(seat_id UNIQUE, user_id, idempotency_key UNIQUE)`.
-- Constraints enforce invariants (one booking per seat) even if app code has a bug. Indexes on FK columns used in joins.
+- `warehouses`, `products`, `skus(product_id)`, `inventory_levels(warehouse_id, sku_id, on_hand, available, reserved, …, UNIQUE(warehouse_id, sku_id), CHECK(available >= 0))`,
+  `orders(idempotency_key UNIQUE)`, `order_lines`, `reservations(order_line_id, warehouse_id, sku_id, quantity, status)`, `stock_adjustments`, `audit_events`.
+- Constraints enforce invariants (no negative available, one level row per warehouse/SKU) even if app code has a bug. Indexes on FK columns used in joins.
+- Follow-up they'll ask: the LedgerX version — `account`, `ledger_entry` (append-only, trigger), `journal_txn`, with CHECKs and a sum-to-zero invariant checked by a reconciliation job.
 </details>
 
 ## 4. Practical tasks (live)
@@ -172,7 +176,7 @@ in predicate, low selectivity (planner prefers seq scan), stale statistics, type
 <details><summary><b>D4. Two users update the same balance and one update is lost.</b></summary>
 
 Lost update from read-modify-write in app code. Fix: atomic `UPDATE accounts SET balance = balance - ? WHERE id = ?`,
-`SELECT ... FOR UPDATE`, optimistic version column, or a stricter isolation level with retry.
+`SELECT ... FOR UPDATE`, optimistic version column, or a stricter isolation level with retry. (LedgerX never updates a balance in place — it appends entries; the materialized balance is derived and checked.)
 </details>
 
 <details><summary><b>D5. A migration adding a NOT NULL column fails on production data.</b></summary>
@@ -184,8 +188,8 @@ Existing rows would violate it. Add nullable → backfill → add `NOT NULL` (or
 
 - When would you denormalize (e.g. store `issue_count` on project) and how do you keep it consistent?
 - Soft delete vs hard delete; how does it affect unique constraints and queries?
-- Enforcing invariants in DB constraints vs application code — why both for TicketHold?
-- Time-series-like data (PulseWatch `check_results`): indexing, retention cleanup, partitioning awareness.
+- Enforcing invariants in DB constraints vs application code — why both for FlowGrid (`CHECK(available >= 0)`) and LedgerX (trigger making `ledger_entry` append-only)?
+- Append-only, ever-growing tables (LedgerX `ledger_entry`, ForgeCI `log_chunks`): indexing, retention/archival, partitioning awareness.
 - Surrogate (identity/UUID) vs natural keys.
 
 ## 7. Common mistakes
@@ -237,7 +241,8 @@ analytics (columnar warehouse), unstructured blobs (S3).
 
 ## 12. How it interacts with the rest of my stack
 
-- **Java**: JDBC `PreparedStatement` (P1) and JPA/JPQL (P2+) generate/run SQL; `@Transactional` wraps statements.
+- **Java**: JPA/JPQL and native queries via Spring Data generate/run SQL; `JdbcTemplate` for reconciliation and report queries; `@Transactional` wraps statements.
+- **Python**: LedgerX's *independent* reconciliation verifier runs the same invariant queries through `psycopg` — a second implementation that must agree with the Java one.
 - **Spring Boot**: Flyway migrations (`V1__init.sql`) define schema; Spring Data derives queries.
 - **PostgreSQL/MySQL**: dialect differences (upsert, types, `RETURNING`).
 - **React**: filters/pagination in the UI become `WHERE`/`LIMIT` in SQL — keep them index-friendly.
@@ -246,10 +251,10 @@ analytics (columnar warehouse), unstructured blobs (S3).
 
 ## 13. Hands-on exercise
 
-**Ledger analytics pack.**
+**LedgerX + FlowGrid analytics pack.**
 
 Acceptance criteria:
-- [ ] 6 queries on Ledger's schema: monthly totals, top-3 categories per month, month-over-month change (`LAG`), over-budget categories (`HAVING`), uncategorized transactions (`LEFT JOIN ... IS NULL`), recurring merchants.
+- [ ] 6 queries: running balance per account (window), journal transactions that don't sum to zero (`HAVING SUM(amount) <> 0`), month-over-month deposit volume (`LAG`), accounts whose materialized balance ≠ sum of entries (join + `HAVING`), SKUs with reservations but no allocation (`LEFT JOIN … IS NULL`), top-3 SKUs per warehouse per month (`DENSE_RANK`).
 - [ ] Each query has a comment with its expected result on the seed data.
 - [ ] One query tuned: before/after `EXPLAIN ANALYZE` saved in the README.
 - [ ] Explain each query aloud in ≤ 60 s.
@@ -268,10 +273,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P1 Ledger | `schema.sql`, JDBC `PreparedStatement`, dedupe via unique constraint, report queries, `EXPLAIN` + index | |
-| P2 TicketHold | Flyway migrations, constraints enforcing one booking per seat, pagination | |
-| P3 TeamBoard | Filter/search queries, RBAC joins through `membership` | |
-| P4 PulseWatch | Composite index on `check_results(monitor_id, checked_at)`, retention `DELETE` in batches | |
+| FlowGrid | Flyway migrations for the inventory domain, `UNIQUE(warehouse_id, sku_id)`, `CHECK(available >= 0)`, indexes on FKs and the low-stock query, offset pagination with a unique tiebreaker, `EXPLAIN` before/after | |
+| LedgerX | `ledger_entry` append-only via trigger + revoked privileges, `CHECK` constraints, sum-to-zero reconciliation query, running-balance window query, keyset (cursor) pagination for history, `SELECT … FOR UPDATE` in id order | |
+| ForgeCI | Unique constraint on delivery id, `log_chunks(job_id, seq)` index + replay query, lease-expiry sweep query, batched retention deletes | |
+| FlagForge | Immutable versions (insert-only), rules ordered by priority, audit history query per flag | |
 
 ## Where to learn it in this repo
 

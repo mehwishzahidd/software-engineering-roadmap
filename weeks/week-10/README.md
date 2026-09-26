@@ -252,9 +252,11 @@ M2 set from `failure-engineering.md`: (1) pool exhaustion under `REQUIRES_NEW`, 
 
 ## 10. Interview preparation
 
-- **Mock interview #1 (Sat, 60 min + 30 min review):** follow [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md) — one Medium (suggest LeetCode 98 or 230 family, not one you solved this week), a 10-minute "tell me about a project" (FlowGrid), score against [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md). Log score and 3 fixes in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
-- **Think-aloud (Tue, 45 min):** LeetCode 208 (Trie), recorded.
-- **Résumé-defense drill — this week: Spring Boot, SQL, Redis.** [`17-resume-tech-defense/spring-boot.md`](../../17-resume-tech-defense/spring-boot.md), [`sql.md`](../../17-resume-tech-defense/sql.md), [`redis.md`](../../17-resume-tech-defense/redis.md). Must include: propagation, `FOR UPDATE`, Redis `SET NX`.
+Two tracks, never mixed: **Track A = coding interview, Python**; **Track B = software-engineering / résumé interview, Java/Spring/SQL/etc.**
+
+- **Mock interview #1 (Sat, 60 min + 30 min review) — Track A, Python:** follow [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md) — one Medium (a BST/tree family problem you have *not* solved this week, e.g. LeetCode 236 or 108) solved in Python with the interviewer protocol, plus a 10-minute "tell me about a project" (FlowGrid — that part is Track B, spoken, no code). Score against [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md). Log score and 3 fixes in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
+- **Think-aloud (Tue, 45 min) — Track A, Python:** LeetCode 208 (Trie), recorded.
+- **Résumé-defense drill — Track B — this week: Spring Boot, SQL, Redis.** [`17-resume-tech-defense/spring-boot.md`](../../17-resume-tech-defense/spring-boot.md), [`sql.md`](../../17-resume-tech-defense/sql.md), [`redis.md`](../../17-resume-tech-defense/redis.md). Must include: propagation, `FOR UPDATE`, Redis `SET NX`.
 - **Applications (Sun):** 2–3 more early-stage applications; note any OA invitations — they set the priority for [`OA_PREP.md`](../../OA_PREP.md) reading in Week 16–17.
 
 ## 11. Revision work
@@ -271,13 +273,13 @@ M2 set from `failure-engineering.md`: (1) pool exhaustion under `REQUIRES_NEW`, 
 | **Tue** (8h) | — | TransferService with ordered locks, endpoint, failure path (5h) | #98, #230 + Day-3 reviews (2h) | Think-aloud #208 (1h) |
 | **Wed** (8h) | Locking + deadlocks; psql labs (2h) | Concurrency harness, $500/$400/$400, bidirectional test (4.5h) | #105 (1.5h) | — |
 | **Thu** (8h) | — | Optimistic variant + comparison (5h) | Tries §1–5, #208, #211 + Day-7 reviews (2h) | `docs/DESIGN_DECISIONS.md` (1h) |
-| **Fri** (5h) | Propagation lab (1h, counts as learning) | Isolation experiments, TTL job, ADR (3h) | Reviews + #1448 if time (1h) | Retro prep |
+| **Fri** (5h) | Propagation lab (1h, counts as learning) | Isolation experiments, TTL job, ADR (3h) | Reviews + Java rep #208 (+#1448 if time) (1h) | Retro prep |
 | **Sat** (6h) | — | Failure scenarios, PR review, tags `m2`/`mvp` (4h) | — | **Mock #1** + review (2h) |
 | **Sun** (2–3h) | — | — | Day-14/30 reviews | End-of-week test, trackers, plan Week 11, applications |
 
 ## 13. End-of-week test (Sunday, 75 min)
 
-**Part A — DSA (30 min).** LeetCode **1448. Count Good Nodes** (if not yet done) or **173. Binary Search Tree Iterator** in ≤ 25 min.
+**Part A — DSA (30 min, Python).** LeetCode **1448. Count Good Nodes** (if not yet done) or **173. Binary Search Tree Iterator** in ≤ 25 min.
 
 **Part B — Concepts (20 min).**
 
@@ -308,8 +310,8 @@ Pass: A in time · B ≥ 5/6 · C correct · D covers idempotency claim, ordered
 - [ ] I can list Postgres isolation levels and which anomaly each prevents, with my experiment table.
 - [ ] I reproduced all three `@Transactional` pitfalls and can explain the proxy mechanism.
 - [ ] Concurrency test is repeatable 20/20 and I know the pool-exhaustion trap.
-- [ ] Mock #1 done, scored, with 3 concrete fixes.
-- [ ] 8 BST/Trie problems done; reviews done.
+- [ ] Mock #1 (Python) done, scored, with 3 concrete fixes.
+- [ ] 8 BST/Trie problems done in Python; reviews done; Java rep (#208) done.
 
 ## 15. Expected deliverables
 
@@ -320,4 +322,4 @@ Pass: A in time · B ≥ 5/6 · C correct · D covers idempotency claim, ordered
 
 **Behind?** Order of cuts: TTL cleanup job → isolation table (do the RC vs `FOR UPDATE` rows only) → optimistic comparison (move to Week 12's lighter learning slot) → #1448/#211. **Never cut** the $500/$400/$400 test or the idempotency replay/conflict tests — they *are* the MVP.
 
-**Ahead?** Add a Redis `SET NX PX` fast-path in front of the DB claim and measure its effect on p50 latency under the 16-thread test (document; keep the DB as source of truth). Solve LeetCode 212 (Word Search II) as a Trie + backtracking preview.
+**Ahead?** Add a Redis `SET NX PX` fast-path in front of the DB claim and measure its effect on p50 latency under the 16-thread test (document; keep the DB as source of truth). Solve LeetCode 212 (Word Search II) in Python as a Trie + backtracking preview.

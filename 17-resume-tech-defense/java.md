@@ -1,6 +1,7 @@
 # Java — Résumé Defense
 
-**Target level:** L4 · **Learned:** Weeks 1–4 (core, OOP, collections, modern Java), 6 (memory), 13 (concurrency) · **Version:** Java 21 LTS
+**Target level:** L4 · **Learned:** Weeks 1–3 (core, OOP, collections, modern Java), 5 (memory model + threads for FlowGrid reservations), 15 (concurrency deep-dive for ForgeCI workers) · **Version:** Java 21 LTS
+**Track:** B (résumé / backend). Coding interviews are Track A in Python; one solved problem per week is re-done in Java to keep collections fluent.
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md)
 
 ---
@@ -53,7 +54,7 @@ as map keys. Concatenating in a loop creates many intermediate strings (O(n²) c
 
 Interface: a contract; a class can implement many; can have `default`, `static`, and `private`
 methods but no instance state. Abstract class: can hold state and constructors; single
-inheritance. Prefer interfaces for capabilities (`TransactionRepository`), abstract classes for
+inheritance. Prefer interfaces for capabilities (`InventoryRepository`), abstract classes for
 sharing implementation among closely related types.
 </details>
 
@@ -125,9 +126,11 @@ for atomic read-modify-write instead of `get`-then-`put`.
 <details><summary><b>R1. "Your résumé says Java. Walk me through the most recent Java code you've written."</b></summary>
 
 - One sentence truthful past context: which roles used Java, what kind of code (e.g. service layer, batch jobs).
-- Then: "Most recently I've been writing Java 21 daily." Pick one: Ledger's rules engine (Strategy
-  pattern over `CategorizationRule`, priority ordering via `Comparator`), or PulseWatch's checker
-  (virtual-thread executor, `HttpClient` timeouts).
+- Then: "Most recently I've been writing Java 21 daily." Pick one: FlowGrid's allocation engine
+  (deterministic scoring — availability, capacity, zone match, workload, priority — as a `Comparator`
+  chain with an id tie-break), LedgerX's `BigDecimal` journal (every transaction sums to zero), or
+  ForgeCI's worker loop (`ExecutorService`, per-job timeout via `Future.get(timeout)`, cancellation
+  flag, `finally` container cleanup, graceful shutdown).
 - One design decision + why (e.g. `BigDecimal` for money, never `double`).
 - Offer to show the code / tests.
 </details>
@@ -136,7 +139,7 @@ for atomic read-modify-write instead of `get`-then-`put`.
 
 - State the year and role honestly (template A in the method file).
 - "Since then I've rebuilt on Java 21 — records, sealed interfaces, pattern matching for `switch`, virtual threads."
-- Point to P1/P2 evidence. Don't apologise; don't pad.
+- Point to FlowGrid / LedgerX evidence. Don't apologise; don't pad.
 </details>
 
 <details><summary><b>R3. "What's new in Java since 8 that you actually use?"</b></summary>
@@ -144,7 +147,7 @@ for atomic read-modify-write instead of `get`-then-`put`.
 - `var` (10), records (16), text blocks (15), switch expressions (14), pattern matching for
   `instanceof` (16), sealed classes (17), pattern matching for `switch` + record patterns (21),
   virtual threads (21), sequenced collections (21), `HttpClient` (11).
-- Name where you used 2–3 of them (records for DTOs in TicketHold; switch expression in Ledger's CLI).
+- Name where you used 2–3 of them (records for DTOs in FlowGrid; sealed interface + pattern-matching `switch` for ForgeCI's `JobOutcome` — `Succeeded | Failed(exitCode) | InfraError(cause) | Cancelled | TimedOut`; virtual threads considered for ForgeCI's log streaming).
 </details>
 
 <details><summary><b>R4. "How would you make this class thread-safe?"</b> (they show a counter/cache)</summary>
@@ -152,7 +155,7 @@ for atomic read-modify-write instead of `get`-then-`put`.
 - Identify shared mutable state and the compound action (check-then-act, read-modify-write).
 - Options in order of preference: make it immutable → confine to one thread → use a concurrent
   structure (`ConcurrentHashMap.merge`, `AtomicLong`) → lock (`synchronized`/`ReentrantLock`).
-- Mention visibility (`volatile`/happens-before), and how you'd test it (N threads + `CountDownLatch`, as in TicketHold M5).
+- Mention visibility (`volatile`/happens-before), and how you'd test it (N threads + `CountDownLatch`, as in FlowGrid M2's one-unit reservation test and LedgerX M2's $500 / $400 / $400 transfer test).
 </details>
 
 <details><summary><b>R5. "Why <code>BigDecimal</code> for money? Any gotchas?"</b></summary>
@@ -160,20 +163,20 @@ for atomic read-modify-write instead of `get`-then-`put`.
 - Binary floating point can't represent 0.1 exactly → rounding errors accumulate.
 - Gotchas: construct with `new BigDecimal("0.10")` or `BigDecimal.valueOf(0.1)`, not `new BigDecimal(0.1)`;
   `equals` compares scale (`2.0` ≠ `2.00`) — use `compareTo`; division needs a `RoundingMode`.
-- Evidence: Ledger's `Money` record.
+- Evidence: LedgerX — amounts as `BigDecimal` mapped to `NUMERIC(19,4)`, compared with `compareTo`, and an invariant test that every journal transaction's entries sum to exactly `BigDecimal.ZERO`.
 </details>
 
 <details><summary><b>R6. "Tell me about a hard bug you debugged in Java."</b></summary>
 
 - Use a real one. Truthful past bug if you remember it clearly; otherwise one from the roadmap
-  (e.g. TicketHold double-booking race, found with the concurrency test, fixed with `@Version`).
+  (e.g. FlowGrid's double-reservation race, found by the N-threads-one-unit test, fixed with `SELECT … FOR UPDATE` after measuring against `@Version`; or ForgeCI's orphaned job after a worker was killed mid-run, fixed with lease expiry + heartbeats).
 - STAR shape: symptom → hypothesis → tool (debugger, thread dump, logs) → root cause → fix → regression test.
 </details>
 
 ## 4. Practical tasks (do these live, no notes)
 
 - [ ] Implement an `LRUCache<K,V>` two ways: `LinkedHashMap` with `removeEldestEntry`, and HashMap + doubly linked list.
-- [ ] Group a `List<Transaction>` by category and sum amounts with `Collectors.groupingBy(..., reducing(BigDecimal.ZERO, ..., BigDecimal::add))`.
+- [ ] Group a `List<LedgerEntry>` by account and sum amounts with `Collectors.groupingBy(..., reducing(BigDecimal.ZERO, ..., BigDecimal::add))`; assert each journal transaction nets to zero.
 - [ ] Write a correct `equals`/`hashCode` for a class, then replace it with a record.
 - [ ] Parse a CSV file with `Files.lines` in try-with-resources, reporting per-row errors without stopping.
 - [ ] Run 1,000 increments from 10 threads on a counter; show the race; fix it with `AtomicInteger`.
@@ -216,10 +219,10 @@ after insertion (object now in the "wrong" bucket). Use immutable keys (records)
 
 ## 6. Architecture questions
 
-- How would you structure the Ledger domain so storage (CSV, in-memory, Postgres) can change without touching business logic? (Repository interface, dependency inversion.)
+- How would you structure FlowGrid's allocation logic so the scoring strategy can change without touching the fulfillment workflow? (Strategy interface, dependency inversion, tests against a fake inventory repository.)
 - When would you pick composition over inheritance? Give an example from your code.
-- Sealed interface + records for a result type (`sealed interface ImportResult permits Ok, Failed`) vs exceptions — trade-offs?
-- Platform threads with a bounded pool vs virtual threads for PulseWatch's HTTP checker — what limits concurrency in each case (downstream, DB connections)?
+- Sealed interface + records for a result type (`sealed interface JobOutcome permits Succeeded, Failed, InfraError, Cancelled, TimedOut` in ForgeCI — the retry policy switches on it) vs exceptions — trade-offs?
+- Platform threads with a bounded pool vs virtual threads for ForgeCI's worker (each job blocks on a Docker container) and for FlagForge's SDK polling client — what limits concurrency in each case (Docker daemon, DB connections, downstream)?
 - How do you design an immutable value object, and why is immutability valuable under concurrency?
 
 ## 7. Common mistakes
@@ -254,7 +257,8 @@ after insertion (object now in the "wrong" bucket). Use immutable keys (records)
 ## 9. When to use it
 
 Backend services, APIs, batch processing, anything needing a mature ecosystem (Spring,
-JDBC drivers, observability), strong typing, and long-term maintainability in teams. DSA interviews.
+JDBC drivers, observability), strong typing, and long-term maintainability in teams. The résumé /
+software-engineering interview track (Track B). Coding interviews are Python (Track A) — say so if asked which language you'd code in.
 
 ## 10. When NOT to use it
 
@@ -283,7 +287,7 @@ dominates (unless using CRaC/GraalVM native image).
 
 ## 13. Hands-on exercise
 
-**Build `RateCounter`**: a thread-safe class that records events per key and returns counts for the last 60 seconds.
+**Build `RateCounter`**: a thread-safe class that records events per key and returns counts for the last 60 seconds (the shape of ForgeCI's per-project concurrency accounting and FlagForge's evaluation counters).
 
 Acceptance criteria:
 - [ ] `record(String key)` and `count(String key)` are safe under 50 concurrent threads (JUnit test with `ExecutorService` + `CountDownLatch` passes 20 runs in a row).
@@ -301,16 +305,16 @@ Acceptance criteria:
 - [ ] Explain virtual threads and when they don't help.
 - [ ] Read a stack trace and thread dump and find the root cause.
 - [ ] Name 6 post-Java-8 features and where I used them.
-- [ ] Solve LeetCode Mediums in Java with idiomatic collections.
+- [ ] Re-implement one already-solved problem per week in Java with idiomatic collections (`HashMap`, `ArrayDeque`, `PriorityQueue`, `Comparator`) — the Java DSA rep from ROADMAP §7.
 
 ## Evidence in my projects
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P1 Ledger | Domain model (`Money` record w/ `BigDecimal`), Strategy-based rules engine, streams for monthly reports, CSV import with per-row errors, Factory for bank formats | |
-| P2 TicketHold | Records as DTOs, exception hierarchy mapped to ProblemDetail, concurrency test (N threads → one hold wins) | |
-| P3 TeamBoard | Enum-based status workflow with allowed transitions, RBAC checks in service layer | |
-| P4 PulseWatch | Virtual-thread executor for HTTP checks, `HttpClient` timeouts, retry/backoff logic | |
+| FlowGrid | Domain model (warehouses, SKUs, inventory levels by state, orders, reservations, shipments) with enum state machines and validated transitions; records as DTOs; exception hierarchy → ProblemDetail; deterministic allocation `Comparator`; N-threads-one-unit concurrency test | |
+| LedgerX | `BigDecimal` money everywhere (scale, `compareTo`, `RoundingMode`), immutable ledger entries, invariant suite (every journal txn sums to zero), ordered lock acquisition, idempotency fingerprint hashing | |
+| ForgeCI | Worker concurrency: `ExecutorService`, `CompletableFuture`, per-job timeout, cancellation flag, `finally` cleanup, graceful shutdown, heartbeats; sealed `JobOutcome`; docker-java client usage | |
+| FlagForge | Deterministic bucketing (`hash(flagKey:userKey) mod 10000`), rule engine (priority → first match), Java SDK: builder pattern, in-memory snapshot, polling thread, stale-if-error, timeouts, no Spring dependency | |
 
 ## Where to learn it in this repo
 

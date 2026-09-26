@@ -2,7 +2,8 @@
 
 > **Goal:** defend "React" with truthful past context and current React 18+ competence:
 > rendering model, hooks, state, effects, forms, routing, API integration, auth on the client,
-> testing with Vitest + React Testing Library — all demonstrable in TeamBoard and PulseWatch.
+> testing with Vitest + React Testing Library — all demonstrable in FlowGrid's operations dashboard
+> (W7), ForgeCI's live-log UI (W16) and FlagForge's admin dashboard (W23).
 >
 > **Honesty rule:** if past work was class components or maintenance of someone else's app,
 > say that plainly. "I've since rebuilt with modern function components and hooks" is a strong,
@@ -14,10 +15,9 @@
 
 | Project | React evidence |
 |---|---|
-| **P3 TeamBoard** M3 (W16) | Vite + React + TS, React Router routes (`/orgs/:orgId/board`, `/issues/:id`), board view grouped by status, issue create/edit forms with validation, loading/error states |
-| **P3 TeamBoard** M4 (W17) | `AuthContext` (token in memory + refresh strategy documented), `<ProtectedRoute>`, role-aware UI (`VIEWER` sees no edit buttons), Vitest + RTL tests with mocked API |
-| **P3 TeamBoard** M5 (W18) | Comments, audit-log view, search + pagination UI; production build served by nginx in Compose |
-| **P4 PulseWatch** M4 (W22) | Status dashboard: polling with cleanup, incident timeline, uptime % per monitor |
+| **FlowGrid** M4 (W7) | Vite + React + TS operations dashboard: routes (`/warehouses/:id/inventory`, `/orders/:id`, `/pick-lists`), inventory-by-warehouse table with search/filter/sort/pagination, orders view, pick/pack screens, low-stock view, returns + stock-transfer forms with validation, loading/error states; `AuthContext` (token in memory, strategy documented), `<ProtectedRoute>`, role-aware UI (`VIEWER` sees no mutating buttons; `WAREHOUSE_ASSOCIATE` sees pick/pack only); Vitest + RTL tests with mocked API; production build served by nginx in Compose (W8) |
+| **ForgeCI** M3 (W16) | Build list + build detail with **live log streaming over SSE** (`EventSource`, replay from last sequence on reconnect, auto-scroll with pause-on-scroll-up), status badges, cancel button — a data-heavy view that must not re-render the whole log on every chunk |
+| **FlagForge** M4 (W23) | Forms-heavy admin: flags list, rules editor (priority ordering; attribute / user / percentage rules), versions with rollback, audit view; optimistic updates rolled back on ProblemDetail |
 
 ## Where to learn it in this repo
 
@@ -54,7 +54,7 @@ Keys let reconciliation match items across renders. Use stable ids (`issue.id`),
 
 <details><summary><b>B5. Controlled vs uncontrolled inputs?</b></summary>
 
-Controlled: value in React state, `onChange` updates it — easy validation. Uncontrolled: DOM keeps the value, read via ref or `FormData` — less re-rendering. TeamBoard forms are controlled for inline validation.
+Controlled: value in React state, `onChange` updates it — easy validation. Uncontrolled: DOM keeps the value, read via ref or `FormData` — less re-rendering. FlowGrid's return/transfer forms and FlagForge's rules editor are controlled for inline validation.
 </details>
 
 <details><summary><b>B6. What does <code>useEffect</code> do?</b></summary>
@@ -85,13 +85,13 @@ Only when a measured render cost or referential identity matters (memoised child
 useEffect(() => {
   const ac = new AbortController();
   setLoad({ state: "loading" });
-  api.listIssues(orgId, { signal: ac.signal })
+  api.listInventory(warehouseId, { signal: ac.signal })
      .then(data => setLoad({ state: "success", data }))
      .catch(e => { if (!ac.signal.aborted) setLoad({ state: "error", error: e }); });
   return () => ac.abort();
-}, [orgId]);
+}, [warehouseId]);
 ```
-Handles race conditions (old response after `orgId` changes) and unmount. Or use TanStack Query for caching, dedupe, retries.
+Handles race conditions (old response after `warehouseId` changes) and unmount. Or use TanStack Query for caching, dedupe, retries.
 </details>
 
 <details><summary><b>I5. <code>useRef</code> use cases?</b></summary>
@@ -106,7 +106,7 @@ Pass values (auth user, theme) deep without prop drilling. Every consumer re-ren
 
 <details><summary><b>I7. What are custom hooks?</b></summary>
 
-Functions starting with `use` that compose hooks to share stateful logic, e.g. `useIssues(orgId, filters)`, `useAuth()`, `usePolling(fn, ms)`. They share logic, not state (each call has its own state).
+Functions starting with `use` that compose hooks to share stateful logic, e.g. `useInventory(warehouseId, filters)`, `useAuth()`, `useBuildLog(jobId)` (SSE with replay), `usePolling(fn, ms)`. They share logic, not state (each call has its own state).
 </details>
 
 <details><summary><b>I8. Rules of hooks — why do they exist?</b></summary>
@@ -118,7 +118,7 @@ Call hooks at the top level, in the same order every render, only from component
 
 <details><summary><b>R1. "Tell me about the React work on your résumé."</b></summary>
 
-Truthful past scope (which app, class vs hooks, what you owned). Then TeamBoard: routes, board, forms, auth, role-aware UI, tests. Show one component and its test.
+Truthful past scope (which app, class vs hooks, what you owned). Then FlowGrid: routes, inventory/orders tables, pick/pack screens, forms, auth, role-aware UI, tests; then the harder UI problems — ForgeCI's live log over SSE and FlagForge's rules editor. Show one component and its test.
 Follow-up: "What would you change about its architecture now?"
 </details>
 
@@ -129,17 +129,17 @@ Typed API client over `fetch` → JSON over HTTPS → `Authorization: Bearer` �
 
 <details><summary><b>R3. "Where do you store the JWT and why?"</b></summary>
 
-Trade-offs: `localStorage` (simple, XSS-readable), memory (lost on refresh, safest vs XSS), httpOnly `Secure` `SameSite` cookie (not readable by JS, needs CSRF consideration). State what TeamBoard does and why, and what you'd do in production (httpOnly cookie + CSRF protection or short-lived access token in memory + refresh cookie).
+Trade-offs: `localStorage` (simple, XSS-readable), memory (lost on refresh, safest vs XSS), httpOnly `Secure` `SameSite` cookie (not readable by JS, needs CSRF consideration). State what FlowGrid does and why, and what you'd do in production (httpOnly cookie + CSRF protection or short-lived access token in memory + refresh cookie).
 </details>
 
 <details><summary><b>R4. "How do you protect routes?"</b></summary>
 
-`<ProtectedRoute>` checks auth context, redirects to `/login` with `state.from`; role-aware rendering via `can(role, action)`. Always add: the backend re-checks every request (`@PreAuthorize`, org membership) — the UI is not a security boundary.
+`<ProtectedRoute>` checks auth context, redirects to `/login` with `state.from`; role-aware rendering via `can(role, action)` over `ADMIN / OPS_MANAGER / WAREHOUSE_ASSOCIATE / VIEWER`. Always add: the backend re-checks every request (`@PreAuthorize`; FlagForge additionally checks org membership) — the UI is not a security boundary.
 </details>
 
 <details><summary><b>R5. "How do you test React components?"</b></summary>
 
-Vitest + RTL: render, query by role/label like a user, `userEvent` interactions, assert visible output; mock the API module (or MSW). Example test: VIEWER doesn't see the "Edit" button; form shows server validation error from ProblemDetail.
+Vitest + RTL: render, query by role/label like a user, `userEvent` interactions, assert visible output; mock the API module (or MSW). Example tests: VIEWER doesn't see the "Adjust stock" button; the transfer form shows the server's ProblemDetail validation error; ForgeCI's log view appends chunks in sequence order after a simulated reconnect.
 </details>
 
 <details><summary><b>R6. "What's new in React 18/19 that matters to you?"</b></summary>
@@ -147,18 +147,19 @@ Vitest + RTL: render, query by role/label like a user, `userEvent` interactions,
 18: concurrent rendering, automatic batching, `createRoot`, `useTransition`/`useDeferredValue`, `useId`, StrictMode double effects in dev. 19: Actions, `useActionState`, `useOptimistic`, `use`, ref as a prop. Be honest about which you've actually used.
 </details>
 
-<details><summary><b>R7. "How would you handle a list of 10,000 issues?"</b></summary>
+<details><summary><b>R7. "How would you handle a list of 10,000 SKUs — or a 50,000-line build log?"</b></summary>
 
-Server-side pagination/filtering (TeamBoard API already paginates), virtualisation if a long list is genuinely needed, debounced search, stable keys.
+Server-side pagination/filtering (FlowGrid's API paginates), debounced search, stable keys. For ForgeCI's log: append-only buffer in a ref, batch chunk updates per animation frame, virtualise the visible window, never re-render the whole list per chunk.
 </details>
 
 ## 4. Practical tasks (doable live)
 
-1. Build a controlled issue form with required title and max length, showing errors on blur.
+1. Build a controlled stock-transfer form with required quantity ≤ available, showing errors on blur.
 2. Write `useDebounce(value, ms)` and use it for a search box.
-3. Render issues grouped by status columns; move an issue with a button (immutable update).
+3. Render orders grouped by state columns (RESERVED / PICKING / PACKED / SHIPPED); advance one with a button (immutable update).
 4. Write `usePolling(fn, ms)` with cleanup and pause-when-tab-hidden.
-5. Write an RTL test: clicking "Create" calls the API mock and shows the new issue.
+5. Write an RTL test: clicking "Reserve" calls the API mock and shows the new reservation.
+6. Write `useEventSource(url)` that reconnects with `Last-Event-ID` and exposes an append-only list (ForgeCI's log hook).
 
 ## 5. Debugging questions
 
@@ -167,9 +168,9 @@ Server-side pagination/filtering (TeamBoard API already paginates), virtualisati
 Setting state during render, or an effect whose dependency is an object/array recreated every render and which sets state. Fix: move to handler, memoise dependency, depend on primitives.
 </details>
 
-<details><summary><b>D2. Data from the previous org flashes after switching orgs.</b></summary>
+<details><summary><b>D2. Data from the previous warehouse flashes after switching warehouses.</b></summary>
 
-Race condition: old request resolved last. Abort in cleanup or ignore stale responses; or use a query library keyed by `orgId`.
+Race condition: old request resolved last. Abort in cleanup or ignore stale responses; or use a query library keyed by `warehouseId`.
 </details>
 
 <details><summary><b>D3. In dev, every API call fires twice.</b></summary>
@@ -179,7 +180,7 @@ StrictMode double-invokes effects on mount in development. Not a production bug;
 
 <details><summary><b>D4. Typing in one row's input changes another row after a delete.</b></summary>
 
-Index used as `key`. Use `issue.id`.
+Index used as `key`. Use `sku.id`.
 </details>
 
 <details><summary><b>D5. After login, the protected page redirects back to login.</b></summary>
@@ -189,27 +190,27 @@ Auth state set asynchronously and route checked before it's populated; or token 
 
 ## 6. Architecture questions
 
-<details><summary><b>A1. How did you structure TeamBoard's frontend?</b></summary>
+<details><summary><b>A1. How did you structure FlowGrid's frontend?</b></summary>
 
-Feature folders (`features/issues`, `features/auth`), `api/` layer, shared `components/`, `hooks/`; pages compose features; server state vs UI state separated. Explain why not Redux: server state is mostly cache → fetch hooks/TanStack Query; little global client state.
+Feature folders (`features/inventory`, `features/orders`, `features/auth`), `api/` layer, shared `components/`, `hooks/`; pages compose features; server state vs UI state separated. Explain why not Redux: server state is mostly cache → fetch hooks/TanStack Query; little global client state.
 </details>
 
 <details><summary><b>A2. Server state vs client state?</b></summary>
 
-Server state (issues, users) is owned remotely: cache, invalidate, refetch. Client state (modal open, form draft) lives in components. Mixing them in one global store causes stale data bugs.
+Server state (inventory levels, orders) is owned remotely: cache, invalidate, refetch. Client state (modal open, form draft) lives in components. Mixing them in one global store causes stale data bugs.
 </details>
 
-<details><summary><b>A3. SPA vs server rendering for TeamBoard?</b></summary>
+<details><summary><b>A3. SPA vs server rendering for FlowGrid?</b></summary>
 
-SPA (Vite) is fine: authenticated app, no SEO. SSR/Next.js helps public, SEO-sensitive, or first-paint-critical pages — e.g. PulseWatch's public status page could benefit, but a cached JSON endpoint + static SPA is enough at this scale.
+SPA (Vite) is fine: authenticated app, no SEO. SSR/Next.js helps public, SEO-sensitive, or first-paint-critical pages — none of the four projects has one, so a static SPA behind nginx is enough.
 </details>
 
 ## 7. Common mistakes
 
-- Mutating state (`issues.push(x); setIssues(issues)`) → no re-render.
+- Mutating state (`orders.push(x); setOrders(orders)`) → no re-render.
 - Effects without cleanup (intervals, listeners, in-flight fetches).
 - Missing/incorrect effect dependencies; silencing the lint rule.
-- Derived data stored in state (store `issues`, compute `filtered` during render).
+- Derived data stored in state (store `levels`, compute `lowStock` during render).
 - Treating hidden buttons as authorization.
 - Premature memoisation everywhere.
 
@@ -255,16 +256,16 @@ SPA (Vite) is fine: authenticated app, no SEO. SSR/Next.js helps public, SEO-sen
 - **Spring Boot:** JSON REST, JWT bearer, ProblemDetail errors, pagination `?page=&size=&sort=`.
 - **CORS:** Vite proxy in dev; same-origin nginx in prod; Spring `CorsConfigurationSource` if origins differ.
 - **Docker:** multi-stage build (`node:20` → `npm ci && npm run build` → `nginx:alpine` serving `dist/`).
-- **AWS:** nginx on EC2 (PulseWatch) or S3 static hosting option.
+- **AWS:** nginx on EC2 (FlowGrid onward) or S3 static hosting option.
 - **CI:** lint, type-check, `vitest run`, build before image push.
 
 ## 13. One small hands-on exercise
 
-**Issue board slice (TeamBoard-style), 2–3 hours.**
+**Pick/pack board slice (FlowGrid-style), 2–3 hours.**
 
-- [ ] `useIssues(orgId)` hook with loading/error/success, abort on change.
-- [ ] Board renders three columns by status with stable keys.
-- [ ] "Move right" button updates status optimistically, rolls back on API error, shows toast.
+- [ ] `useOrders(warehouseId)` hook with loading/error/success, abort on change.
+- [ ] Board renders three columns by state (RESERVED / PICKING / PACKED) with stable keys.
+- [ ] "Advance" button updates state optimistically, rolls back on API error, shows toast.
 - [ ] VIEWER role renders no mutating buttons.
 - [ ] 3 RTL tests: renders columns, rollback on error, viewer sees no buttons.
 
@@ -273,7 +274,8 @@ SPA (Vite) is fine: authenticated app, no SEO. SSR/Next.js helps public, SEO-sen
 - [ ] Explain render → reconcile → commit
 - [ ] Write effects with correct deps and cleanup; explain StrictMode double-run
 - [ ] Build a controlled form with validation from scratch
-- [ ] Explain token storage trade-offs honestly and what TeamBoard does
+- [ ] Explain token storage trade-offs honestly and what FlowGrid does
 - [ ] Write RTL tests querying by role
-- [ ] Trace a click to a DB row and back in TeamBoard
+- [ ] Trace a click to a DB row and back in FlowGrid
+- [ ] Explain how ForgeCI's live-log view stays responsive at thousands of lines
 - [ ] Truthful 60-second answer on past React work + bridge

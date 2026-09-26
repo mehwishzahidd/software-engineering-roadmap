@@ -1,39 +1,41 @@
 # 11 — Docker
 
-> **Minimal intro in Week 10** (run Postgres for P2 TicketHold via Compose) → **Dockerfile for TicketHold in Week 12**
-> → **full-stack Compose for TeamBoard in Week 18** → **deep treatment in Week 19** (PulseWatch stack: api, worker,
-> postgres, redis) → **images pushed by CI and run on EC2 in Weeks 21–22**.
+> **Week 4:** minimal Compose to run Postgres for FlowGrid M1 → **Week 5:** Dockerfiles and multi-stage builds (FlowGrid's
+> API image) → **Week 8:** images built by CI, pushed to GHCR and run on EC2 → **Week 14:** images, layers, networking and
+> the **Docker Engine API** in depth, because ForgeCI's workers *start containers programmatically* → **Week 18:**
+> multi-worker Compose stack for ForgeCI. See [ROADMAP §6](../ROADMAP.md#6-just-in-time-learning-map).
 
 Docker is on your résumé. Interviewers will ask what an image is, why your image is 700 MB, why the app can't reach
-the DB at `localhost`, and how data survives a restart. After this folder you answer from things you've built and broken.
+the DB at `localhost`, how data survives a restart — and, once you've built ForgeCI, what it means to mount the Docker
+socket into a container. After this folder you answer from things you've built and broken.
 
 ---
 
 ## Files
 
-| File | Content | Week |
+| File | Content | Weeks |
 |---|---|---:|
-| [dockerfiles.md](./dockerfiles.md) | Images vs containers, layers & cache, instructions, multi-stage Spring Boot build, non-root, layered jars, `.dockerignore`, image size & security, registries (GHCR/ECR) | 12, 19 |
-| [compose.md](./compose.md) | Ports, env vars, volumes vs bind mounts, networks & service DNS, Compose v2, healthchecks + `depends_on`, profiles, stacks for TicketHold / TeamBoard / PulseWatch, debugging | 10, 18, 19 |
-| [exercises.md](./exercises.md) | 18 build / break / debug tasks | 19 |
+| [dockerfiles.md](./dockerfiles.md) | Images vs containers, layers & cache, instructions, multi-stage Spring Boot build, non-root, layered jars, `.dockerignore`, frontend image, image size & security, registries (GHCR/ECR), CPU architecture | 5, 8, 14 |
+| [compose.md](./compose.md) | Ports, env vars, volumes vs bind mounts, networks & service DNS, Compose v2, healthchecks + `depends_on`, profiles, stacks per project, debugging, **internals + Engine API** | 4, 5, 14, 18 |
+| [exercises.md](./exercises.md) | 18 build / break / debug tasks | 4–5, 14, 18 |
 
 ---
 
-## Week 10 minimum (≈ 1 hour) — just enough to run Postgres
+## Week 4 minimum (≈ 1 hour) — just enough to run Postgres for FlowGrid
 
 ```bash
 docker --version && docker compose version   # Compose v2 is "docker compose" (space), not "docker-compose"
 ```
 
 ```yaml
-# tickethold/compose.yaml
+# flowgrid/compose.yaml — infrastructure only; the API runs from your IDE for now
 services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: tickethold
-      POSTGRES_USER: tickethold
-      POSTGRES_PASSWORD: tickethold      # dev only
+      POSTGRES_DB: flowgrid
+      POSTGRES_USER: flowgrid
+      POSTGRES_PASSWORD: flowgrid        # dev only
     ports:
       - "127.0.0.1:5432:5432"            # reachable from your IDE-run Spring app at localhost:5432
     volumes:
@@ -46,12 +48,12 @@ volumes:
 docker compose up -d            # start in background
 docker compose ps               # status
 docker compose logs -f postgres # logs
-docker compose exec postgres psql -U tickethold -d tickethold
+docker compose exec postgres psql -U flowgrid -d flowgrid
 docker compose down             # stop + remove containers (volume kept)
 docker compose down -v          # ALSO deletes the volume → data gone
 ```
 
-That's all Week 10 needs. Come back for the rest in Week 19.
+That's all Week 4 needs. Week 5 adds the Dockerfile; Week 6 adds a `redis` service.
 
 ---
 
@@ -67,6 +69,7 @@ That's all Week 10 needs. Come back for the rest in Week 19.
 | **Digest** | immutable content hash (`sha256:…`) | checksum |
 | **Volume** | Docker-managed persistent storage | — |
 | **Network** | virtual network; containers on the same user-defined network resolve each other by service name | — |
+| **Docker daemon / Engine API** | `dockerd` does the work; the CLI (and ForgeCI's worker) talk to it over a REST API on a Unix socket | — |
 
 **Container ≠ VM.** Containers share the host kernel and are isolated with namespaces (PID, network, mount, user…) and
 limited with cgroups (CPU, memory). They start in milliseconds and add little overhead; a VM virtualises hardware and runs its own kernel.
@@ -74,25 +77,15 @@ On macOS/Windows, Docker Desktop runs a small Linux VM to host containers.
 
 ---
 
-## Week 19 plan (Docker half)
+## Where each part is learned
 
-| Day | Block |
-|---|---|
-| Mon–Tue | (Linux, see [10-linux](../10-linux/README.md)) |
-| Wed | [dockerfiles.md](./dockerfiles.md) — rebuild TicketHold's Dockerfile as multi-stage, non-root, measure size |
-| Thu | [compose.md](./compose.md) — PulseWatch Compose stack (api, worker, postgres, redis) with healthchecks |
-| Sat | P4 M1 on the stack + [exercises.md](./exercises.md) break/debug drills |
-| Sun | Review: explain image vs container, layers, volumes, networks out loud |
-
----
-
-## Mapping to projects
-
-| Project | Docker deliverable |
-|---|---|
-| P2 TicketHold (W10, W12) | Postgres via Compose; multi-stage Dockerfile; image built in CI |
-| P3 TeamBoard (W18) | Compose full stack: nginx (built React + `/api` proxy) + Spring API + Postgres |
-| P4 PulseWatch (W19–22) | Compose: api, worker, postgres, redis; images pushed to GHCR/ECR by GitHub Actions; the same Compose file runs on EC2 with RDS replacing the postgres service |
+| Week | Learning block | Project use |
+|---|---|---|
+| 4 | README (this page) | FlowGrid M1: Postgres in Compose; CI runs Testcontainers |
+| 5 | [dockerfiles.md](./dockerfiles.md) §1–§6 | FlowGrid M2: multi-stage, non-root API image |
+| 6–8 | [compose.md](./compose.md) §1–§7, [dockerfiles.md](./dockerfiles.md) §7–§9 | Redis service; full stack (api, web/nginx, postgres, redis); push to GHCR; run on EC2 |
+| 14 | [compose.md](./compose.md) §9 (internals + Engine API), [exercises.md](./exercises.md) Part C | ForgeCI M1–M2: worker creates containers via the Engine API |
+| 18 | [compose.md](./compose.md) §6 (multi-worker) | ForgeCI M5: api + N workers + postgres + redis + ui |
 
 ---
 
@@ -103,8 +96,8 @@ On macOS/Windows, Docker Desktop runs a small Linux VM to host containers.
 - Volume vs bind mount; what happens to data on `docker compose down -v`?
 - How do containers talk to each other? Why doesn't `localhost` work between containers?
 - How do you debug a container that keeps restarting?
-- Container vs VM.
-- Security: why non-root? Where do secrets go?
+- Container vs VM; namespaces and cgroups.
+- Security: why non-root? Where do secrets go? Why is mounting `/var/run/docker.sock` equivalent to root on the host?
 
 Résumé defense: [17-resume-tech-defense/docker.md](../17-resume-tech-defense/docker.md).
 
@@ -112,18 +105,24 @@ Résumé defense: [17-resume-tech-defense/docker.md](../17-resume-tech-defense/d
 
 ## Resources
 
-- docs.docker.com — "Get started", Dockerfile reference, Compose file reference, "Building best practices".
+- docs.docker.com — "Get started", Dockerfile reference, Compose file reference, "Building best practices", Engine API reference.
 - Spring Boot reference — "Container Images" section (efficient images, layered jars, Buildpacks).
+- docker-java (github.com/docker-java/docker-java) — the Java client ForgeCI uses.
 - *Docker Deep Dive* (Nigel Poulton) — concise book.
 - More in [RESOURCES.md](../RESOURCES.md).
 
 ---
 
-## Exit criteria (end of Week 19)
+## Exit criteria
 
-- [ ] TicketHold and PulseWatch images: multi-stage, non-root, pinned base, `.dockerignore`, < 300 MB (JRE-based).
-- [ ] PulseWatch `compose.yaml`: api, worker, postgres, redis; healthchecks; `depends_on: condition: service_healthy`; named volume; `.env` not committed.
-- [ ] I can explain every line of both files.
+By Week 8 (FlowGrid v1.0):
+- [ ] FlowGrid API image: multi-stage, non-root, pinned base, `.dockerignore`, JRE runtime, exec-form entrypoint.
+- [ ] Compose stack with healthchecks, `depends_on: condition: service_healthy`, named volumes, `.env` not committed.
 - [ ] I've reproduced and fixed "can't reach DB at localhost" and "data lost after `down -v`".
-- [ ] I can debug a crashing container with `logs`, `inspect`, `exec`, and exit codes.
-- [ ] I've pushed an image to GHCR (or ECR) and pulled it on another machine.
+- [ ] Image pushed to GHCR by CI and pulled on EC2.
+
+By Week 14/18 (ForgeCI):
+- [ ] I can explain namespaces, cgroups, layers/overlay filesystem and the Engine API at interview depth.
+- [ ] I've created, started, waited for, logged, killed and removed a container through the Engine API (curl, then docker-java).
+- [ ] I can explain the Docker-socket security trade-off and what I did about it.
+- [ ] Multi-worker Compose stack runs; I can scale workers and explain what happens to in-flight jobs when one dies.

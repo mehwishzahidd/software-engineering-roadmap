@@ -26,6 +26,7 @@
 - Tag `m4`; Checkpoint 12 done (remediation items scheduled into this week's review blocks if any).
 - FlowGrid deploy notes from [Week 8](../week-08/) at hand: IAM user/role, security groups, RDS parameter group, Compose on EC2, the CI workflow. You will reuse and *improve* them.
 - Your AWS cost guard from [`12-aws/cost-safety.md`](../../12-aws/cost-safety.md) is active (budget alarm).
+- Graph DSA is in Python: `collections.deque` for BFS, `defaultdict(list)` adjacency, `sys.setrecursionlimit(10**6)` (or iterative DFS) for deep grids — [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md).
 
 ## 3. Learning topics
 
@@ -98,9 +99,9 @@ echo "app did not become healthy" >&2; docker compose logs --tail=100 app; exit 
 
 - **Interview angle:** "Describe your deployment pipeline." → concrete: GitHub Actions → `mvn verify` (with Testcontainers) → build image → push GHCR → SSH → `deploy.sh` → health gate → CloudWatch alarm; rollback = redeploy previous tag.
 
-### 4.5 Codebase-reading method (learning for the drill)
+### 4.5 Codebase-reading method (learning for the drill — Track B, Java)
 
-Read [`21-debugging-code-reading/method.md`](../../21-debugging-code-reading/method.md) *before* the drill: map the repo in 10 minutes (build file, entry point, packages, tests), pick one failing test, trace the call path with the debugger, form a hypothesis, fix, run the whole suite, write a 3-line explanation. Time-boxed; the goal is method, not heroics.
+Read [`21-debugging-code-reading/method.md`](../../21-debugging-code-reading/method.md) *before* the drill: map the repo in 10 minutes (`pom.xml`, entry point, packages, tests), pick one failing test, trace the call path with the IDE debugger, form a hypothesis, fix, run `mvn test`, write a 3-line explanation. Time-boxed; the goal is method, not heroics. This is a **Java** skill (the buggy-library is a Maven project) and belongs to Track B — OA simulations from Week 17 include a task of this shape alongside Python algorithm problems (ROADMAP §10).
 
 ## 5. Resources
 
@@ -147,13 +148,13 @@ Read [`21-debugging-code-reading/method.md`](../../21-debugging-code-reading/met
 - App on EC2 cannot reach RDS: work the checklist — security group inbound from the EC2 SG, RDS publicly accessible = no, `rds.force_ssl` → JDBC URL needs `sslmode=require`, parameter group applied? Use `psql` from the EC2 box before touching Java.
 - CloudWatch shows no logs: agent config path, IAM role missing `logs:PutLogEvents`, Compose log driver still `json-file` — fix with the `awslogs` driver or the agent.
 
-### 6.5 Unfamiliar-code drill #1 (Sat, 60 min, timed)
+### 6.5 Unfamiliar-code drill #1 (Sat, 60 min, timed) — Track B, Java
 
-[`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md), drill #1 in `21-debugging-code-reading/exercises/buggy-library/`: clone, `mvn test`, pick the first two failing tests, apply the method, fix, explain. Record time to first hypothesis and time to green in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md). No AI assistance during the drill.
+[`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md), drill #1 in the **Java `buggy-library`** Maven project at `21-debugging-code-reading/exercises/buggy-library/`: clone, `mvn test`, pick the first two failing tests, apply the method, fix, explain. Record time to first hypothesis and time to green in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md). No AI assistance during the drill. (Python is *not* used here: the drill trains reading and debugging a Java/Maven codebase — the Track B skill.)
 
-## 7. DSA — Graphs: BFS / DFS (8 new problems)
+## 7. DSA — Graphs: BFS / DFS (8 new problems, in Python)
 
-Guide: [`03-dsa/15-graphs-bfs-dfs.md`](../../03-dsa/15-graphs-bfs-dfs.md). Java: adjacency list as `List<List<Integer>>` or `Map<Integer, List<Integer>>`; grid BFS with `int[][] dirs`; `visited` as `boolean[][]` or mutate the grid; iterative DFS with `ArrayDeque` when depth may exceed ~10⁴.
+**Language: Python (Track A).** Guide: [`03-dsa/15-graphs-bfs-dfs.md`](../../03-dsa/15-graphs-bfs-dfs.md) · Templates: [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md). Python: adjacency as `defaultdict(list)`; grid BFS with `DIRS = ((1,0),(-1,0),(0,1),(0,-1))` and `deque`; `visited` as a `set[tuple[int,int]]` or mutate the grid in place; recursive DFS on a 300×300 grid can exceed the default recursion limit — raise it or go iterative with an explicit stack; multi-source BFS = seed the queue with all sources at distance 0.
 
 | # | Problem | Difficulty | Time limit | Day |
 |---|---|---|---|---|
@@ -167,6 +168,8 @@ Guide: [`03-dsa/15-graphs-bfs-dfs.md`](../../03-dsa/15-graphs-bfs-dfs.md). Java:
 | 684 | Redundant Connection | Medium | 30 min (DFS now; Union-Find next week) | Fri |
 
 Reviews due: Day-3 Week 12 Thu/Fri; Day-7 Week 12 backtracking; Day-14 Week 11 heaps; Day-30 Week 9 trees (first Day-30 of Phase 2 — aim for `Mastered` on at least 4).
+
+**Java rep (Fri, ≤ 30 min):** #200 Number of Islands in Java (`char[][]`, iterative BFS with `ArrayDeque<int[]>`). ForgeCI's DAG scheduler (Week 19) is Java BFS/DFS in production code — keeping graph traversal fluent in Java pays off directly.
 
 ## 8. Project work — LedgerX M5 (Deploy + docs + advanced) → v1.0
 
@@ -216,16 +219,18 @@ Milestone `M5`; PRs `infra/m5-aws`, `ci/m5-pipeline`, `sec/m5-review`, `docs/m5-
 
 ## 10. Interview preparation
 
-- **Think-aloud (Tue, 45 min):** LeetCode 994 (Rotting Oranges), recorded, scored.
-- **Résumé-defense drill (Sat) — this week: AWS, Java, JUnit (second pass).** [`17-resume-tech-defense/aws.md`](../../17-resume-tech-defense/aws.md), [`java.md`](../../17-resume-tech-defense/java.md), [`junit.md`](../../17-resume-tech-defense/junit.md). AWS answers must reference *this week's* deploy.
-- **Unfamiliar-code drill #1 (Sat, 60 min):** §6.5.
-- **LedgerX deep-dive rehearsal (Sun, 60 min):** [`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md) structure; questions from [`18-projects/ledgerx/interview-questions.md`](../../18-projects/ledgerx/interview-questions.md). Record a 12-minute narrative (problem → architecture → the hardest correctness decision → how it was proven → measured results → what you would change), then answer 10 random questions from the file. Score; note weak spots into [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
+Two tracks, never mixed: **Track A = coding interview, Python**; **Track B = software-engineering / résumé interview, Java/Spring/SQL/AWS/etc.** This week is Track-B-heavy (drill, deep dive) because a project just finished.
+
+- **Think-aloud (Tue, 45 min) — Track A, Python:** LeetCode 994 (Rotting Oranges), recorded, scored.
+- **Résumé-defense drill (Sat) — Track B — this week: AWS, Java, JUnit (second pass).** [`17-resume-tech-defense/aws.md`](../../17-resume-tech-defense/aws.md), [`java.md`](../../17-resume-tech-defense/java.md), [`junit.md`](../../17-resume-tech-defense/junit.md). AWS answers must reference *this week's* deploy.
+- **Unfamiliar-code drill #1 (Sat, 60 min) — Track B, Java buggy-library:** §6.5.
+- **LedgerX deep-dive rehearsal (Sun, 60 min) — Track B:** [`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md) structure; questions from [`18-projects/ledgerx/interview-questions.md`](../../18-projects/ledgerx/interview-questions.md). Record a 12-minute narrative (problem → architecture → the hardest correctness decision → how it was proven, including the independent Python verifier → measured results → what you would change), then answer 10 random questions from the file. Score; note weak spots into [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
 - **Applications (Sun):** you are now **internship-ready** per [`JOB_READINESS.md`](../../JOB_READINESS.md) — 5 applications this week; update résumé project section with LedgerX (only measured claims; see [`docs-and-resume.md`](../../18-projects/ledgerx/docs-and-resume.md)).
 
 ## 11. Revision work
 
 - Checkpoint 12 remediation items (if any) get the Tue/Thu docs hour.
-- Re-derive from memory: idempotency flow, ordered locking query, outbox claim, reconciliation invariants, retry-after-crash cases — this *is* the deep dive.
+- Re-derive from memory: idempotency flow, ordered locking query, outbox claim, reconciliation invariants (and how the Python verifier checks them independently), retry-after-crash cases — this *is* the deep dive.
 - Flashcards: `SKIP LOCKED` claim pattern, ShedLock alternative, token bucket parameters, IAM least-privilege actions used, `sslmode=require`.
 
 ## 12. Daily plan
@@ -236,13 +241,13 @@ Milestone `M5`; PRs `infra/m5-aws`, `ci/m5-pipeline`, `sec/m5-review`, `docs/m5-
 | **Tue** (8h) | — | CI/CD pipeline, CloudWatch, S3 export, first deploy (5h) | #133, #994 + Day-3 reviews (2h) | Think-aloud #994 (1h) |
 | **Wed** (8h) | Security checklist; rate limiting (2h) | Security pass, IDOR tests, limiter, docs SECURITY/DEPLOYMENT/ARCHITECTURE/README (4.5h) | #417 (1.5h) | — |
 | **Thu** (8h) | — | Docs final pass, ERD, **tag v1.0**; scheduled payments (5h) | #130, #286/#542 + Day-7 reviews (2h) | Release notes (1h) |
-| **Fri** (5h) | Scheduling + rule engines (1h) | Scheduled-payment tests; risk engine + MAX_AMOUNT (2h) | Reviews + #684 (1h) | Retro prep (1h) |
-| **Sat** (6h) | Codebase-reading method (1h) | VELOCITY rule + fallback, admin CRUD, failure scenarios, tag `m5` (3h) | — | Unfamiliar-code drill #1 (1h) + résumé drill (1h) |
+| **Fri** (5h) | Scheduling + rule engines (1h) | Scheduled-payment tests; risk engine + MAX_AMOUNT (2h) | Reviews + Java rep #200 (+#684) (1h) | Retro prep (1h) |
+| **Sat** (6h) | Codebase-reading method (1h) | VELOCITY rule + fallback, admin CRUD, failure scenarios, tag `m5` (3h) | — | Unfamiliar-code drill #1, Java (1h) + résumé drill (1h) |
 | **Sun** (3h) | — | — | Day-14/30 reviews | End-of-week test (§13), LedgerX deep-dive rehearsal, trackers, 5 applications |
 
 ## 13. End-of-week test (Sunday, 75 min)
 
-**Part A — DSA (30 min).** LeetCode **1091. Shortest Path in Binary Matrix** (BFS on a grid, 8 directions) in ≤ 25 min.
+**Part A — DSA (30 min, Python).** LeetCode **1091. Shortest Path in Binary Matrix** (BFS on a grid, 8 directions) in ≤ 25 min.
 
 **Part B — Concepts (20 min).**
 
@@ -271,9 +276,9 @@ Pass: A in time · B ≥ 5/6 · C correct · D fluent.
 - [ ] I can explain multi-instance scheduling safety and idempotent execution keys.
 - [ ] I can describe my risk-rule engine and its Redis-down behaviour.
 - [ ] I walked a security checklist and have tests for its key items.
-- [ ] I completed unfamiliar-code drill #1 with the method (not by guessing).
-- [ ] 12-minute LedgerX deep dive recorded; 10 follow-ups answered; weak spots listed.
-- [ ] 8 graph problems done; Day-30 trees mostly `Mastered`.
+- [ ] I completed unfamiliar-code drill #1 (Java buggy-library) with the method (not by guessing).
+- [ ] 12-minute LedgerX deep dive recorded (Track B); 10 follow-ups answered; weak spots listed.
+- [ ] 8 graph problems done in Python; Java rep done; Day-30 trees mostly `Mastered`.
 
 ## 15. Expected deliverables
 

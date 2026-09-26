@@ -8,8 +8,8 @@
 |---|---:|---|
 | Project | 26 | Orgs/projects/environments/flags, immutable versioned configs with rollback, rules, audit history, auth/authz, admin API, SDK keys |
 | Learning | 8 | Configuration versioning, immutable snapshots, multi-tenant modelling; **system design fundamentals** |
-| DSA | 7 | Mixed review (weakest patterns) — **6 new** + reviews |
-| Interview / review | 4 | OA simulation #4, weekly mock, **CP-20** |
+| DSA (Python) | 7 | Mixed review (weakest patterns) — **6 new** + reviews + 1 Java rep |
+| Interview / review | 4 | OA simulation #4 (Track A), weekly mocks (Track A + B), **CP-20** |
 
 ---
 
@@ -119,14 +119,15 @@ Do "design a feature-flag service" from [`15-system-design/junior-design-problem
 - Version numbers skip (7, 9, 10): a rolled-back transaction consumed a sequence value — decide whether gaps matter (they don't for correctness; they do for "rollback to v8" UX) and document.
 - `@PreAuthorize` never fires: `@EnableMethodSecurity` missing, or the call is an internal `this.method()` bypassing the proxy — [`05-spring-boot/01-core-di.md`](../../05-spring-boot/01-core-di.md).
 
-## 7. DSA — Mixed review, weakest patterns (6 new)
+## 7. DSA — Mixed review, weakest patterns (6 new, Python)
 
-From Week 20 the schedule is **selection by evidence**, not by list. The rule:
+From Week 20 the schedule is **selection by evidence**, not by list. All problems in Python ([`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) for the templates). The rule:
 
 1. Open [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md). For each pattern compute `weak = (#Attempted + #Solved With Solution + #Needs Review) / #problems in pattern`.
 2. Take the **two highest-`weak` patterns** → 2 new problems each (4).
 3. Take one pattern you have not touched for ≥ 3 weeks → 1 new problem (5).
 4. One **unseen Medium** from the NeetCode 150 you have not attempted, any pattern, **timed 30 min** (6).
+5. **Java rep (1, not new):** one already-`Solved Independently` problem from the weakest pattern, re-done in Java (collections fluency for Track B) — this week prefer something with `ArrayDeque`/`HashMap`.
 
 Timing: Easy 15 min, Medium 30 min, Hard 45 min. Log the pattern and the reason it was selected ("weak = 0.6, second highest").
 
@@ -192,8 +193,12 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 
 ## 10. Interview preparation
 
-- **OA simulation #4** (Sat, 90 min): [`OA_PREP.md`](../../OA_PREP.md) — two problems + a repo-modification drill from [`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md) ("add a feature to an unfamiliar module and keep tests green").
-- **Weekly mock** (Tue): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md).
+**Track A (Python coding)**
+- **OA simulation #4** (Sat, 90 min): [`OA_PREP.md`](../../OA_PREP.md) — two Python algorithm problems + the Java repo-modification drill from [`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md) ("add a feature to an unfamiliar module and keep tests green" on [`buggy-library`](../../21-debugging-code-reading/exercises/buggy-library/)).
+- **Weekly coding mock** (Tue, 45 min, Python): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md).
+
+**Track B (Java / projects / system design)**
+- **Weekly engineering mock** (Sat, 30 min): FlagForge M1 design — "how would you model versions and rollback?" and "how do you stop tenant A reading tenant B?"
 - **System design warm-up:** 30 min, explain FlowGrid's allocation as a design problem using the fundamentals vocabulary — the W22 system-design mock will use one of your projects.
 - **Résumé defense:** PostgreSQL + Spring Boot — [`17-resume-tech-defense/postgresql.md`](../../17-resume-tech-defense/postgresql.md), [`17-resume-tech-defense/spring-boot.md`](../../17-resume-tech-defense/spring-boot.md).
 - **Applications:** junior-role-ready tier per [`JOB_READINESS.md`](../../JOB_READINESS.md); keep volume; add FlagForge to the résumé only when M2 (MVP) exists.
@@ -209,12 +214,12 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 
 | Day | Plan |
 |---|---|
-| **Mon (8 h)** | Learning 2: system design fundamentals · Project 4.5: skeleton in a day · DSA 1.5: rule step 1–2 (pick 2) |
-| **Tue (8 h)** | Project 5: schema + entities + append-only enforcement · DSA 2: 2 problems + reviews · Mock 1 h |
+| **Mon (8 h)** | Learning 2: system design fundamentals · Project 4.5: skeleton in a day · DSA 1.5: rule step 1–2 (pick 2, Python) |
+| **Tue (8 h)** | Project 5: schema + entities + append-only enforcement · DSA 2: 2 problems + reviews · Track A mock 45 min + review |
 | **Wed (8 h)** | Learning 2: junior design problems (flag service drill) + multi-tenant modelling · Project 4.5: rules model, publish/rollback · DSA 1.5: 1 problem |
 | **Thu (8 h)** | Project 5: authz, SDK keys, audit · DSA 2: timed unseen Medium + reviews · Docs 1: DATABASE.md |
-| **Fri (5 h)** | Project 3: ITs (concurrent publish, cross-tenant, If-Match) · DSA reviews 1 · Retro 1 |
-| **Sat (6 h)** | Project 4: failure scenarios, API.md, close M1 · OA sim #4 (90 min) + review |
+| **Fri (5 h)** | Project 3: ITs (concurrent publish, cross-tenant, If-Match) · DSA reviews 1 + Java rep · Retro 1 |
+| **Sat (6 h)** | Project 4: failure scenarios, API.md, close M1 · OA sim #4 (90 min) + review · Track B mock 30 min |
 | **Sun (3 h)** | **Checkpoint 20** (timed coding + knowledge + explain-out-loud) · trackers · plan W21 · rest |
 
 ## 13. End-of-week test — Checkpoint 20
@@ -229,13 +234,14 @@ Quick self-check before the checkpoint: explain in 2 minutes each — (a) why ve
 - [ ] I can model immutable versions with rollback-as-new-version and explain the trade-off vs mutable rows
 - [ ] I can enforce tenant isolation and prove it with a test
 - [ ] I can run a junior system-design conversation: requirements → API → data → design → trade-offs
-- [ ] I select DSA problems from tracker evidence, not from a fixed list
+- [ ] I select DSA problems from tracker evidence, not from a fixed list, and solve them in Python within the time limits
+- [ ] I keep Track A (Python coding) and Track B (Java/projects) preparation separate and log both
 
 ## 15. Expected deliverables
 
 - FlagForge repo with M1 closed; CI green; `docs/DATABASE.md`, `docs/API.md`.
 - CP-20 score recorded; remediation items (if any) scheduled.
-- Trackers updated: project (M1), DSA (6 new + reviews + selection reasons), interview (OA #4, mock), technology, weekly progress.
+- Trackers updated: project (M1), DSA (6 new in Python + reviews + selection reasons + Java rep), interview (OA #4 with Python/Java parts scored separately, Track A + B mocks), technology, weekly progress.
 
 ## 16. If behind / stretch
 

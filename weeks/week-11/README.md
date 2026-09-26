@@ -26,7 +26,7 @@ By Sunday:
 
 - Tags `m2`/`mvp` exist. If the optimistic comparison slipped, keep it parked — do not let it eat this week.
 - You can write the ordered-lock transfer from memory (test yourself Monday, 10 min).
-- Trees/BST done: heaps use the same recursion comfort plus `PriorityQueue` API.
+- Trees/BST done in Python: heaps add the `heapq` module (min-heap only; negate for max-heap; tuples compare element-wise) — see [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) §3.9.
 
 ## 3. Learning topics
 
@@ -150,7 +150,7 @@ Useful for statements; expensive at scale — compute per page from the cursor's
 1. **Transition-table test (30 min).** Parameterised JUnit test over all 25 `(from, to)` pairs asserting `canTransitionTo` matches a hand-written truth table.
 2. **Keyset vs offset (45 min).** Generate 1M entries for one account with `generate_series`; `EXPLAIN (ANALYZE, BUFFERS)` both queries at page 1 and page 18,000. Record buffers and ms.
 3. **Outbox race on paper (20 min).** Draw the timeline for: publish → crash → restart. Show where duplicates arise and where the consumer dedupes.
-4. **Heap warm-up (25 min).** Implement a min-heap on an `int[]` with `push`/`pop`/`siftUp`/`siftDown`; verify against `PriorityQueue` on 10k random ops.
+4. **Heap warm-up (25 min, Python).** Implement a min-heap on a plain `list` with `push`/`pop`/`_sift_up`/`_sift_down`; verify against `heapq` on 10k random ops. Then note the `heapq` pitfall: `heapq.heappush(h, (priority, obj))` fails with `TypeError` when priorities tie and `obj` is not comparable — add an index as a tiebreaker.
 
 ### 6.2 Assignment — LedgerX M3
 
@@ -175,9 +175,9 @@ Useful for statements; expensive at scale — compute per page from the cursor's
 - The poller "never publishes": `@Scheduled` methods run, logs show `claimed 0` while rows exist with `published_at IS NULL`. Suspects: the poller runs inside a long-lived transaction with a stale snapshot; `@EnableScheduling` missing in tests; timezone mismatch in `created_at` comparison. Find it with `pg_stat_activity` and `SHOW timezone`.
 - History returns the same page forever: cursor decoding drops the `id` half and ties on `created_at` (bulk-inserted rows share timestamps). Fix and add a test with identical timestamps.
 
-## 7. DSA — Heap / PriorityQueue (8 new problems)
+## 7. DSA — Heap / PriorityQueue (8 new problems, in Python)
 
-Guide: [`03-dsa/13-heap-priority-queue.md`](../../03-dsa/13-heap-priority-queue.md). Java: `PriorityQueue<int[]>` with comparator; `Comparator.comparingInt`; remember it is a min-heap by default; `remove(Object)` is O(n).
+**Language: Python (Track A).** Guide: [`03-dsa/13-heap-priority-queue.md`](../../03-dsa/13-heap-priority-queue.md) · Templates: [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md). Python: `heapq` is a min-heap on a list; max-heap = push `-x`; k-largest = `heapq.nlargest(k, xs)` or a size-k min-heap; `heapq.heapify` is O(n); there is no O(log n) arbitrary removal (use lazy deletion with a "dead" set — you will need this for Design Twitter and for ForgeCI's queue later).
 
 | # | Problem | Difficulty | Time limit | Day |
 |---|---|---|---|---|
@@ -191,6 +191,8 @@ Guide: [`03-dsa/13-heap-priority-queue.md`](../../03-dsa/13-heap-priority-queue.
 | 1834 | Single-Threaded CPU | Medium | 30 min | Fri (if reviews done) |
 
 Reviews due: Day-3 Week 10 Thu/Fri (Tries); Day-7 Week 10 BST; Day-14 Week 9 Trees; Day-30 Week 7 Linked Lists. Note that #1834 is literally a job scheduler — you will reuse the idea for ForgeCI's queue ordering.
+
+**Java rep (Fri, ≤ 30 min):** #973 K Closest Points in Java with `PriorityQueue<int[]>` and `Comparator.comparingInt` (max-heap of size k via reversed comparator). The Java `PriorityQueue` API — `offer`/`poll`/`peek`, O(n) `remove(Object)` — is a Track B question in disguise ("how would you implement a job queue in Java?").
 
 ## 8. Project work — LedgerX M3 (States, reversals, history, audit, outbox)
 
@@ -239,9 +241,11 @@ Milestone `M3`, 8–10 issues; PRs `feat/m3-states`, `feat/m3-reversals-refunds`
 
 ## 10. Interview preparation
 
-- **Think-aloud (Tue, 45 min):** LeetCode 621 (Task Scheduler), recorded and scored.
-- **Résumé-defense drill (Sat) — this week: REST APIs, Git, GitHub.** [`17-resume-tech-defense/rest-apis.md`](../../17-resume-tech-defense/rest-apis.md), [`git.md`](../../17-resume-tech-defense/git.md), [`github.md`](../../17-resume-tech-defense/github.md). Must cover: pagination styles, PR workflow, branch protection.
-- **Project questions (Sat, 30 min):** answer 5 from [`18-projects/ledgerx/interview-questions.md`](../../18-projects/ledgerx/interview-questions.md) on M1–M3 out loud; note the two weakest for Week 13's rehearsal.
+Two tracks, never mixed: **Track A = coding interview, Python**; **Track B = software-engineering / résumé interview, Java/Spring/SQL/etc.**
+
+- **Think-aloud (Tue, 45 min) — Track A, Python:** LeetCode 621 (Task Scheduler), recorded and scored.
+- **Résumé-defense drill (Sat) — Track B — this week: REST APIs, Git, GitHub.** [`17-resume-tech-defense/rest-apis.md`](../../17-resume-tech-defense/rest-apis.md), [`git.md`](../../17-resume-tech-defense/git.md), [`github.md`](../../17-resume-tech-defense/github.md). Must cover: pagination styles, PR workflow, branch protection.
+- **Project questions (Sat, 30 min) — Track B:** answer 5 from [`18-projects/ledgerx/interview-questions.md`](../../18-projects/ledgerx/interview-questions.md) on M1–M3 out loud; note the two weakest for Week 13's rehearsal.
 - **Applications (Sun):** 2–3; update [`JOB_READINESS.md`](../../JOB_READINESS.md) self-assessment — you are approaching "internship-ready".
 
 ## 11. Revision work
@@ -258,13 +262,13 @@ Milestone `M3`, 8–10 issues; PRs `feat/m3-states`, `feat/m3-reversals-refunds`
 | **Tue** (8h) | — | Reversal/refund services + endpoints + double-reversal test (5h) | #973, #215 + Day-3 reviews (2h) | Think-aloud #621 (1h) |
 | **Wed** (8h) | Cursor pagination; keyset lab (2h) | Payment requests (4.5h) | #621 (1.5h) | — |
 | **Thu** (8h) | — | History keyset + perf numbers; audit + MDC (5h) | #355, #295 + Day-7 reviews (2h) | `docs/API.md`, `docs/PERFORMANCE.md` (1h) |
-| **Fri** (5h) | Outbox pattern (1h) | Outbox + poller + consumer + test (3h) | Reviews (+#1834) (1h) | Retro prep |
+| **Fri** (5h) | Outbox pattern (1h) | Outbox + poller + consumer + test (3h) | Reviews + Java rep #973 (+#1834 if time) (1h) | Retro prep |
 | **Sat** (6h) | — | Failure scenarios, ADR 0004, PR review, tag `m3` (4h) | — | Drill + project questions (2h) |
 | **Sun** (2–3h) | — | — | Day-14/30 reviews | End-of-week test, trackers, plan Week 12, applications |
 
 ## 13. End-of-week test (Sunday, 75 min)
 
-**Part A — DSA (30 min).** LeetCode **347. Top K Frequent Elements** in ≤ 20 min using a heap, then say how bucket sort makes it O(n).
+**Part A — DSA (30 min, Python).** LeetCode **347. Top K Frequent Elements** in ≤ 20 min using `Counter` + `heapq.nlargest` (or a size-k heap), then say how bucket sort makes it O(n).
 
 **Part B — Concepts (20 min).**
 
@@ -294,7 +298,7 @@ Pass: A in time · B ≥ 5/6 · C correct · D covers compensation, linking, sta
 - [ ] I can write keyset pagination with its index and quote my measured numbers vs offset.
 - [ ] I can draw the outbox timeline, name the delivery guarantee, and explain consumer idempotency.
 - [ ] Audit is transactional and immutable and joins to logs by correlation id.
-- [ ] 8 heap problems done; I can implement a heap by hand; reviews done.
+- [ ] 8 heap problems done in Python; I can implement a heap by hand and explain `heapq` tie-breaking; reviews done; Java rep (#973) done.
 
 ## 15. Expected deliverables
 

@@ -1,6 +1,6 @@
 # Linux Commands That Matter
 
-> Week 19 · ≈ 4 hours. Each section: the commands, what they're for in *your* projects, and the interview angle.
+> §1–§3 in Week 1; everything in Week 14 (ForgeCI) · ≈ 4 hours. Each section: the commands, what they're for in *your* projects, and the interview angle.
 > Type every command. Use `man cmd` when a flag is unclear.
 
 ---
@@ -14,7 +14,7 @@
 | `/root` | root's home | — |
 | `/etc` | system configuration (text files) | `/etc/nginx/`, `/etc/systemd/system/`, `/etc/hosts`, `/etc/ssh/sshd_config` |
 | `/var` | variable data | `/var/log/` logs, `/var/lib/docker/` images & volumes, `/var/lib/postgresql/` |
-| `/opt` | self-contained third-party apps | `/opt/pulsewatch/` (your deploy dir) |
+| `/opt` | self-contained third-party apps | `/opt/flowgrid/` (your deploy dir) |
 | `/usr/bin`, `/usr/local/bin` | programs | where `java`, `docker`, your scripts live |
 | `/tmp` | temporary files (often cleared on reboot) | scratch |
 | `/proc` | virtual FS: kernel & process info | `/proc/<pid>/`, `/proc/meminfo`, `/proc/cpuinfo` |
@@ -44,14 +44,14 @@ realpath ./app.jar       # absolute path
 ## 3. Files and directories
 
 ```bash
-mkdir -p /opt/pulsewatch/{config,backups}   # -p: parents, no error if exists; brace expansion
+mkdir -p /opt/flowgrid/{config,backups}   # -p: parents, no error if exists; brace expansion
 touch notes.txt
 cp -r src/ dst/             # recursive copy
 cp -a src/ dst/             # archive: preserve perms, owners, timestamps, symlinks
 mv old new                  # move/rename
 rm file; rm -r dir          # delete (no recycle bin!)
 rm -rf "$DIR"/              # dangerous — never with an unquoted/empty variable (see bash-scripting.md)
-ln -s /opt/pulsewatch/releases/42 /opt/pulsewatch/current   # symlink (used for atomic deploys)
+ln -s /opt/flowgrid/releases/42 /opt/flowgrid/current   # symlink (used for atomic deploys)
 
 cat file; less file         # less: / to search, n next, G end, q quit, F follow
 head -n 20 file; tail -n 50 file
@@ -71,7 +71,7 @@ deleting the "original"; same filesystem only; not for directories). A symlink i
 ## 4. Permissions
 
 ```
--rwxr-x---  1 deploy  pulsewatch  4096 May  1 10:00 deploy.sh
+-rwxr-x---  1 deploy  flowgrid  4096 May  1 10:00 deploy.sh
 │└┬┘└┬┘└┬┘     owner   group
 │ │  │  └── others:  ---  (no access)
 │ │  └───── group:   r-x  (read, execute)
@@ -92,7 +92,7 @@ chmod 600 ~/.ssh/id_ed25519   # SSH refuses private keys readable by others
 chmod 700 ~/.ssh
 chmod u+x script.sh        # symbolic: add execute for owner
 chmod -R g+rX shared/      # capital X: execute only on dirs (and files already executable)
-chown deploy:pulsewatch file   # change owner and group
+chown deploy:flowgrid file   # change owner and group
 chown -R 999:999 ./pgdata  # numeric ids (e.g. container user)
 umask                      # default permission mask, typically 022 → new files 644, dirs 755
 ```
@@ -114,7 +114,7 @@ inherit group), sticky (`1xxx`, on `/tmp`: only owners can delete their files).
 
 ```bash
 whoami; id                     # uid, gid, groups
-sudo useradd --system --no-create-home --shell /usr/sbin/nologin pulsewatch   # service account
+sudo useradd --system --no-create-home --shell /usr/sbin/nologin flowgrid   # service account
 sudo useradd -m -s /bin/bash deploy                                            # human/deploy user
 sudo passwd deploy
 sudo usermod -aG docker deploy # add to group (-a append! without it, other groups are removed); re-login to apply
@@ -142,7 +142,7 @@ nohup java -jar app.jar > app.log 2>&1 &   # survive terminal hangup (SIGHUP); p
 kill <pid>                     # sends SIGTERM (15)
 kill -9 <pid>                  # SIGKILL — last resort
 kill -l                        # list signals
-pkill -f 'tickethold.*\.jar'   # by command-line pattern (careful)
+pkill -f 'flowgrid.*\.jar'   # by command-line pattern (careful)
 ```
 
 | Signal | Number | Meaning | Catchable? |
@@ -174,12 +174,12 @@ systemctl list-units --type=service --state=failed
 sudo systemctl daemon-reload       # after editing unit files
 ```
 
-A unit for running the PulseWatch Compose stack on EC2 at boot:
+A unit for running the FlowGrid Compose stack on EC2 at boot (Week 8; same pattern for every project):
 
 ```ini
-# /etc/systemd/system/pulsewatch.service
+# /etc/systemd/system/flowgrid.service
 [Unit]
-Description=PulseWatch (Docker Compose stack)
+Description=FlowGrid (Docker Compose stack)
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -187,7 +187,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/pulsewatch
+WorkingDirectory=/opt/flowgrid
 User=deploy
 ExecStart=/usr/bin/docker compose up -d --remove-orphans
 ExecStop=/usr/bin/docker compose down
@@ -198,12 +198,12 @@ WantedBy=multi-user.target
 ```
 
 For a plain JAR (no Docker): `Type=simple`, `ExecStart=/usr/bin/java -jar /opt/app/app.jar`, `Restart=on-failure`,
-`User=pulsewatch`, `EnvironmentFile=/opt/app/app.env`.
+`User=flowgrid`, `EnvironmentFile=/opt/app/app.env`.
 
 ### Logs with journald
 
 ```bash
-journalctl -u pulsewatch -f                 # follow a unit
+journalctl -u flowgrid -f                 # follow a unit
 journalctl -u docker --since "1 hour ago"
 journalctl -u nginx -p err -b               # errors since boot
 journalctl --disk-usage; sudo journalctl --vacuum-size=200M
@@ -312,7 +312,7 @@ awk '$9 ~ /^5/ {print $7}' /var/log/nginx/access.log | sort | uniq -c | sort -rn
 ```bash
 grep ' ERROR ' app.log | awk '{print $NF}' | head    # inspect first; field positions depend on your pattern
 ```
-Always look at a few lines before writing the `awk` — log formats vary. For JSON logs (P4 M4), use `jq`.
+Always look at a few lines before writing the `awk` — log formats vary. For structured JSON logs (FlowGrid M5 onward), use `jq`.
 
 ---
 
@@ -328,7 +328,7 @@ echo 'export PATH="$HOME/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 Spring Boot relaxed binding: `SPRING_DATASOURCE_URL` → `spring.datasource.url`. That's how Docker/Compose/EC2
-configure your apps. Never `export` secrets in `.bashrc` on shared machines; use an `EnvironmentFile` with `chmod 600`, or AWS SSM/Secrets Manager (Week 21).
+configure your apps. Never `export` secrets in `.bashrc` on shared machines; use an `EnvironmentFile` with `chmod 600`, or AWS SSM Parameter Store/Secrets Manager (from Week 8).
 
 ---
 
@@ -337,24 +337,51 @@ configure your apps. Never `export` secrets in `.bashrc` on shared machines; use
 ```bash
 ssh-keygen -t ed25519 -C "you@laptop"              # creates ~/.ssh/id_ed25519 (+ .pub)
 ssh-copy-id deploy@server                          # appends pub key to server's ~/.ssh/authorized_keys
-ssh -i ~/.ssh/pulsewatch.pem ec2-user@<public-ip>  # EC2 (Amazon Linux user: ec2-user; Ubuntu: ubuntu)
-scp ./compose.yaml deploy@server:/opt/pulsewatch/  # copy file up
-scp deploy@server:/opt/pulsewatch/backups/db.sql.gz .   # copy down
-rsync -avz --delete ./dist/ deploy@server:/opt/pulsewatch/web/   # efficient sync
+ssh -i ~/.ssh/flowgrid.pem ec2-user@<public-ip>  # EC2 (Amazon Linux user: ec2-user; Ubuntu: ubuntu)
+scp ./compose.yaml deploy@server:/opt/flowgrid/  # copy file up
+scp deploy@server:/opt/flowgrid/backups/db.sql.gz .   # copy down
+rsync -avz --delete ./dist/ deploy@server:/opt/flowgrid/web/   # efficient sync
 ssh -L 5433:localhost:5432 deploy@server           # tunnel: local 5433 → server's Postgres 5432
 ```
 
 ```
 # ~/.ssh/config
-Host pulsewatch
+Host flowgrid
   HostName 3.120.x.x
   User ec2-user
-  IdentityFile ~/.ssh/pulsewatch.pem
-# → ssh pulsewatch
+  IdentityFile ~/.ssh/flowgrid.pem
+# → ssh flowgrid
 ```
 
 Server hardening basics: key-only auth (`PasswordAuthentication no`), no root login, security group allows 22 only
 from your IP. First connection asks you to verify the host key fingerprint → stored in `~/.ssh/known_hosts`.
+
+---
+
+## 14. Processes inside containers (Week 14, ForgeCI)
+
+ForgeCI's worker starts a container per job, runs build steps in it, enforces timeouts, supports cancel, and must always
+clean up. The Linux facts underneath:
+
+| Fact | Why it matters for ForgeCI |
+|---|---|
+| A container is a **process tree** on the host, isolated by namespaces and limited by cgroups | `ps -ef` on the host shows the build's processes; `docker top <c>` shows them per container |
+| The container's main process is **PID 1** inside its PID namespace | PID 1 gets no default signal handlers: a shell script as PID 1 may ignore SIGTERM → `docker stop` waits the grace period, then SIGKILLs. `docker run --init` adds a tiny init that forwards signals and reaps zombies |
+| `docker stop` = SIGTERM, wait (default 10 s), SIGKILL; `docker kill` = SIGKILL immediately (by default) | cancel = graceful stop with a short grace period; timeout = kill |
+| Exit code `128 + N` means killed by signal N | 137 (SIGKILL: timeout kill or **OOM**), 143 (SIGTERM). Distinguish them when classifying *app failure* vs *infra failure* |
+| cgroup memory limit exceeded → kernel OOM killer | `docker inspect -f '{{.State.OOMKilled}}' <c>` tells you; a build that OOMs is an app/config failure, not an infra retry |
+| `timeout 600 cmd` sends SIGTERM after 600 s (`-k 10` adds a SIGKILL 10 s later); exits 124 on timeout | handy for local experiments; ForgeCI enforces timeouts from the worker via the Docker API instead |
+| Killing a parent doesn't necessarily kill its children | kill the whole container (or process group: `kill -TERM -<pgid>`) rather than one PID |
+| Files created in a bind-mounted workspace are owned by the container's UID | if the build runs as root, the host workspace ends up root-owned and your cleanup (as a non-root worker user) fails with "Permission denied" |
+
+```bash
+docker run -d --name job42 --memory 256m eclipse-temurin:21-jdk sleep 600
+docker top job42                                  # processes inside, with host PIDs
+docker inspect -f '{{.State.Pid}}' job42          # host PID of the container's PID 1
+sudo ls /proc/$(docker inspect -f '{{.State.Pid}}' job42)/ns   # its namespaces
+docker stop -t 5 job42; docker inspect -f '{{.State.ExitCode}}' job42   # sleep ignores SIGTERM as PID 1 → killed → 137
+docker rm job42
+```
 
 ---
 
@@ -423,3 +450,4 @@ Write a systemd unit in `/etc/systemd/system`, `systemctl daemon-reload`, `syste
 - [ ] Diagnose DNS vs port vs listener vs firewall with `dig`, `nc`, `ss`, `curl -v`.
 - [ ] Produce a top-N report from a log with a pipe of `grep`/`awk`/`sort`/`uniq`.
 - [ ] SSH to a box with a config alias, copy files with `scp`/`rsync`, open a tunnel.
+- [ ] Explain PID 1 in a container, `docker stop` vs `docker kill`, and exit codes 124/137/143.

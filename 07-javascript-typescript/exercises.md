@@ -225,10 +225,10 @@ Record yourself answering each in ≤ 60 s. Re-record any you stumble on.
 
 | Part | Done | Notes / what surprised me |
 |---|---|---|
-| A (1–9) | - [ ] | |
-| B (1–9) | - [ ] | |
-| C (1–7) | - [ ] | |
-| D (1–2) | - [ ] | |
-| E (1–6) | - [ ] | |
+| A (1–9) | ☐ | |
+| B (1–9) | ☐ | |
+| C (1–7) | ☐ | |
+| D (1–2) | ☐ | |
+| E (1–6) | ☐ | |
 
 Update [trackers/technology-tracker.md](../trackers/technology-tracker.md) (JavaScript, TypeScript rows) when done.

@@ -1,6 +1,6 @@
 # Frontend Testing: Vitest + React Testing Library + MSW
 
-> **Week 17** · P3 TeamBoard M4 (≥ 10 meaningful tests), reused for the P4 PulseWatch dashboard.
+> **Week 7** (FlowGrid M4 dashboard), reused in Week 16 (ForgeCI build/log views) and Week 23 (FlagForge admin).
 > Architecture context: [08-react/05-architecture-testing.md](../08-react/05-architecture-testing.md).
 
 **Guiding principle (Testing Library):** *"The more your tests resemble the way your software is used, the more
@@ -59,7 +59,7 @@ import { afterAll, afterEach, beforeAll } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { server } from "./server";
 
-beforeAll(() => server.listen({ onUnhandledRequest: "error" }));  // unmocked request = failing test
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));  // an unmocked request fails the test
 afterEach(() => { server.resetHandlers(); cleanup(); });
 afterAll(() => server.close());
 ```
@@ -79,20 +79,20 @@ afterAll(() => server.close());
 ```ts
 // src/test/handlers.ts
 import { http, HttpResponse } from "msw";
-import type { Issue } from "../features/issues/types";
+import type { InventoryLevel } from "../features/inventory/types";
 
-export const issueFixture = (over: Partial<Issue> = {}): Issue => ({
-  id: 1, title: "Login fails on Safari", description: null, status: "TODO",
-  createdAt: "2026-05-01T10:00:00Z", assignee: null, ...over,
+export const level = (over: Partial<InventoryLevel> = {}): InventoryLevel => ({
+  skuId: 7, sku: "BOLT-M8-50", warehouseId: 1, onHand: 120, reserved: 0, available: 120,
+  updatedAt: "2026-05-01T10:00:00Z", ...over,
 });
 
 export const handlers = [
-  http.get("*/api/projects/:projectId/issues/board", () =>
-    HttpResponse.json([issueFixture(), issueFixture({ id: 2, title: "Add labels", status: "DONE" })]),
+  http.get("*/api/warehouses/:warehouseId/inventory", () =>
+    HttpResponse.json([level(), level({ skuId: 8, sku: "NUT-M8", available: 4, onHand: 4 })]),
   ),
-  http.patch("*/api/issues/:id/status", async ({ params, request }) => {
-    const { status } = (await request.json()) as { status: Issue["status"] };
-    return HttpResponse.json(issueFixture({ id: Number(params.id), status }));
+  http.post("*/api/inventory/adjustments", async ({ request }) => {
+    const body = (await request.json()) as { delta: number };
+    return HttpResponse.json({ id: 1, ...body }, { status: 201 });
   }),
 ];
 ```
@@ -101,10 +101,10 @@ Override per test with `server.use(...)` (reset after each test by `resetHandler
 
 ```ts
 server.use(
-  http.post("*/api/projects/:projectId/issues", () =>
+  http.post("*/api/inventory/adjustments", () =>
     HttpResponse.json(
-      { title: "Validation failed", status: 400, errors: { title: "must not be blank" } },
-      { status: 400, headers: { "Content-Type": "application/problem+json" } },
+      { title: "Conflict", status: 409, detail: "Adjustment would make on-hand negative" },
+      { status: 409, headers: { "Content-Type": "application/problem+json" } },
     ),
   ),
 );
@@ -125,7 +125,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 export function renderWithProviders(
   ui: React.ReactElement,
-  { route = "/", path = "*", user = memberUser }: { route?: string; path?: string; user?: CurrentUser | null } = {},
+  { route = "/", path = "*", user = opsManager }: { route?: string; path?: string; user?: CurrentUser | null } = {},
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }); // fresh per test, no retries
   return render(
@@ -144,96 +144,92 @@ export function renderWithProviders(
 
 ---
 
-## 5. Component tests
+## 5. Component test patterns
 
-### Board: loading → data, empty, error
+### Loading → data, empty, error
 
 ```tsx
-import { screen, within } from "@testing-library/react";
+import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { server } from "../../test/server";
 import { renderWithProviders } from "../../test/render";
-import { BoardPage } from "./BoardPage";
+import { InventoryPage } from "./InventoryPage";
 
-const route = { route: "/orgs/1/projects/5", path: "/orgs/:orgId/projects/:projectId" };
+const at = { route: "/warehouses/1", path: "/warehouses/:warehouseId" };
 
-test("shows issues in their status lanes", async () => {
-  renderWithProviders(<BoardPage />, route);
+test("shows inventory rows and flags low stock", async () => {
+  renderWithProviders(<InventoryPage />, at);
 
   expect(screen.getByText(/loading/i)).toBeInTheDocument();
-  const todo = await screen.findByRole("region", { name: /todo/i });   // findBy* waits (default 1s)
-  expect(within(todo).getByText("Login fails on Safari")).toBeInTheDocument();
-  expect(within(screen.getByRole("region", { name: /done/i })).getByText("Add labels")).toBeInTheDocument();
+  const row = (await screen.findByText("NUT-M8")).closest("tr")!;        // findBy* waits (default 1 s)
+  expect(row).toHaveTextContent("4");
+  expect(screen.getByText("BOLT-M8-50")).toBeInTheDocument();
 });
 
-test("shows empty state when project has no issues", async () => {
-  server.use(http.get("*/api/projects/:projectId/issues/board", () => HttpResponse.json([])));
-  renderWithProviders(<BoardPage />, route);
-  expect(await screen.findByText(/no issues yet/i)).toBeInTheDocument();
+test("shows empty state when the warehouse has no stock", async () => {
+  server.use(http.get("*/api/warehouses/:warehouseId/inventory", () => HttpResponse.json([])));
+  renderWithProviders(<InventoryPage />, at);
+  expect(await screen.findByText(/no stock recorded/i)).toBeInTheDocument();
 });
 
 test("shows error and retries", async () => {
   let calls = 0;
-  server.use(http.get("*/api/projects/:projectId/issues/board", () => {
-    calls++;
-    return calls === 1 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json([]);
-  }));
+  server.use(http.get("*/api/warehouses/:warehouseId/inventory", () =>
+    ++calls === 1 ? new HttpResponse(null, { status: 500 }) : HttpResponse.json([])));
   const user = userEvent.setup();
-  renderWithProviders(<BoardPage />, route);
+  renderWithProviders(<InventoryPage />, at);
 
-  expect(await screen.findByRole("alert")).toHaveTextContent(/500|went wrong/i);
+  expect(await screen.findByRole("alert")).toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: /retry/i }));
-  expect(await screen.findByText(/no issues yet/i)).toBeInTheDocument();
+  expect(await screen.findByText(/no stock recorded/i)).toBeInTheDocument();
 });
 ```
-
-(`<section aria-labelledby>` gives a lane the implicit `region` role with an accessible name — accessible markup makes tests easy.)
 
 ### Form: client validation and server errors
 
 ```tsx
-test("shows required error and does not submit", async () => {
+test("requires a non-zero quantity and does not submit", async () => {
   const onSubmit = vi.fn();
   const user = userEvent.setup();
-  render(<IssueForm onSubmit={onSubmit} members={[]} />);
+  render(<AdjustmentForm onSubmit={onSubmit} />);
 
-  await user.click(screen.getByRole("button", { name: /save/i }));
+  await user.click(screen.getByRole("button", { name: /save adjustment/i }));
 
-  expect(screen.getByText(/title is required/i)).toBeInTheDocument();
+  expect(screen.getByText(/non-zero whole number/i)).toBeInTheDocument();
   expect(onSubmit).not.toHaveBeenCalled();
 });
 
-test("maps server field errors onto the field", async () => {
-  server.use(http.post("*/api/projects/:projectId/issues", () =>
-    HttpResponse.json({ status: 400, title: "Validation failed", errors: { title: "must not be blank" } },
-                      { status: 400, headers: { "Content-Type": "application/problem+json" } })));
+test("shows a 409 conflict from the server as a form alert", async () => {
+  server.use(http.post("*/api/inventory/adjustments", () =>
+    HttpResponse.json({ status: 409, title: "Conflict", detail: "Adjustment would make on-hand negative" },
+                      { status: 409, headers: { "Content-Type": "application/problem+json" } })));
   const user = userEvent.setup();
-  renderWithProviders(<NewIssuePage />, { route: "/orgs/1/projects/5/issues/new", path: "/orgs/:orgId/projects/:projectId/issues/new" });
+  renderWithProviders(<NewAdjustmentPage />, { route: "/warehouses/1/adjustments/new", path: "/warehouses/:warehouseId/adjustments/new" });
 
-  await user.type(screen.getByLabelText(/title/i), "   x");
-  await user.click(screen.getByRole("button", { name: /save/i }));
-
-  expect(await screen.findByText("must not be blank")).toBeInTheDocument();
+  // fill SKU, quantity -500, reason … then:
+  await user.click(screen.getByRole("button", { name: /save adjustment/i }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/on-hand negative/i);
 });
 ```
 
-### Role-aware UI
+### Role-aware UI (table-driven)
 
 ```tsx
 test.each([
   ["VIEWER", false],
-  ["MEMBER", true],
+  ["WAREHOUSE_ASSOCIATE", false],
+  ["OPS_MANAGER", true],
   ["ADMIN", true],
-] as const)("%s sees edit button: %s", async (role, visible) => {
-  renderWithProviders(<IssueDetailPage />, { route: "/orgs/1/projects/5/issues/1",
-    path: "/orgs/:orgId/projects/:projectId/issues/:issueId", user: userWithRole(1, role) });
-  await screen.findByRole("heading", { name: /login fails/i });
-  expect(screen.queryByRole("button", { name: /edit/i }) !== null).toBe(visible);
+] as const)("%s sees Cancel order: %s", async (role, visible) => {
+  renderWithProviders(<OrderDetailPage />, { route: "/warehouses/1/orders/5",
+    path: "/warehouses/:warehouseId/orders/:orderId", user: userWithRoles([role]) });
+  await screen.findByRole("heading", { name: /SO-1005/ });
+  expect(screen.queryByRole("button", { name: /cancel order/i }) !== null).toBe(visible);
 });
 ```
 
-(Remember: this proves UX. The backend 403 tests in [spring-testing.md §4](./spring-testing.md#4-security-tests) prove security.)
+(This proves UX. The backend 403 tests in [spring-testing.md §4](./spring-testing.md#4-security-tests) prove security.)
 
 ---
 
@@ -241,7 +237,7 @@ test.each([
 
 Priority (most → least preferred):
 
-1. `getByRole(role, { name })` — buttons, headings, textboxes, links, regions, alerts
+1. `getByRole(role, { name })` — buttons, headings, textboxes, links, regions, alerts, rows
 2. `getByLabelText` — form fields
 3. `getByPlaceholderText`, `getByText`, `getByDisplayValue`
 4. `getByAltText`, `getByTitle`
@@ -258,7 +254,7 @@ Use `findBy*` (or `waitFor`) for anything that appears after a fetch. Never `set
 
 ---
 
-## 7. Testing hooks
+## 7. Testing hooks, reducers and streams
 
 Most hooks are best tested **through a component**. For reusable hooks, use `renderHook`:
 
@@ -268,13 +264,13 @@ import { useDebouncedValue } from "./useDebouncedValue";
 
 test("debounces value changes", () => {
   vi.useFakeTimers();
-  const { result, rerender } = renderHook(({ v }) => useDebouncedValue(v, 300), { initialProps: { v: "a" } });
+  const { result, rerender } = renderHook(({ v }) => useDebouncedValue(v, 300), { initialProps: { v: "bo" } });
 
-  rerender({ v: "ab" });
-  expect(result.current).toBe("a");               // not yet
+  rerender({ v: "bolt" });
+  expect(result.current).toBe("bo");              // not yet
 
   act(() => { vi.advanceTimersByTime(300); });
-  expect(result.current).toBe("ab");
+  expect(result.current).toBe("bolt");
 
   vi.useRealTimers();
 });
@@ -282,15 +278,19 @@ test("debounces value changes", () => {
 
 With fake timers **and** user-event, pass `userEvent.setup({ advanceTimers: vi.advanceTimersByTime })`.
 
-Pure logic (`atLeast`, reducers, `validate`) needs no React at all:
+Pure logic needs no React at all — the pick-screen reducer and `can()`:
 
 ```ts
-test.each([
-  ["OWNER", "ADMIN", true], ["ADMIN", "ADMIN", true], ["MEMBER", "ADMIN", false], ["VIEWER", "MEMBER", false],
-] as const)("atLeast(%s, %s) = %s", (role, min, expected) => {
-  expect(atLeast(role, min)).toBe(expected);
+test("scanning a SKU that is not on the pick list sets an error", () => {
+  const s = reducer({ remaining: { "BOLT-M8-50": 1 }, lastScan: null, error: null }, { type: "scanned", sku: "NUT-M8" });
+  expect(s.error).toMatch(/not on this pick list/);
+  expect(s.remaining["BOLT-M8-50"]).toBe(1);
 });
 ```
+
+**SSE (Week 16):** jsdom has no `EventSource`. Inject the stream behind a tiny interface (or stub `globalThis.EventSource`
+with a fake class that lets the test `emit("log", data)`), then assert the log view renders lines once, in order, and
+de-duplicates a replayed chunk after a simulated reconnect.
 
 ---
 
@@ -299,7 +299,7 @@ test.each([
 | Don't | Why | Instead |
 |---|---|---|
 | Internal state values (`useState` contents) | implementation detail | visible output |
-| That a child component received certain props | couples to structure | what the user sees |
+| That a child received certain props | couples to structure | what the user sees |
 | CSS classes / styles | brittle; not behaviour | accessible state (`toBeDisabled`, `aria-invalid`) |
 | Snapshot tests of whole pages | rubber-stamped on every change | targeted assertions |
 | React / React Router / TanStack Query themselves | already tested | your usage of them |
@@ -312,9 +312,9 @@ test.each([
 
 1. Change `onUnhandledRequest: "error"` to `"bypass"` and remove a handler — the test hangs or passes vacuously. Put it back.
 2. Replace `findByText` with `getByText` right after render — fails because data isn't loaded yet. Explain.
-3. Use `fireEvent.change` instead of `user.type` on a field with `onKeyDown` logic — handler never runs.
-4. Enable retries in the test `QueryClient` → the error test becomes slow/flaky. Why default `retry: false` in tests?
-5. Break the `<label htmlFor>` in `IssueForm` — `getByLabelText` fails. The test just caught an accessibility bug.
+3. Use `fireEvent.change` instead of `user.type` on a field with `onKeyDown` logic (barcode scanner input) — the handler never runs.
+4. Enable retries in the test `QueryClient` → the error test becomes slow or flaky. Why default `retry: false` in tests?
+5. Break the `<label htmlFor>` in `AdjustmentForm` — `getByLabelText` fails. The test just caught an accessibility bug.
 
 ---
 
@@ -324,7 +324,7 @@ test.each([
 
 Vitest + React Testing Library: render the component with its providers, query by role/label as a user would,
 interact with user-event, and assert on visible output. HTTP is mocked at the network level with MSW so my real API
-client runs. Pure logic is unit-tested without React.
+client runs. Pure logic such as reducers and permission checks is unit-tested without React.
 </details>
 
 <details><summary><code>getBy</code> vs <code>queryBy</code> vs <code>findBy</code>?</summary>
@@ -336,7 +336,7 @@ client runs. Pure logic is unit-tested without React.
 <details><summary>Why MSW instead of mocking <code>fetch</code> or your API module?</summary>
 
 It intercepts at the network boundary so everything above it — URL building, headers, JSON parsing, error mapping — is
-exercised. The same handlers can back the dev server and tests. It's the frontend equivalent of WireMock.
+exercised. It's the frontend equivalent of WireMock.
 </details>
 
 <details><summary>What do you avoid testing on the frontend?</summary>
@@ -350,8 +350,9 @@ Those tests break on refactors without catching real bugs.
 ## Mastery checklist
 
 - [ ] Vitest + jsdom + RTL + MSW configured; `npm run test:ci` passes in CI.
-- [ ] Board tests: loading → data, empty, error + retry.
-- [ ] Form tests: client validation, server field errors, disabled while submitting.
-- [ ] Role-aware UI test table for all four roles; `atLeast` unit-tested.
-- [ ] One hook test with `renderHook` + fake timers.
+- [ ] Inventory page: loading → data, empty, error + retry.
+- [ ] Adjustment form: client validation, server 400 field error, 409 conflict, disabled while submitting.
+- [ ] Role-aware UI table for all four FlowGrid roles; `can()` unit-tested.
+- [ ] One hook test with `renderHook` + fake timers; one reducer test.
+- [ ] (Week 16) Log-view test with a fake `EventSource`, including a replayed chunk.
 - [ ] I can explain query priority and `get/query/find` without notes.

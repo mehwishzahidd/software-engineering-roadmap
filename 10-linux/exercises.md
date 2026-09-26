@@ -1,6 +1,6 @@
 # Linux Exercises
 
-> Week 19 (+ reuse in Weeks 21–22 on EC2). 24 tasks: skills → incident drills → scripts.
+> Tasks 1–4 in Week 1; 10 and 13 when FlowGrid first deploys (Week 8); everything in Week 14 (ForgeCI). 25 tasks: skills → incident drills → scripts → a ForgeCI drill.
 > For each: **write the commands first, then run them**, then write one sentence on what you learned.
 > Setup helpers use a disposable Ubuntu container unless noted: `docker run -it --rm --name lab ubuntu:24.04 bash`
 > then `apt update && apt install -y curl procps iproute2 lsof dnsutils netcat-openbsd less jq`.
@@ -86,7 +86,7 @@ If it's a container: `docker ps --filter publish=8080`. Prevention: consistent p
 </details>
 
 ### 14. 🚨 Tail the Spring log and count 5xx
-Setup: run TicketHold (or PulseWatch) with access logging, or use `access.log` from #9; for a Spring app log to file
+Setup: run FlowGrid with access logging, or use `access.log` from #9; for a Spring app log to file
 with `--logging.file.name=app.log`. Generate traffic with a loop that includes bad requests.
 Task: (a) follow the log live, highlighting errors; (b) count 5xx responses in the last N lines; (c) show a per-minute 5xx count.
 <details><summary>Reference path</summary>
@@ -98,7 +98,7 @@ tail -n 10000 access.log | awk '$9 ~ /^5[0-9][0-9]$/' | wc -l
 # per minute: timestamp field 4 looks like [01/May/2026:10:07:00 → keep up to minutes
 awk '$9 ~ /^5/ {print substr($4, 2, 17)}' access.log | sort | uniq -c
 # Spring Boot has no access log by default: enable Tomcat's (server.tomcat.accesslog.enabled=true) or log status in a filter.
-# With JSON logs (P4 M4): jq -r 'select(.status >= 500) | .path' app.json | sort | uniq -c
+# With structured JSON logs: jq -r 'select(.status >= 500) | .path' app.json | sort | uniq -c
 ```
 </details>
 
@@ -118,7 +118,7 @@ lsof +L1                               # (or lsof | grep deleted) → tail holds
 ```
 Real-world suspects: `/var/lib/docker` (`docker system df`, `docker image prune -a`, `docker builder prune`), journald
 (`journalctl --vacuum-size`), app logs without rotation, old backups. Prevention: logrotate, Docker log limits
-(`max-size`), retention in `backup-db.sh`, CloudWatch disk alarm (W21).
+(`max-size`), retention in `backup-db.sh`, CloudWatch disk alarm (from Week 8). On a ForgeCI worker the usual culprit is job workspaces and pulled build images — which is why M2 requires cleanup in `finally`.
 </details>
 
 ### 16. 🚨 "The app can't connect to the database"
@@ -136,7 +136,7 @@ Setup: `hello.service` from #7 with `enable` removed (`systemctl disable hello`)
 Task: find that it's not running, why (`systemctl is-enabled`), and fix permanently. Bonus: break `ExecStart` path and read the failure in `journalctl -u hello -b`.
 
 ### 18. 🚨 "Permission denied" on deploy
-Setup: `/opt/pulsewatch` owned by `root:root 755`; as `deploy`, try to write `.env`.
+Setup: `/opt/flowgrid` owned by `root:root 755`; as `deploy`, try to write `.env`.
 Task: fix with the right owner/group and minimal bits (not 777). Make `.env` readable only by `deploy`.
 
 ### 19. 🚨 "The server is slow"
@@ -154,16 +154,43 @@ Task: diagnose with `ssh -v`, then fix permissions on both sides. Know the other
 
 ### 21. 📜 `healthcheck.sh`
 Takes URLs (args or a file with `-f`), prints `UP`/`DOWN` with HTTP status and time for each, exits non-zero if any is DOWN.
-Uses `set -euo pipefail`, a function, `curl -w`, and a timeout (`--max-time 5`). (A tiny PulseWatch in Bash.)
+Uses `set -euo pipefail`, a function, `curl -w`, and a timeout (`--max-time 5`). (A tiny uptime checker — handy for smoke-testing every deploy.)
 
 ### 22. 📜 `backup-db.sh`
-Implement the script from [bash-scripting.md §8](./bash-scripting.md#8-real-script-1--pulsewatch-postgres-backup) against your local Compose Postgres. Schedule with cron every 5 min for testing, check the log, verify retention deletes files, then **restore** into a new database and count rows.
+Implement the script from [bash-scripting.md §8](./bash-scripting.md#8-real-script-1--postgres-backup) against your local Compose Postgres. Schedule with cron every 5 min for testing, check the log, verify retention deletes files, then **restore** into a new database and count rows.
 
 ### 23. 📜 `log-report.sh`
 Given an access log path, print: total requests, 5xx count and %, top 5 paths, top 5 IPs, slowest 5 requests (if your log includes duration). Accept `-n` for top-N via `getopts`.
 
 ### 24. 📜 `deploy.sh` dry run
-Implement [bash-scripting.md §9](./bash-scripting.md#9-real-script-2--deploy-called-by-ci-in-week-22) with a `-n` dry-run flag that prints actions instead of executing them. Simulate a failed health check (point `health_url` at a closed port) and confirm rollback + non-zero exit.
+Implement [bash-scripting.md §9](./bash-scripting.md#9-real-script-2--deploy-with-health-check-and-rollback) with a `-n` dry-run flag that prints actions instead of executing them. Simulate a failed health check (point `health_url` at a closed port) and confirm rollback + non-zero exit.
+
+---
+
+## Part D — ForgeCI drill (Week 14)
+
+### 25. 🚨 "The job exited with 137" — timeout, cancel or OOM?
+Setup: run three containers the way a CI worker would:
+```bash
+docker run -d --name oom  --memory 64m python:3.12-alpine python -c "b = bytearray(512 * 1024 * 1024)"
+docker run -d --name slow alpine:3.20 sleep 600
+docker run -d --name trap alpine:3.20 sh -c 'trap "echo bye; exit 0" TERM; while true; do sleep 1; done'
+sleep 5; docker kill slow; docker stop -t 5 trap
+```
+Task: for each container, report exit code, `OOMKilled`, and how long `stop` took; classify each as *app failure*,
+*timeout/cancel*, or *resource limit*, and say which one ForgeCI's retry policy should retry (hint: none of them are
+infra failures). Explain why `trap` exits 0 while a PID-1 `sleep` needs SIGKILL.
+<details><summary>Reference path</summary>
+
+```bash
+for c in oom slow trap; do
+  docker inspect -f '{{.Name}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' "$c"
+done
+docker logs trap            # "bye" — the shell handled SIGTERM itself
+docker rm -f oom slow trap
+```
+Expected: `oom` 137 + `OOMKilled=true`; `slow` 137 (SIGKILL from `docker kill`); `trap` 0 after a fast graceful stop.
+</details>
 
 ---
 
@@ -182,8 +209,9 @@ Implement [bash-scripting.md §9](./bash-scripting.md#9-real-script-2--deploy-ca
 
 | # | Done | Time | Note |
 |---|---|---|---|
-| 1–12 | - [ ] | | |
-| 13–20 | - [ ] | | |
-| 21–24 | - [ ] | | |
+| 1–12 | ☐ | | |
+| 13–20 | ☐ | | |
+| 21–24 | ☐ | | |
+| 25 | ☐ | | |
 
 Update [trackers/technology-tracker.md](../trackers/technology-tracker.md) (Linux row).

@@ -1,488 +1,231 @@
-# Python for Java Developers
+# Python for Java developers
 
-> Everything here is phrased as "you know X in Java; in Python it's Y". Type every example
-> into `python3` (the REPL) or a file. Python 3.11+.
-
-Related: [README.md](./README.md) · [exercises.md](./exercises.md) · Java reference: [../01-java/README.md](../01-java/README.md)
-
----
-
-## 1. The big differences first
-
-| Topic | Java | Python |
-|---|---|---|
-| Typing | Static, compiled; types checked by `javac` | **Dynamic**, types checked at runtime; optional hints checked by tools (mypy/pyright) |
-| Blocks | `{ }` | **Indentation** (4 spaces) is syntax |
-| Execution | Compile to bytecode, JIT on JVM | CPython compiles to bytecode and **interprets** (no JIT by default) → ~10–50× slower on tight loops |
-| Entry point | `public static void main` | Top-level code runs on import; guard with `if __name__ == "__main__":` |
-| Everything is… | Primitives + objects | **Objects** (ints too), arbitrary-precision `int` (no overflow!) |
-| Null | `null` | `None` |
-| Booleans | `true`/`false`, `&&` `\|\|` `!` | `True`/`False`, `and` `or` `not` |
-| Interfaces | `interface`, explicit `implements` | **Duck typing** ("if it has `.read()`, it's a reader"); `typing.Protocol` / `abc.ABC` when you want structure |
-| Access control | `private`/`protected`/`public` | Convention only: `_internal`, `__mangled` |
-| Concurrency | Real parallel threads | **GIL**: one thread runs Python bytecode at a time (CPython) → threads for I/O, `multiprocessing` for CPU |
-| Packaging | Maven, `pom.xml`, `~/.m2` | `pip` + **venv** per project, `requirements.txt` / `pyproject.toml` |
-| Tests | JUnit 5 | pytest |
+> A translation table for someone whose backend language is Java 21 and whose interview language is Python 3.12.
+> Read once in Week 1 (1–2 h), then come back whenever you catch yourself writing Java in Python.
+> Companion files: [`01-python-core.md`](./01-python-core.md), [`03-pitfalls-and-complexity.md`](./03-pitfalls-and-complexity.md), [`01-java/03-collections-generics.md`](../01-java/03-collections-generics.md), [`03-dsa/java-dsa-toolkit.md`](../03-dsa/java-dsa-toolkit.md).
 
 ---
 
-## 2. Syntax mapping table
+## 1. Side-by-side mapping
 
-| Java | Python |
-|---|---|
-| `int x = 5;` | `x = 5` |
-| `final double RATE = 0.2;` | `RATE = 0.2` (convention: UPPER_CASE means constant) |
-| `String s = "hi";` | `s = "hi"` or `'hi'` |
-| `"Total: " + total` / `String.format` | `f"Total: {total}"`, `f"{price:.2f}"`, `f"{n:>5}"` |
-| `s.length()` | `len(s)` |
-| `s.charAt(i)` | `s[i]`; last char `s[-1]` |
-| `s.substring(1, 4)` | `s[1:4]`; reverse `s[::-1]` |
-| `s.equals(t)` | `s == t` (`==` is value equality; `is` is identity) |
-| `s.toLowerCase()`, `s.strip()`, `s.split(",")` | `s.lower()`, `s.strip()`, `s.split(",")` (keeps trailing empties) |
-| `String.join(",", list)` | `",".join(items)` |
-| `sb.append(x)` in a loop | `parts.append(x)` then `"".join(parts)` |
-| `7 / 2` → 3 | `7 // 2` → 3 (floor division); `7 / 2` → 3.5 |
-| `-7 / 2` → -3 | `-7 // 2` → **-4** (floors, not truncates); `int(-7 / 2)` → -3 |
-| `-7 % 3` → -1 | `-7 % 3` → **2** (sign follows divisor) |
-| `Math.pow(2, 10)` | `2 ** 10` |
-| `Integer.MAX_VALUE` | no limit; use `float("inf")` / `math.inf` for sentinels |
-| `if (a && !b) {} else if (c) {} else {}` | `if a and not b: ... elif c: ... else: ...` |
-| `cond ? a : b` | `a if cond else b` |
-| `for (int i = 0; i < n; i++)` | `for i in range(n):` |
-| `for (int i = n - 1; i >= 0; i--)` | `for i in range(n - 1, -1, -1):` or `reversed(range(n))` |
-| `for (String s : list)` | `for s in items:` |
-| index + value | `for i, s in enumerate(items):` |
-| parallel iteration | `for a, b in zip(xs, ys):` |
-| `while (x > 0) { x--; }` | `while x > 0: x -= 1` (no `++`/`--`) |
-| `switch` | `match value: case 1: ... case _: ...` (3.10+) or `if/elif` |
-| `void f(int a, int b)` | `def f(a: int, b: int) -> None:` |
-| overloading | default & keyword args: `def f(a, b=0, *, verbose=False)` |
-| varargs `int... xs` | `*args`, and `**kwargs` for named |
-| lambda `x -> x * 2` | `lambda x: x * 2` (single expression only) |
-| `throw new IllegalArgumentException("x")` | `raise ValueError("x")` |
-| `try {} catch (E e) {} finally {}` | `try: ... except E as e: ... else: ... finally: ...` |
-| try-with-resources | `with open(path) as f:` |
-| `System.out.println(x)` | `print(x)` |
-| `// comment`, `/** doc */` | `# comment`, `"""docstring"""` |
-| `import java.util.*;` | `import collections` / `from collections import Counter` |
-
-Truthiness: `0`, `0.0`, `""`, `[]`, `{}`, `set()`, `None` are falsy. `if items:` means "non-empty".
-Chained comparisons: `if 0 <= i < n:`.
-
----
-
-## 3. Collections
+### 1.1 Types, variables, operators
 
 | Java | Python | Notes |
 |---|---|---|
-| `ArrayList<T>` | `list` — `[1, 2, 3]` | dynamic array; `append` amortized O(1), `pop()` O(1), `pop(0)`/`insert(0, x)` **O(n)** |
-| `HashMap<K,V>` | `dict` — `{"a": 1}` | insertion-ordered (3.7+) — like `LinkedHashMap` |
-| `HashSet<T>` | `set` — `{1, 2}`; empty set is `set()` (`{}` is a dict!) | |
-| immutable tuple / record key | `tuple` — `(r, c)` | hashable if elements are; use as dict/set keys |
-| `ArrayDeque` | `collections.deque` | O(1) both ends: `append`, `appendleft`, `pop`, `popleft` |
-| `PriorityQueue` | `heapq` on a list | **min-heap** only |
-| `TreeMap` | no built-in; `sorted(d)` or `bisect` on a sorted list | (third-party `sortedcontainers`) |
-| `map.merge(k, 1, Integer::sum)` | `Counter` or `d[k] = d.get(k, 0) + 1` | |
-| `computeIfAbsent(k, x -> new ArrayList<>())` | `defaultdict(list)` | |
+| `int x = 5;` `long`, `short`, `byte` | `x = 5` | one `int`, arbitrary precision; no overflow; no `Integer.MAX_VALUE` concerns |
+| `double`, `float` | `float` | always 64-bit; `math.inf`, `float("nan")` |
+| `boolean` `true`/`false` | `bool` `True`/`False` | `bool` subclasses `int` |
+| `char c = 'a';` | `c = "a"` (1-char `str`) | no char type; `ord`/`chr` |
+| `String s = "hi";` immutable | `s = "hi"` immutable | `+=` creates a new string in both; `StringBuilder` ↔ `list` + `"".join` |
+| `null` | `None` | `x is None`, never `x == None` |
+| `final int N = 3;` | `N = 3` (convention: UPPER_CASE) | no true constants; `typing.Final` for type checkers |
+| `var x = ...` | `x = ...` | Python is dynamically typed; hints are optional |
+| `x / y` (int division if both int) | `x // y` | `/` is always float in Python; `//` floors toward −∞ (Java truncates) |
+| `x % y` sign of dividend | `x % y` sign of divisor | `-7 % 2` → `-1` (Java) vs `1` (Python) |
+| `Math.floorMod(a, b)` | `a % b` | Python's default |
+| `a == b` (primitives) / `a.equals(b)` (objects) | `a == b` | `==` calls `__eq__`; `is` is Java's `==` on references |
+| `(int) 3.9`, `Math.floor` | `int(3.9)`, `math.floor` | `int()` truncates toward zero |
+| `x++`, `++x` | `x += 1` | no `++` |
+| `cond ? a : b` | `a if cond else b` | |
+| `&&`, `\|\|`, `!` | `and`, `or`, `not` | return operands, not just booleans |
+| `Integer.parseInt(s)`, `String.valueOf(n)` | `int(s)`, `str(n)` | |
+| `Integer.toBinaryString(n)` | `bin(n)[2:]`, `f"{n:b}"` | |
+| `Long.MAX_VALUE`, `Integer.MIN_VALUE` | `float("inf")`, `-float("inf")`, or `sys.maxsize` | use `inf` as sentinel |
+| `switch` | `match` (3.10+) or dict dispatch | rarely needed |
 
-```python
-nums = [5, 3, 8]
-nums.append(1); nums.extend([9, 9]); nums.pop(); nums.sort(); nums.sort(reverse=True)
-sorted_copy = sorted(nums)                    # new list; nums.sort() sorts in place and returns None
-nums[0], nums[-1], nums[1:3], nums[::-1]      # indexing, slicing (copies)
-3 in nums                                     # O(n) for lists, O(1) for sets/dicts
-grid = [[0] * cols for _ in range(rows)]      # ✅ NOT [[0] * cols] * rows (same row object repeated!)
+### 1.2 Control flow and functions
 
-ages = {"ana": 31, "bo": 27}
-ages["cy"] = 40
-ages.get("dee", 0)                            # default instead of KeyError
-for name, age in ages.items(): ...
-del ages["bo"]
-"ana" in ages                                 # key membership
+| Java | Python |
+|---|---|
+| `for (int i = 0; i < n; i++)` | `for i in range(n):` |
+| `for (int i = n - 1; i >= 0; i--)` | `for i in range(n - 1, -1, -1):` |
+| `for (T x : xs)` | `for x in xs:` |
+| index + element | `for i, x in enumerate(xs):` |
+| two lists in lockstep | `for a, b in zip(xs, ys):` |
+| `while (cond) { }` | `while cond:` |
+| `do { } while` | `while True: ... if not cond: break` |
+| `break`/`continue` | same; plus `for ... else` |
+| `static int f(int a, int b)` | `def f(a: int, b: int) -> int:` |
+| method overloading | default args / `*args` / `isinstance` checks — no overloading |
+| varargs `int... xs` | `*xs` |
+| named args (none) | `f(b=2, a=1)` keyword arguments |
+| return multiple values (record/array) | `return a, b` (tuple) and `a, b = f()` |
+| lambda `(a, b) -> a + b` | `lambda a, b: a + b` (single expression) |
+| `Function<T,R>`, `Comparator<T>` | any callable; `key=` functions |
+| anonymous inner class / local class | nested `def` (closure) |
+| `static` nested helper | inner function or module-level function |
+| block scope `{ }` | function scope only; loop variables leak |
+| `Optional<T>` | `T \| None` and an `is None` check |
 
-seen = set(); seen.add(3); seen |= {4, 5}; a & b; a - b   # union/intersection/difference
+### 1.3 Collections
 
-point = (3, 4); x, y = point                  # tuple unpacking
-a, b = b, a                                    # swap (no temp)
-first, *rest = [1, 2, 3]                      # first=1, rest=[2, 3]
-```
+| Java | Python | Complexity note |
+|---|---|---|
+| `int[] a = new int[n];` | `a = [0] * n` | list of int objects |
+| `int[][] g = new int[m][n];` | `g = [[0] * n for _ in range(m)]` | never `[[0]*n]*m` |
+| `ArrayList<T>` | `list` | `add` ↔ `append`; `remove(int idx)` ↔ `pop(i)`; `remove(Object)` ↔ `remove(x)`; `size()` ↔ `len()` |
+| `LinkedList`/`ArrayDeque` as queue | `collections.deque` | `offer`/`poll` ↔ `append`/`popleft`; `push`/`pop` ↔ `append`/`pop` |
+| `Stack<T>` / `ArrayDeque` as stack | `list` | `push`/`pop`/`peek` ↔ `append`/`pop`/`[-1]` |
+| `HashMap<K,V>` | `dict` | `getOrDefault(k, d)` ↔ `get(k, d)`; `computeIfAbsent(k, k -> new ArrayList<>())` ↔ `setdefault(k, [])` or `defaultdict(list)`; `merge(k, 1, Integer::sum)` ↔ `d[k] = d.get(k, 0) + 1` / `Counter` |
+| `LinkedHashMap` | `dict` (insertion-ordered) | `OrderedDict` for `move_to_end` (LRU) |
+| `TreeMap<K,V>` | **none built in** | sort + `bisect`, or a heap; `sortedcontainers` (3rd party, not on judges) |
+| `HashSet<T>` | `set` | `contains` ↔ `in`; `add`/`remove` ↔ `add`/`discard` |
+| `TreeSet<T>` | none | sorted list + `bisect` |
+| `PriorityQueue<T>` (min) | `heapq` on a list | `offer`/`poll`/`peek` ↔ `heappush`/`heappop`/`h[0]`; max-heap: negate (Java: `Collections.reverseOrder()`) |
+| `PriorityQueue<>(comparator)` | tuple keys or `__lt__` | no comparator parameter |
+| `Map.Entry`, `Pair` (none) | `tuple` | `(k, v)` |
+| `record Point(int x, int y)` | `@dataclass(frozen=True)` / `namedtuple` | `equals`/`hashCode`/`toString` generated in both |
+| `Collections.sort(list)` / `list.sort(cmp)` | `list.sort(key=...)` | stable in both (Java: TimSort for objects, dual-pivot quicksort for primitives) |
+| `Arrays.sort(arr)` | `arr.sort()` | |
+| `Arrays.fill(a, v)` | `a = [v] * n` / `a[:] = [v] * len(a)` | |
+| `Arrays.asList(...)`, `List.of(...)` | `[...]` / `(...)` | |
+| `Collections.reverse(list)` | `list.reverse()` / `list[::-1]` | |
+| `String.join(",", parts)` | `",".join(parts)` | |
+| `s.charAt(i)`, `s.substring(i, j)`, `s.length()` | `s[i]`, `s[i:j]`, `len(s)` | |
+| `s.toCharArray()` | `list(s)` | |
+| `new String(chars)` | `"".join(chars)` | |
+| `Character.isLetter(c)`, `isDigit` | `c.isalpha()`, `c.isdigit()` | |
+| `Integer.compare(a, b)` | `(a > b) - (a < b)` | only inside `cmp_to_key` |
+| `Collections.max(xs, cmp)` | `max(xs, key=...)` | |
+| `list.stream().filter(...).map(...).collect(toList())` | `[f(x) for x in xs if p(x)]` | comprehensions |
+| `IntStream.range(0, n)` | `range(n)` | |
+| `stream().mapToInt(...).sum()` | `sum(x for x in xs)` | |
+| `Collectors.groupingBy(f)` | `defaultdict(list)` loop or `itertools.groupby` on sorted input | |
+| `Collectors.counting()` | `Counter` | |
+| `anyMatch`/`allMatch` | `any(...)`/`all(...)` | short-circuit |
+| `Iterator<T>`, `hasNext`/`next` | `iter()`, `next(it, default)`; generators with `yield` | |
 
-### Comprehensions (Python's streams)
+### 1.4 Classes and OOP
 
-```python
-squares = [x * x for x in range(10)]
-evens = [x for x in nums if x % 2 == 0]
-by_id = {u["id"]: u for u in users}                       # dict comprehension (toMap)
-merchants = {tx["merchant"] for tx in txs}                 # set comprehension
-total = sum(tx["amount"] for tx in txs if tx["amount"] < 0)   # generator expression: lazy, no list built
-any(x < 0 for x in nums); all(...); max(txs, key=lambda t: t["amount"]); min(..., default=None)
-```
+| Java | Python |
+|---|---|
+| `class Node { int val; Node next; Node(int v) { val = v; } }` | `class Node:` + `def __init__(self, val, next=None): self.val = val; self.next = next` |
+| `this` | `self` (explicit first parameter) |
+| constructor overloading | default arguments / `@classmethod` factories |
+| `private`/`protected`/`public` | convention: `_name` (internal), `__name` (name-mangled); nothing enforced |
+| getters/setters | attributes; `@property` if logic is needed later |
+| `interface Shape { double area(); }` | duck typing; `typing.Protocol` for static checks; `abc.ABC` + `@abstractmethod` for runtime enforcement |
+| `extends`, `super(...)` | `class Dog(Animal):`, `super().__init__(...)` |
+| `@Override` | nothing (just redefine); type checkers warn on signature mismatch |
+| `abstract class` | `abc.ABC` with `@abstractmethod` |
+| `static` field | class attribute (shared) — careful with mutable ones |
+| `static` method | `@staticmethod` / `@classmethod` / module-level function |
+| `toString()` | `__repr__` (debug) / `__str__` (display) |
+| `equals()` + `hashCode()` | `__eq__` + `__hash__` (defining `__eq__` alone → unhashable) |
+| `compareTo()` / `Comparable` | `__lt__` (enough for sort/heap); `functools.total_ordering` fills the rest |
+| `Comparator.comparing(...)` | `key=` function; `cmp_to_key` for pairwise comparators |
+| `instanceof` | `isinstance(x, T)` |
+| `enum` | `enum.Enum` |
+| generics `List<Integer>` | hints `list[int]` (not enforced) |
+| `record` | `@dataclass(frozen=True)` |
+| `Object` | `object` |
+| `Iterable<T>`/`Iterator<T>` | `__iter__`/`__next__`; generators |
+| `AutoCloseable` + try-with-resources | `__enter__`/`__exit__` + `with` |
 
-### `collections` and `heapq`
+### 1.5 Exceptions
 
-```python
-from collections import Counter, defaultdict, deque
-import heapq
+| Java | Python |
+|---|---|
+| `try { } catch (IOException e) { } finally { }` | `try: ... except OSError as e: ... finally: ...` |
+| checked vs unchecked | all unchecked; no `throws` clause |
+| `throw new IllegalArgumentException("...")` | `raise ValueError("...")` |
+| `throw e;` re-throw | `raise` (bare, inside `except`) |
+| `new RuntimeException("x", cause)` | `raise RuntimeError("x") from cause` |
+| `class MyEx extends RuntimeException` | `class MyEx(Exception): pass` |
+| `catch (A \| B e)` | `except (A, B) as e:` |
+| `NullPointerException` | `AttributeError: 'NoneType' object has no attribute ...` |
+| `ArrayIndexOutOfBoundsException` | `IndexError` (note: slices never raise) |
+| `NumberFormatException` | `ValueError` |
+| `ClassCastException` | `TypeError` |
+| `StackOverflowError` | `RecursionError` |
+| `NoSuchElementException` | `KeyError` / `StopIteration` |
+| `try`/`else` (none) | `try: ... except: ... else:` runs when no exception |
 
-Counter("mississippi").most_common(2)          # [('i', 4), ('s', 4)]
-Counter(a) == Counter(b)                        # anagram check
+### 1.6 Packaging, tooling, testing
 
-groups = defaultdict(list)
-for w in words:
-    groups["".join(sorted(w))].append(w)       # group anagrams
-
-q = deque([(0, 0)]); q.append((0, 1)); r, c = q.popleft()   # BFS queue
-
-heap = []
-heapq.heappush(heap, (dist, node))             # tuples compare element by element
-d, node = heapq.heappop(heap)
-heapq.heapify(nums)                             # O(n) in place
-heapq.nlargest(3, nums)                         # top-k
-heapq.heappush(max_heap, -x)                    # max-heap trick: negate
-```
-
----
-
-## 4. Functions
-
-```python
-def summarize(txs: list[dict], *, month: str | None = None, currency: str = "EUR") -> dict[str, float]:
-    """Sum amounts per category. Keyword-only args after `*`."""
-    totals: dict[str, float] = {}
-    for tx in txs:
-        if month and not tx["date"].startswith(month):
-            continue
-        totals[tx["category"]] = totals.get(tx["category"], 0.0) + tx["amount"]
-    return totals
-
-summarize(txs, month="2025-03")
-```
-
-- **Mutable default argument trap:** `def f(items=[])` — the list is created **once** at definition and shared across calls. Use `items=None` then `items = items or []` (or `if items is None: items = []`).
-- Functions are objects: pass them, return them, store them in dicts (`handlers = {"add": add_cmd}`).
-- Closures capture variables; to rebind an outer variable use `nonlocal` (useful in recursive DFS helpers).
-- Parameter passing = "pass by object reference" — same semantics as Java's pass-by-value-of-reference: mutating a passed list is visible; rebinding isn't.
-
----
-
-## 5. Classes and dataclasses
-
-```python
-class Account:
-    interest_rate = 0.01                              # class attribute (like static)
-
-    def __init__(self, owner: str, balance: int = 0) -> None:   # constructor
-        if balance < 0:
-            raise ValueError("negative opening balance")
-        self.owner = owner                            # instance attributes created by assignment
-        self._balance = balance                       # "_" = internal by convention
-
-    @property
-    def balance(self) -> int:                         # read-only property: acct.balance
-        return self._balance
-
-    def deposit(self, cents: int) -> None:            # explicit `self` (Java's implicit `this`)
-        if cents <= 0:
-            raise ValueError("deposit must be positive")
-        self._balance += cents
-
-    def __repr__(self) -> str:                        # toString (debug form)
-        return f"Account(owner={self.owner!r}, balance={self._balance})"
-
-class SavingsAccount(Account):                        # inheritance
-    def deposit(self, cents: int) -> None:
-        super().deposit(cents)
-```
-
-Dunder methods ↔ Java: `__eq__`/`__hash__` ↔ `equals`/`hashCode`; `__lt__` ↔ `compareTo`; `__str__`/`__repr__` ↔ `toString`; `__len__`, `__iter__`, `__contains__`, `__enter__`/`__exit__` ↔ `AutoCloseable`.
-
-### Dataclasses ≈ records
-
-```python
-from dataclasses import dataclass, field
-from datetime import date
-from decimal import Decimal
-
-@dataclass(frozen=True)                   # frozen → immutable + hashable, like a record
-class Transaction:
-    date: date
-    merchant: str
-    amount: Decimal                        # Decimal, not float, for money (same reason as BigDecimal)
-    tags: tuple[str, ...] = ()
-
-    def __post_init__(self):               # like a compact constructor
-        if not self.merchant:
-            raise ValueError("merchant is empty")
-
-@dataclass
-class Budget:
-    category: str
-    limit: Decimal
-    alerts: list[str] = field(default_factory=list)   # never `= []`
-
-tx = Transaction(date(2025, 3, 1), "Coffee", Decimal("-3.50"))
-tx == Transaction(date(2025, 3, 1), "Coffee", Decimal("-3.50"))   # True — generated __eq__
-```
-
----
-
-## 6. Exceptions
-
-```python
-class CsvFormatError(ValueError):
-    def __init__(self, line: int, reason: str):
-        super().__init__(f"line {line}: {reason}")
-        self.line = line
-
-try:
-    amount = Decimal(raw)
-except InvalidOperation as e:               # from decimal import InvalidOperation
-    raise CsvFormatError(line_no, f"bad amount {raw!r}") from e   # `from e` = Java's cause
-else:
-    ok.append(amount)                        # runs only if no exception
-finally:
-    ...
-```
-All exceptions are unchecked. Common built-ins: `ValueError` (≈ IllegalArgumentException),
-`TypeError`, `KeyError` (missing dict key), `IndexError`, `FileNotFoundError`, `RuntimeError`.
-Catch specific ones; never a bare `except:`.
+| Java | Python |
+|---|---|
+| Maven `pom.xml`, `mvn verify` | `pyproject.toml`, `pip install -e ".[dev]" && pytest` |
+| `~/.m2` shared repo | per-project `.venv` (isolation) |
+| `package com.x.y;` + directory | folder with `__init__.py`; `import x.y` |
+| `import java.util.*;` | `from collections import deque` (explicit names) |
+| `public static void main` | `if __name__ == "__main__": main()` |
+| JAR | wheel / sdist (`python -m build`) — rarely needed for tools |
+| JUnit 5 `@Test`, `@ParameterizedTest`, `@BeforeEach` | pytest `def test_*`, `@pytest.mark.parametrize`, fixtures |
+| `assertEquals(exp, act)` | `assert act == exp` (rewritten assertions show values) |
+| `assertThrows(Ex.class, () -> ...)` | `with pytest.raises(Ex): ...` |
+| Mockito | `unittest.mock` / `monkeypatch` / injected fakes |
+| Testcontainers | Testcontainers for Python, or Compose + `integration` marker |
+| `javac` type errors | `mypy` / `pyright` (opt-in, static) |
+| Checkstyle/Spotless | `ruff` / `black` (optional) |
+| SLF4J/Logback | `logging` |
+| Jackson | `json` + dataclasses |
+| JDBC / Spring Data | `psycopg` 3 |
+| `BigDecimal` | `decimal.Decimal` |
+| `ExecutorService`, `CompletableFuture` | `concurrent.futures.ThreadPoolExecutor`, `asyncio` |
+| `synchronized`, `ReentrantLock` | `threading.Lock` (the GIL does not make compound operations atomic) |
 
 ---
 
-## 7. Files, JSON, CSV, pathlib
+## 2. Things Java developers get wrong in Python
 
-```python
-from pathlib import Path
-import csv, json
-
-data_dir = Path("data")
-data_dir.mkdir(parents=True, exist_ok=True)
-path = data_dir / "transactions.csv"            # `/` joins paths
-
-path.write_text("date,merchant,amount\n2025-03-01,Coffee,-3.50\n", encoding="utf-8")
-text = path.read_text(encoding="utf-8")
-
-with path.open(newline="", encoding="utf-8") as f:     # `with` closes the file (try-with-resources)
-    for row in csv.DictReader(f):                        # handles quoted fields correctly
-        print(row["merchant"], row["amount"])
-
-with (data_dir / "clean.csv").open("w", newline="", encoding="utf-8") as f:
-    w = csv.DictWriter(f, fieldnames=["date", "merchant", "amount"])
-    w.writeheader()
-    w.writerow({"date": "2025-03-01", "merchant": "Coffee", "amount": "-3.50"})
-
-cfg = json.loads('{"port": 8080, "debug": false}')      # str -> dict
-print(json.dumps(cfg, indent=2))                         # dict -> str
-with open("cfg.json", "w", encoding="utf-8") as f:
-    json.dump(cfg, f, indent=2)
-
-for p in data_dir.glob("*.csv"): print(p.name, p.stat().st_size)
-for p in Path(".").rglob("*.java"): ...                  # recursive
-```
+1. **Writing getters/setters and `private` fields.** Use plain attributes; add `@property` only when logic appears. `_name` signals "internal".
+2. **Building class hierarchies for everything.** A function, a tuple or a dataclass is usually enough. Interfaces are duck typing; `Protocol` only when a type checker needs it.
+3. **`for i in range(len(xs)): x = xs[i]`.** Iterate directly, or `enumerate` when the index is needed.
+4. **Using `list` as a queue** (`pop(0)`) because `ArrayList` was fine. Use `deque`.
+5. **Expecting `%` and `/` to behave like Java.** `-7 // 2 == -4`, `-7 % 2 == 1`, `7 / 2 == 3.5`.
+6. **Comparing with `is`** as if it were reference equality you want. `==` is what you want; `is` only for `None`.
+7. **Believing type hints are enforced.** `def f(x: int)` accepts a string at runtime. Run `mypy`.
+8. **Expecting `null` checks to throw early.** Passing `None` fails later with `AttributeError`; check at the boundary.
+9. **`Integer.MAX_VALUE` sentinels and overflow guards.** Use `float("inf")`; ints do not overflow (except when a problem simulates 32-bit).
+10. **Looking for `TreeMap`/`TreeSet`.** There is none; use sort + `bisect`, a heap, or restructure.
+11. **Looking for a `PriorityQueue` comparator.** Push tuples `(key, item)` or define `__lt__`.
+12. **Mutable default arguments** (`def f(acc=[])`) — Java has no defaults so the trap is new.
+13. **Mutable class attributes** as "instance fields" (`items = []` in the class body is shared, unlike a Java instance field initializer).
+14. **Overloading methods** — the last `def` wins silently. Use defaults or `*args`.
+15. **Catching `Exception` to "be safe."** Catch the specific exception; let the rest propagate; never bare `except:`.
+16. **Semicolons, braces-like indentation mistakes, `this.`** — Python cares about indentation; `self` is explicit.
+17. **StringBuilder mindset without the join.** `s += c` in a loop is O(n²) worst case; collect and `"".join`.
+18. **Concurrency assumptions.** Threads do not run Python bytecode in parallel (GIL); they do help with I/O. CPU parallelism → processes.
+19. **Forgetting that variables leak from loops and `if` blocks.** No block scope: `for i in ...:` leaves `i` defined.
+20. **`==` on floats and `BigDecimal` habits.** `Decimal("0.1")`, not `Decimal(0.1)`; never construct money from floats.
+21. **Static typing reflexes in interviews:** declaring types for every local costs time. Annotate signatures, keep bodies lean.
+22. **Not using tuples.** `return a, b`, `for k, v in d.items()`, `(r, c)` as keys, `(dist, node)` in heaps — tuples are everywhere.
+23. **Writing `if len(xs) == 0`/`if x == None`/`if flag == True`.** Idioms: `if not xs`, `if x is None`, `if flag`.
+24. **`sorted` vs `sort`:** `xs = xs.sort()` sets `xs` to `None`.
+25. **Slicing everywhere because it's pretty.** Every slice is a copy; in recursion pass indices.
 
 ---
 
-## 8. Typing (type hints)
+## 3. A worked translation
 
-```python
-from typing import Iterable, Protocol
+Java (Two Sum with a HashMap):
 
-def top_merchants(txs: Iterable[Transaction], n: int = 3) -> list[tuple[str, int]]: ...
-maybe: str | None = None                  # Optional[str]
-Grid = list[list[int]]                    # type alias
-
-class Categorizer(Protocol):              # structural interface: anything with this method matches
-    def categorize(self, tx: Transaction) -> str | None: ...
-```
-Hints are **not enforced at runtime**. Run `pip install mypy && mypy src/` to check them
-statically — the closest you'll get to `javac`'s safety net.
-
----
-
-## 9. pytest
-
-```python
-# test_money.py        (files test_*.py, functions test_*)
-import pytest
-from decimal import Decimal
-from ledger import parse_amount
-
-def test_parses_negative():
-    assert parse_amount("-3.50") == Decimal("-3.50")          # plain assert, rich diff on failure
-
-@pytest.mark.parametrize("raw", ["", "abc", "1,2,3"])
-def test_rejects_garbage(raw):
-    with pytest.raises(ValueError):
-        parse_amount(raw)
-
-@pytest.fixture
-def sample_csv(tmp_path):                                      # tmp_path ≈ JUnit @TempDir
-    p = tmp_path / "t.csv"
-    p.write_text("date,merchant,amount\n2025-03-01,Coffee,-3.50\n")
-    return p
-
-def test_import(sample_csv):
-    assert len(import_file(sample_csv)) == 1
-```
-Run: `pytest -q`, `pytest -k rejects`, `pytest -x` (stop at first failure).
-Mapping: `@Test` → `test_` function; `assertEquals` → `assert a == b`; `assertThrows` → `pytest.raises`; `@ParameterizedTest` → `parametrize`; `@BeforeEach` → fixtures.
-
----
-
-## 10. Scripting toolkit
-
-```python
-#!/usr/bin/env python3
-"""Usage: python smoke.py --base-url http://localhost:8080 --timeout 5"""
-import argparse, subprocess, sys
-from pathlib import Path
-import requests
-
-def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Smoke-test an API")
-    parser.add_argument("--base-url", default="http://localhost:8080")
-    parser.add_argument("--timeout", type=float, default=5.0)
-    parser.add_argument("-v", "--verbose", action="store_true")
-    args = parser.parse_args(argv)
-
-    # requests: ALWAYS set a timeout (default is wait forever)
-    r = requests.get(f"{args.base_url}/actuator/health", timeout=args.timeout)
-    if r.status_code != 200 or r.json().get("status") != "UP":
-        print(f"health check failed: {r.status_code} {r.text[:200]}", file=sys.stderr)
-        return 1
-
-    # subprocess: run a command, capture output, fail loudly on non-zero exit
-    out = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
-                         capture_output=True, text=True, check=True)
-    print(f"OK at commit {out.stdout.strip()}")
-    return 0
-
-if __name__ == "__main__":
-    sys.exit(main())
+```java
+public int[] twoSum(int[] nums, int target) {
+    Map<Integer, Integer> seen = new HashMap<>();
+    for (int i = 0; i < nums.length; i++) {
+        int need = target - nums[i];
+        if (seen.containsKey(need)) return new int[]{seen.get(need), i};
+        seen.put(nums[i], i);
+    }
+    throw new IllegalArgumentException("no solution");
+}
 ```
 
-- `requests.post(url, json=payload, headers={"Authorization": f"Bearer {token}"}, timeout=5)`; `r.raise_for_status()` raises on 4xx/5xx.
-- `subprocess.run([...])` with a **list** of args (no shell injection). Avoid `shell=True` with user input.
-- Exit codes matter for CI: `sys.exit(0)` success, non-zero failure.
-- `os.environ.get("API_TOKEN")` for secrets, never hard-code.
-- Logging: `import logging; logging.basicConfig(level=logging.INFO); log = logging.getLogger(__name__)`.
-
----
-
-## 11. DSA in Python — idioms
+Python:
 
 ```python
-# Two Sum (LeetCode 1)
 def two_sum(nums: list[int], target: int) -> list[int]:
     seen: dict[int, int] = {}
     for i, x in enumerate(nums):
-        if target - x in seen:
-            return [seen[target - x], i]
+        need = target - x
+        if need in seen:
+            return [seen[need], i]
         seen[x] = i
-    return []
-
-# Sliding window: longest substring without repeating characters (LeetCode 3)
-def length_of_longest_substring(s: str) -> int:
-    last: dict[str, int] = {}
-    best = left = 0
-    for right, ch in enumerate(s):
-        if last.get(ch, -1) >= left:
-            left = last[ch] + 1
-        last[ch] = right
-        best = max(best, right - left + 1)
-    return best
-
-# BFS on a grid
-from collections import deque
-def shortest_path(grid: list[list[int]]) -> int:
-    rows, cols = len(grid), len(grid[0])
-    q, seen = deque([(0, 0, 0)]), {(0, 0)}
-    while q:
-        r, c, d = q.popleft()
-        if (r, c) == (rows - 1, cols - 1):
-            return d
-        for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < rows and 0 <= nc < cols and grid[nr][nc] == 0 and (nr, nc) not in seen:
-                seen.add((nr, nc))
-                q.append((nr, nc, d + 1))
-    return -1
-
-# Memoized recursion (1-D DP)
-from functools import cache
-@cache
-def climb(n: int) -> int:
-    return n if n <= 2 else climb(n - 1) + climb(n - 2)
-
-# Binary search with the standard library
-import bisect
-i = bisect.bisect_left(sorted_nums, target)   # first index with value >= target
-
-# Sorting with keys (Comparator.comparing(...).thenComparing(...))
-people.sort(key=lambda p: (p.dept, -p.salary, p.name))
+    raise ValueError("no solution")
 ```
 
-| Java habit | Python idiom |
-|---|---|
-| `int[] count = new int[26]; count[c - 'a']++` | `Counter(s)` or `ord(c) - ord('a')` |
-| `Integer.MAX_VALUE` sentinel | `math.inf` |
-| `Arrays.fill(dp, -1)` | `dp = [-1] * n` |
-| Stack via `ArrayDeque` | plain `list`: `append` / `pop` / `stack[-1]` |
-| Queue via `ArrayDeque` | `deque` (never `list.pop(0)` — O(n)) |
-| Max-heap | push negatives |
-| Deep recursion | `sys.setrecursionlimit(10**6)` or iterate — default limit is 1000 |
+What changed: `enumerate` instead of index loop; `in` instead of `containsKey`; no declared array type; `ValueError` instead of a checked/unchecked hierarchy; type hints on the signature only. Same O(n) time, O(n) space — say it either way.
 
-Performance note: Python loops are slow; an O(n) solution in Python is fine for LeetCode limits,
-but O(n²) with n = 10⁵ will time out sooner than in Java.
-
----
-
-## 12. Interview questions
-
-<details><summary>1. What are the main differences between Python and Java?</summary>
-
-Dynamic vs static typing; interpreted (CPython) vs JIT-compiled JVM; indentation-based syntax;
-duck typing vs nominal interfaces; arbitrary-precision ints; the GIL limits CPU parallelism in
-threads; venv/pip vs Maven. Python is faster to write, Java faster to run and safer to refactor at scale.
-</details>
-
-<details><summary>2. List vs tuple?</summary>
-
-List is mutable, tuple immutable. Tuples are hashable (if their elements are), so they can be dict
-keys/set elements — e.g. `(row, col)` coordinates.
-</details>
-
-<details><summary>3. What is the GIL?</summary>
-
-CPython's Global Interpreter Lock lets only one thread execute Python bytecode at a time. Threads
-still help for I/O-bound work (the GIL is released during I/O); for CPU-bound parallelism use
-`multiprocessing` or native extensions. (Free-threaded builds are experimental in 3.13.)
-</details>
-
-<details><summary>4. What is the mutable default argument problem?</summary>
-
-Default values are evaluated once when the function is defined, so `def f(x=[])` shares one list
-across calls. Use `None` as the default and create the list inside.
-</details>
-
-<details><summary>5. What's a virtual environment and why use one?</summary>
-
-An isolated Python installation per project with its own packages, avoiding version conflicts
-between projects — conceptually like each Maven project having its own resolved dependency set.
-</details>
-
-<details><summary>6. How do you handle money in Python?</summary>
-
-`decimal.Decimal` constructed from strings (not floats), explicit quantize/rounding — same reasoning as Java's `BigDecimal`. Or integer cents.
-</details>
-
----
-
-## ✅ Checklist
-
-- [ ] Can translate every row of the §2 table both directions
-- [ ] Know the `//` and `%` sign differences from Java
-- [ ] Used `Counter`, `defaultdict`, `deque`, `heapq`, `bisect`, `@cache`
-- [ ] Wrote a frozen dataclass with `Decimal` and validation
-- [ ] Wrote a CLI with `argparse` + `pathlib`, tested with pytest
-- [ ] Called an API with `requests` + timeout + status handling
+Weekly Java rep: pick one solved Python problem and re-do it in Java to keep `HashMap`/`ArrayDeque`/`PriorityQueue`/`Comparator` fluent — see the "Java rep" block in [`exercises.md`](./exercises.md) and [`03-dsa/java-dsa-toolkit.md`](../03-dsa/java-dsa-toolkit.md).

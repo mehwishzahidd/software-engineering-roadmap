@@ -87,7 +87,7 @@ semi-sync optional). Row-based binlog format is the default. Replica lag means r
 
 - Truthful past scope only (e.g. "the application at my previous role ran on MySQL; I wrote queries and simple migrations").
 - "My deeper, current work is PostgreSQL. I've studied the MySQL/InnoDB differences — clustered PK, REPEATABLE READ default,
-  gap locks, upsert syntax — and ported Ledger's schema to MySQL 8 to check them."
+  gap locks, upsert syntax — and ported FlowGrid's inventory schema to MySQL 8 in a throwaway branch to check them."
 </details>
 
 <details><summary><b>R2. "What would you watch out for migrating a Postgres app to MySQL?"</b></summary>
@@ -107,13 +107,13 @@ semi-sync optional). Row-based binlog format is the default. Replica lag means r
 <details><summary><b>R4. "Why did you choose Postgres over MySQL for your projects?"</b></summary>
 
 - Features I used: `timestamptz`, partial indexes, `RETURNING`, transactional DDL for Flyway migrations, JSONB.
-- Balanced: MySQL is excellent, fast for simple read-heavy workloads, huge ecosystem; either would work for TicketHold.
+- Balanced: MySQL is excellent, fast for simple read-heavy workloads, huge ecosystem; either would work for FlowGrid. LedgerX is where Postgres features mattered most: transactional DDL for Flyway, a trigger making `ledger_entry` append-only, `NUMERIC`, `RETURNING`.
 </details>
 
 ## 4. Practical tasks (live)
 
 - [ ] Run `mysql:8.4` in Docker and connect with the `mysql` client.
-- [ ] Port Ledger's `schema.sql` to MySQL (types, identity → `AUTO_INCREMENT`, quoting) and load sample data.
+- [ ] Port FlowGrid's inventory migrations (warehouses, skus, inventory_levels) to MySQL (types, identity → `AUTO_INCREMENT`, quoting) and load sample data.
 - [ ] Rewrite a Postgres upsert as `ON DUPLICATE KEY UPDATE`.
 - [ ] Run `EXPLAIN` / `EXPLAIN ANALYZE` (8.0.18+) on a report query and add an index.
 - [ ] Show a gap-lock wait with two sessions under REPEATABLE READ.
@@ -208,11 +208,11 @@ extensions) or strict standards behaviour; not as a cache or search engine.
 
 ## 13. Hands-on exercise
 
-**Port Ledger's persistence to MySQL 8 and record the differences.**
+**Port FlowGrid's inventory schema to MySQL 8 (throwaway branch) and record the differences.**
 
 Acceptance criteria:
-- [ ] Ledger's `schema.sql` rewritten for MySQL (`utf8mb4`, `AUTO_INCREMENT`, `DECIMAL(12,2)`, `DATETIME`/`TIMESTAMP` choice justified).
-- [ ] The JDBC repository integration test passes against a MySQL Testcontainer (dedupe via `ON DUPLICATE KEY` or `INSERT IGNORE` with a justified choice).
+- [ ] FlowGrid's inventory migrations rewritten for MySQL (`utf8mb4`, `AUTO_INCREMENT`, `DECIMAL(19,4)`, `DATETIME`/`TIMESTAMP` choice justified, `CHECK (available >= 0)` kept).
+- [ ] The `@DataJpaTest` for inventory levels and the `SELECT … FOR UPDATE` reservation test pass against a MySQL Testcontainer (note gap-lock behaviour under REPEATABLE READ).
 - [ ] A `DIFFERENCES.md` note (in your own practice folder) with ≥ 8 concrete differences hit during the port.
 - [ ] You can explain InnoDB's clustered index in 60 s.
 
@@ -230,8 +230,8 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P1 Ledger (exercise) | Schema port + integration test on MySQL 8 via Testcontainers | |
-| P2 TicketHold (optional) | Swap datasource to MySQL in a branch; note which features break (partial index, `RETURNING`) | |
+| FlowGrid (W8 exercise) | Inventory schema ported to MySQL 8 in a throwaway branch; `@DataJpaTest` + reservation `FOR UPDATE` test on a MySQL Testcontainer; `DIFFERENCES.md` | |
+| LedgerX (thought exercise) | Which ledger guarantees are harder on MySQL: no transactional DDL for Flyway, trigger syntax differences, no `RETURNING`, `DECIMAL` scale handling | |
 
 Main projects use PostgreSQL — state that plainly if asked.
 

@@ -302,7 +302,7 @@ failing test and its target.
 
 **Q29.** What is the difference between `docker compose down` and `down -v`, and which do you
 run before a failure exercise that needs clean state?
-<details><parameter><summary>Answer</summary>
+<details><summary>Answer</summary>
 `down` removes containers and networks; `-v` also removes named volumes (the database data).
 Clean-state exercises use `-v`; never on a stack whose data you need.
 </details>

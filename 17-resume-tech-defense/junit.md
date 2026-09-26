@@ -1,6 +1,6 @@
 # JUnit 5 — Résumé Defense
 
-**Target level:** L3 · **Learned:** Week 2 (basics), Week 12 (deep: Mockito, Spring slices, Testcontainers) · **Version:** JUnit 5 (Jupiter, 5.10+), AssertJ, Mockito 5
+**Target level:** L3 · **Learned:** Week 2 (basics), Week 5 (Mockito, Spring slices, Testcontainers for FlowGrid's concurrency test), Week 12 (failure injection + invariant suites in LedgerX), Week 18 (chaos-style integration tests with Postgres + Redis in ForgeCI) · **Version:** JUnit 5 (Jupiter, 5.10+), AssertJ, Mockito 5
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md)
 
 ---
@@ -22,15 +22,15 @@ and engine: `@Test`, extensions), JUnit Vintage (runs JUnit 3/4 tests on the pla
 <details><summary><b>Q3. How do you test that an exception is thrown?</b></summary>
 
 ```java
-var ex = assertThrows(InvalidRowException.class, () -> parser.parse("x,,y"));
-assertEquals(2, ex.rowNumber());
+var ex = assertThrows(InsufficientStockException.class, () -> reservations.reserve(skuId, warehouseId, 5));
+assertEquals(3, ex.available());
 ```
 Or AssertJ `assertThatThrownBy(...).isInstanceOf(...).hasMessageContaining(...)`.
 </details>
 
 <details><summary><b>Q4. What makes a good unit test?</b></summary>
 
-Fast, isolated, deterministic, one behaviour per test, clear name (`rejectsRowWithMissingAmount`),
+Fast, isolated, deterministic, one behaviour per test, clear name (`rejectsReservationBeyondAvailable`),
 Arrange-Act-Assert structure, asserts on behaviour not implementation details.
 </details>
 
@@ -47,8 +47,8 @@ runners/rules; test classes and methods can be package-private.
 
 ```java
 @ParameterizedTest
-@CsvSource({"STARBUCKS #123, Coffee", "SHELL 44, Fuel"})
-void categorizes(String merchant, String expected) { ... }
+@CsvSource({"RESERVED, PICKING, true", "SHIPPED, RESERVED, false", "PACKED, SHIPPED, true"})
+void transitionAllowed(OrderState from, OrderState to, boolean allowed) { ... }
 ```
 Sources: `@ValueSource`, `@CsvSource`, `@CsvFileSource`, `@MethodSource`, `@EnumSource`. Requires `junit-jupiter-params` (included in `junit-jupiter`).
 </details>
@@ -57,20 +57,20 @@ Sources: `@ValueSource`, `@CsvSource`, `@CsvFileSource`, `@MethodSource`, `@Enum
 
 Stub returns canned answers. Mock also verifies interactions. Fake is a working lightweight
 implementation (in-memory repository). Spy wraps a real object, partially stubbed. Prefer fakes
-for your own interfaces (P1's `InMemoryTransactionRepository`); mocks for boundaries (email/HTTP clients).
+for your own interfaces (FlowGrid's `InMemoryInventoryRepository` for allocation-scoring tests); mocks for boundaries (GitHub API client, Docker client, email).
 </details>
 
 <details><summary><b>Q8. How do you use Mockito with JUnit 5?</b></summary>
 
 ```java
 @ExtendWith(MockitoExtension.class)
-class BookingServiceTest {
-  @Mock SeatRepository seats;
-  @InjectMocks BookingService service;
-  @Test void holdsFreeSeat() {
-    when(seats.findById(1L)).thenReturn(Optional.of(freeSeat()));
-    service.hold(1L, 7L);
-    verify(seats).save(argThat(s -> s.status() == HELD));
+class ReservationServiceTest {
+  @Mock InventoryLevelRepository levels;
+  @InjectMocks ReservationService service;
+  @Test void reservesWhenAvailable() {
+    when(levels.findBySkuAndWarehouse(1L, 7L)).thenReturn(Optional.of(levelWithAvailable(3)));
+    service.reserve(1L, 7L, 2);
+    verify(levels).save(argThat(l -> l.reserved() == 2 && l.available() == 1));
   }
 }
 ```
@@ -86,7 +86,7 @@ Inject `java.time.Clock`; in tests use `Clock.fixed(...)` or a mutable test cloc
 <details><summary><b>Q10. What are <code>@Nested</code>, <code>@DisplayName</code>, <code>@Tag</code>, <code>@TempDir</code>?</b></summary>
 
 `@Nested` groups tests by scenario with shared setup; `@DisplayName` readable names; `@Tag("slow")`
-to include/exclude in builds; `@TempDir Path dir` gives a temp directory cleaned up after the test (great for CSV import tests).
+to include/exclude in builds; `@TempDir Path dir` gives a temp directory cleaned up after the test (great for ForgeCI's workspace-cleanup tests).
 </details>
 
 <details><summary><b>Q11. Explain the test pyramid for a Spring Boot service.</b></summary>
@@ -107,8 +107,10 @@ different combination forces a new context (slower).
 <details><summary><b>R1. "How did you approach testing in your previous roles?"</b></summary>
 
 - Truthful: what existed (e.g. "the team had some JUnit 4 tests; I added tests when fixing bugs") — don't claim TDD culture if there wasn't one.
-- Now: "In my recent projects tests are part of every milestone — Ledger's CSV import has per-row error tests;
-  TicketHold has unit, slice, Testcontainers, and a concurrency test running in CI."
+- Now: "In my recent projects tests are part of every milestone — FlowGrid has unit, slice, Testcontainers
+  and a concurrency test running in CI since Week 4; LedgerX has an invariant suite (every journal transaction
+  sums to zero, balance == sum of entries) plus crash-between-steps tests; ForgeCI has chaos-style integration
+  tests against Postgres + Redis in Testcontainers."
 </details>
 
 <details><summary><b>R2. "How would you test this method?" (they paste a service method)</b></summary>
@@ -125,11 +127,13 @@ different combination forces a new context (slower).
 - Flyway migrations run in the test so schema matches production.
 </details>
 
-<details><summary><b>R4. "How did you prove there's no double-booking?"</b></summary>
+<details><summary><b>R4. "How did you prove there's no double-reservation / no negative balance?"</b></summary>
 
-- TicketHold M5: `ExecutorService` with N threads, `CountDownLatch` to release them simultaneously,
-  all call `hold(sameSeat)`; assert exactly one success and N-1 `OptimisticLockException`/409; repeat in a loop.
-- Mention its limits: probabilistic, so also rely on the DB constraint/`@Version` for correctness.
+- FlowGrid M2: `ExecutorService` with N threads, `CountDownLatch` to release them simultaneously, all
+  reserve the last unit of one SKU; assert exactly one success and N-1 `409 Conflict`; repeat in a loop.
+- LedgerX M2: account with $500, two concurrent $400 transfers → exactly one succeeds, balance never
+  negative, and the invariant suite (sum of entries == balance) still passes afterwards.
+- Mention its limits: probabilistic, so also rely on `SELECT … FOR UPDATE` / `CHECK (balance >= 0)` for correctness.
 </details>
 
 <details><summary><b>R5. "What's code coverage good for? What's a good number?"</b></summary>
@@ -141,8 +145,8 @@ different combination forces a new context (slower).
 ## 4. Practical tasks (live)
 
 - [ ] Write 5 tests for a `Money` value object including `equals` with different scales.
-- [ ] Parameterize a categorization-rule test with `@CsvSource`.
-- [ ] Use `@TempDir` to test a CSV importer end to end.
+- [ ] Parameterize a state-machine transition test (order / reservation / job states) with `@CsvSource`.
+- [ ] Use `@TempDir` to test ForgeCI's workspace creation + cleanup end to end.
 - [ ] Mock a repository with Mockito; verify `save` called once with `ArgumentCaptor`.
 - [ ] Write a `@WebMvcTest` asserting a 400 ProblemDetail for invalid input.
 - [ ] Run one test class and one method from the command line with Maven.
@@ -177,7 +181,8 @@ Too many distinct contexts (different `@MockBean` sets/properties prevent contex
 ## 6. Architecture questions
 
 - How does designing for testability (constructor injection, interfaces at boundaries, injected `Clock`) change your class design?
-- Where do you draw the line between unit and integration test for TeamBoard's authorization rules?
+- Where do you draw the line between unit and integration test for FlowGrid's role rules (ADMIN / OPS_MANAGER / WAREHOUSE_ASSOCIATE / VIEWER)?
+- How do you test a crash *between* two steps (LedgerX M4 fault-injection hook) deterministically, and what does the retry-after-crash test assert?
 - How would you structure tests so CI stays under 5 minutes as the suite grows (tags, Failsafe split, parallel execution)?
 - Contract tests between the React client and the API — worth it for a 1-person project?
 
@@ -236,10 +241,10 @@ Pure glue/getters with no logic; UI behaviour of the React app (use Vitest + RTL
 
 ## 13. Hands-on exercise
 
-**Test Ledger's recurring-transaction detector.**
+**Test LedgerX's reconciliation job (against an in-memory fake repository).**
 
 Acceptance criteria:
-- [ ] ≥ 8 tests covering: monthly pattern detected, amount tolerance, missing month, different merchants, empty input.
+- [ ] ≥ 8 tests covering: all transactions balanced → no findings; one unbalanced transaction flagged with its id; materialized balance drift flagged; a reversal nets the original to zero; empty ledger; scale differences (`2.0` vs `2.00`) not reported as drift.
 - [ ] At least one `@ParameterizedTest` and one `@Nested` group.
 - [ ] Time via injected `Clock`; no `LocalDate.now()` in the class under test.
 - [ ] All tests run in < 1 s with `mvn test`; zero flakiness over `@RepeatedTest(50)` on one case.
@@ -259,10 +264,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P1 Ledger | Unit tests for `Money`, CSV import per-row errors, rules engine (parameterized), JDBC integration test vs local Postgres | |
-| P2 TicketHold | Mockito unit tests, `@WebMvcTest`, `@DataJpaTest` + Testcontainers, concurrency test, CI | |
-| P3 TeamBoard | Backend authorization tests per role | |
-| P4 PulseWatch | Retry/backoff and incident-detection logic tests with injected Clock | |
+| FlowGrid | Mockito unit tests (allocation scoring, state transitions), `@WebMvcTest` (ProblemDetail, 401/403 by role), `@DataJpaTest` + Testcontainers, N-threads-one-unit concurrency test, Idempotency-Key replay test, CI from W4 | |
+| LedgerX | **Invariant suite** (every journal txn sums to zero; balance == sum(entries); `ledger_entry` immutable — UPDATE/DELETE rejected by trigger), $500/$400/$400 concurrency test, idempotency conflict test (same key, different body → 422), crash-between-steps + retry-after-crash tests via a fault-injection hook | |
+| ForgeCI | Webhook signature + duplicate-delivery tests, queue lease / orphan-recovery tests, retry-policy tests (app vs infra failure), Testcontainers Postgres + Redis integration tests, timeout/cancel tests with an injected `Clock` | |
+| FlagForge | Evaluation-engine tests (priority, percentage bucketing determinism), SDK unit tests (stale-if-error, offline mode, defaults) + contract tests against the server | |
 
 ## Where to learn it in this repo
 

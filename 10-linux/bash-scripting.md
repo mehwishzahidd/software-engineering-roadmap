@@ -1,7 +1,7 @@
 # Bash Scripting
 
-> Week 19 · ≈ 2.5 hours. Goal: write small, **safe** automation — a Postgres backup for PulseWatch and a deploy
-> script CI can call — and read other people's scripts without fear. For anything over ~150 lines or with complex
+> The deploy-script pattern (§9) is first needed in **Week 8** (FlowGrid M5 deploy); the full treatment is **Week 14** · ≈ 2.5 hours.
+> Goal: write small, **safe** automation — a Postgres backup and a deploy script CI can call, reused for every project — and read other people's scripts without fear. For anything over ~150 lines or with complex
 > data handling, reach for Python ([19-python/](../19-python/README.md)) instead.
 > Lint every script with **ShellCheck** (`shellcheck script.sh`).
 
@@ -41,7 +41,7 @@ Caveats: `-e` is ignored inside `if` conditions and `&&`/`||` lists; a command e
 ## 2. Variables and quoting
 
 ```bash
-name="pulsewatch"                   # no spaces around =
+name="flowgrid"                   # no spaces around =
 readonly APP_DIR="/opt/${name}"     # constant
 echo "$name" "${name}-api"          # braces when followed by name characters
 today="$(date +%F)"                 # command substitution (prefer $(…) over backticks)
@@ -186,22 +186,22 @@ shift $((OPTIND - 1))          # remaining positional args in "$@"
 
 ---
 
-## 8. Real script #1 — PulseWatch Postgres backup
+## 8. Real script #1 — Postgres backup
 
-Runs on the EC2 host (or any box with Docker), dumps the DB from the Compose `postgres` service, compresses it,
+A reference pattern — adapt names and paths to your project. Runs on a box with Docker, dumps the DB from the Compose `postgres` service, compresses it,
 keeps N days, optionally uploads to S3.
 
 ```bash
 #!/usr/bin/env bash
-# backup-db.sh — dump PulseWatch Postgres, keep N days, optional S3 upload.
+# backup-db.sh — dump a Compose Postgres, keep N days, optional S3 upload.
 # Usage: backup-db.sh [-d backup_dir] [-k keep_days] [-b s3_bucket]
 set -euo pipefail
 IFS=$'\n\t'
 
-backup_dir="/opt/pulsewatch/backups"
+backup_dir="/opt/flowgrid/backups"
 keep_days=7
 s3_bucket=""
-compose_dir="/opt/pulsewatch"
+compose_dir="/opt/flowgrid"
 
 log() { printf '%s [%s] %s\n' "$(date -u +%FT%TZ)" "$1" "${*:2}" >&2; }
 die() { log ERROR "$*"; exit 1; }
@@ -222,7 +222,7 @@ command -v docker > /dev/null || die "docker not installed"
 mkdir -p "$backup_dir"
 
 ts="$(date -u +%Y%m%dT%H%M%SZ)"
-out="${backup_dir}/pulsewatch-${ts}.sql.gz"
+out="${backup_dir}/flowgrid-${ts}.sql.gz"
 tmp="${out}.partial"
 trap 'rm -f "$tmp"' EXIT
 
@@ -243,22 +243,22 @@ if [[ -n "$s3_bucket" ]]; then
 fi
 
 log INFO "deleting local backups older than ${keep_days} days"
-find "$backup_dir" -name 'pulsewatch-*.sql.gz' -type f -mtime +"$keep_days" -print -delete
+find "$backup_dir" -name 'flowgrid-*.sql.gz' -type f -mtime +"$keep_days" -print -delete
 ```
 
 Schedule it (cron, as the `deploy` user — `crontab -e`):
 
 ```cron
 # m h dom mon dow  command
-15 3 * * * /opt/pulsewatch/bin/backup-db.sh -b my-pulsewatch-backups >> /opt/pulsewatch/logs/backup.log 2>&1
+15 3 * * * /opt/flowgrid/bin/backup-db.sh -b my-flowgrid-backups >> /opt/flowgrid/logs/backup.log 2>&1
 ```
 
 (Or a systemd timer.) **A backup you haven't restored is not a backup:** test restore with
-`gunzip -c file.sql.gz | docker compose exec -T postgres psql -U "$USER" -d pulsewatch_restore_test`.
+`gunzip -c file.sql.gz | docker compose exec -T postgres psql -U "$USER" -d flowgrid_restore_test`.
 
 ---
 
-## 9. Real script #2 — deploy (called by CI in Week 22)
+## 9. Real script #2 — deploy with health check and rollback
 
 ```bash
 #!/usr/bin/env bash
@@ -266,7 +266,7 @@ Schedule it (cron, as the `deploy` user — `crontab -e`):
 # Usage: deploy.sh -t <image_tag>
 set -euo pipefail
 
-compose_dir="/opt/pulsewatch"
+compose_dir="/opt/flowgrid"
 health_url="http://localhost:8080/actuator/health"
 tag=""
 
@@ -298,7 +298,7 @@ wait_healthy() {
 }
 
 set_tag "$tag"
-docker compose pull api worker
+docker compose pull api web          # the services built by CI (ForgeCI: api worker ui)
 docker compose up -d --remove-orphans
 
 if wait_healthy; then
@@ -315,7 +315,7 @@ else
 fi
 ```
 
-Assumes `compose.yaml` uses `image: ghcr.io/<you>/pulsewatch-api:${IMAGE_TAG}` ([11-docker/compose.md](../11-docker/compose.md)).
+Assumes `compose.yaml` uses `image: ghcr.io/<you>/flowgrid-api:${IMAGE_TAG}` ([11-docker/compose.md](../11-docker/compose.md)).
 
 ---
 
@@ -383,6 +383,6 @@ Scheduled by cron with output to a log, and I tested a restore into a scratch da
 - [ ] Start every script from the skeleton; explain each line of strict mode.
 - [ ] Parse options with `getopts` and validate inputs.
 - [ ] Use `trap` for cleanup; explain exit codes 0/1/2/127/137/143.
-- [ ] Write `backup-db.sh` for PulseWatch, schedule it, and **test a restore**.
+- [ ] Write `backup-db.sh` for one of my projects, schedule it, and **test a restore**.
 - [ ] Write `deploy.sh` with health-check wait and rollback.
 - [ ] Both scripts pass ShellCheck with zero warnings.

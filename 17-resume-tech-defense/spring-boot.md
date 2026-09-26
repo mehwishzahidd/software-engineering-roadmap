@@ -1,6 +1,6 @@
 # Spring Boot — Résumé Defense
 
-**Target level:** L3 (L4 on DI and transactions) · **Learned:** Weeks 9–12 · **Version:** Spring Boot 3.x (Spring Framework 6, Jakarta EE namespaces, Java 17+ baseline; we use 21)
+**Target level:** L3 (L4 on DI and transactions) · **Learned:** Week 3 intro; Weeks 4–5 (FlowGrid: JPA, validation, errors, security, transactions, testing); Week 10 (propagation pitfalls, LedgerX); Weeks 13/17 (scheduling, caching); Weeks 14–15 (two apps in one multi-module repo, ForgeCI) · **Version:** Spring Boot 3.x (Spring Framework 6, Jakarta EE namespaces, Java 17+ baseline; we use 21)
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md)
 
 ---
@@ -65,7 +65,7 @@ with `new Service(fakeRepo)`; circular dependencies fail fast. Single constructo
 <details><summary><b>Q9. Two beans implement the same interface — what happens?</b></summary>
 
 Injection fails with `NoUniqueBeanDefinitionException`. Resolve with `@Primary`, `@Qualifier("name")`,
-inject `List<Interface>` (all of them — how Ledger-style rule strategies are collected), or `Map<String, Interface>`.
+inject `List<Interface>` (all of them — how FlagForge's rule evaluators and FlowGrid's allocation scorers are collected), or `Map<String, Interface>`.
 </details>
 
 <details><summary><b>Q10. How does <code>@Transactional</code> work, and when doesn't it?</b></summary>
@@ -111,9 +111,12 @@ records. Secrets come from env vars / a secrets manager, never committed.
 <details><summary><b>R1. "You list Spring Boot. What did you build with it, and what was your part?"</b></summary>
 
 - Truthful past scope (e.g. "maintained endpoints in an existing service; I didn't design the architecture").
-- Current: "I built TicketHold on Spring Boot 3 — layered controller/service/repository, JPA + Flyway,
-  JWT security with ORGANIZER/CUSTOMER roles, and ProblemDetail errors."
-- One hard part: seat holds under concurrency (`@Version`, 409 on conflict, concurrency test).
+- Current: "All four of my projects are Spring Boot 3 on Java 21. FlowGrid is the most complete: layered
+  controller/service/repository, JPA + Flyway, JWT security with ADMIN / OPS_MANAGER / WAREHOUSE_ASSOCIATE /
+  VIEWER roles, ProblemDetail errors, a Redis cache and scheduled low-stock alerts. ForgeCI runs as two Boot
+  apps — api and worker — from one Maven reactor."
+- One hard part: reservations under concurrency (`SELECT … FOR UPDATE` vs `@Version`, 409 on conflict,
+  N-threads-one-unit test) — and in LedgerX, `@Transactional` propagation around the idempotency store and lock ordering.
 </details>
 
 <details><summary><b>R2. "What happens when a request hits your controller?" (from the socket to the DB and back)</b></summary>
@@ -132,7 +135,7 @@ records. Secrets come from env vars / a secrets manager, never committed.
 
 <details><summary><b>R4. "How did you secure the API? Why JWT and not sessions?"</b></summary>
 
-- BCrypt passwords, login returns short-lived signed JWT, stateless filter chain, method security for organizer-only endpoints.
+- BCrypt passwords, login returns short-lived signed JWT, stateless filter chain, method security for OPS_MANAGER-only endpoints (stock adjustments, transfers).
 - Trade-off: JWT scales without shared session store but revocation is hard (short expiry, refresh tokens,
   denylist). Sessions are simpler and revocable for a single server-rendered app.
 </details>
@@ -141,7 +144,7 @@ records. Secrets come from env vars / a secrets manager, never committed.
 
 - Unit tests with Mockito for services (no Spring context). `@WebMvcTest` for controllers + `MockMvc`.
   `@DataJpaTest` + Testcontainers Postgres for repositories. A few `@SpringBootTest` end-to-end.
-- Evidence: TicketHold M4 test suite running in GitHub Actions via `mvn verify`.
+- Evidence: FlowGrid's suite running in GitHub Actions via `mvn verify` since W4; LedgerX's invariant suite; ForgeCI's Testcontainers Postgres + Redis integration tests.
 </details>
 
 <details><summary><b>R6. "When did you last use Spring, and what has changed since?"</b></summary>
@@ -153,10 +156,10 @@ records. Secrets come from env vars / a secrets manager, never committed.
 
 ## 4. Practical tasks (live)
 
-- [ ] From start.spring.io, build a CRUD `/api/events` resource with DTO records, validation, and a 404 via ProblemDetail — in 30 minutes.
+- [ ] From start.spring.io, build a CRUD `/api/warehouses` resource with DTO records, validation, and a 404 via ProblemDetail — in 30 minutes.
 - [ ] Add a `@DataJpaTest` with Testcontainers that proves a unique constraint.
-- [ ] Add a `SecurityFilterChain` that permits `/api/auth/**` and requires `ROLE_ORGANIZER` for `POST /api/events`.
-- [ ] Add a `@Scheduled(fixedDelay = ...)` job and `@EnableScheduling`; explain the default single-thread scheduler.
+- [ ] Add a `SecurityFilterChain` that permits `/api/auth/**` and requires `ROLE_OPS_MANAGER` for `POST /api/stock-adjustments`.
+- [ ] Add a `@Scheduled(fixedDelay = ...)` job (FlowGrid's low-stock alert) and `@EnableScheduling`; explain the default single-thread scheduler and what happens with 3 instances.
 - [ ] Expose `/actuator/health` and `/actuator/metrics` only.
 
 ## 5. Debugging questions
@@ -195,9 +198,10 @@ Bidirectional relationships serialised both ways. Root fix: return DTOs, not ent
 ## 6. Architecture questions
 
 - Why layered (controller/service/repository), and what belongs in each layer? Where do transactions live?
-- Where should authorization checks for TeamBoard's per-org roles live — filter, `@PreAuthorize`, or service? Trade-offs.
-- How would you split PulseWatch's API and worker into separate Spring Boot apps sharing a DB? What changes (scheduling, config)?
-- Optimistic vs pessimistic locking for seat holds — when would you switch to `SELECT ... FOR UPDATE`?
+- Where should authorization checks for FlagForge's per-org roles live — filter, `@PreAuthorize`, or service? Trade-offs.
+- ForgeCI runs api and worker as separate Spring Boot apps sharing Postgres + Redis in one Maven reactor. What lives in the shared `core` module, what must never (web layer, docker-java), and how do profiles/config differ?
+- Optimistic vs pessimistic locking for FlowGrid reservations and LedgerX transfers — when would you switch between `@Version` and `SELECT ... FOR UPDATE`?
+- Where does the `@Transactional` boundary sit relative to LedgerX's idempotency store, and why must the stored response be written in the same transaction as the journal entries?
 - How do you make a POST idempotent (Idempotency-Key table with unique constraint + stored response)?
 
 ## 7. Common mistakes
@@ -235,8 +239,8 @@ teams that value convention and hiring pool.
 
 ## 10. When NOT to use it
 
-Tiny single-purpose functions (cold-start/memory cost), CLI tools (P1 Ledger deliberately uses
-plain Java), extremely latency-critical paths where framework overhead matters, or when the team
+Tiny single-purpose functions (cold-start/memory cost), client libraries (the FlagForge Java SDK
+deliberately has no Spring dependency so any app can embed it), extremely latency-critical paths where framework overhead matters, or when the team
 has no Java skills.
 
 ## 11. Trade-offs
@@ -260,14 +264,14 @@ has no Java skills.
 
 ## 13. Hands-on exercise
 
-**Build `HoldService.hold(seatId, userId)` in a fresh app.**
+**Build `ReservationService.reserve(skuId, warehouseId, qty)` in a fresh app.**
 
 Acceptance criteria:
-- [ ] `Seat` entity has `@Version`; hold sets status + expiry in one `@Transactional` method.
-- [ ] Concurrent test: 10 threads hold the same seat → exactly 1 success, 9 get `409 Conflict` (ProblemDetail).
+- [ ] `InventoryLevel` entity; `reserve` locks the row (`@Lock(PESSIMISTIC_WRITE)` → `SELECT … FOR UPDATE`) and moves `qty` from available → reserved in one `@Transactional` method; a second branch does it with `@Version` so you can compare.
+- [ ] Concurrent test: 10 threads reserve the last unit → exactly 1 success, 9 get `409 Conflict` (ProblemDetail).
 - [ ] `@DataJpaTest` runs against Testcontainers PostgreSQL 16.
-- [ ] Unauthenticated call → 401; CUSTOMER role → allowed.
-- [ ] You can explain the SQL Hibernate emits (`UPDATE ... WHERE id=? AND version=?`).
+- [ ] Unauthenticated call → 401; VIEWER → 403; OPS_MANAGER → allowed.
+- [ ] You can explain the SQL Hibernate emits in both variants (`SELECT … FOR UPDATE` vs `UPDATE ... WHERE id=? AND version=?`).
 
 ## 14. Mastery checklist
 
@@ -284,9 +288,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P2 TicketHold | Layered API, JPA + Flyway, Bean Validation, ProblemDetail, JWT + roles, MDC request IDs, Actuator, `@Version`, Idempotency-Key, scheduled hold cleanup, full test pyramid | |
-| P3 TeamBoard | Per-org RBAC (OWNER/ADMIN/MEMBER/VIEWER), status workflow, filters/pagination/search, audit log | |
-| P4 PulseWatch | Scheduled checker worker, Spring Cache + Redis, rate limiting, Micrometer metrics, structured JSON logs | |
+| FlowGrid | Layered API, JPA + Flyway, Bean Validation, ProblemDetail, JWT + 4 roles, MDC request IDs, Actuator, OpenAPI, `@Transactional` + `@Lock(PESSIMISTIC_WRITE)` reservations, Idempotency-Key, `StringRedisTemplate`/Spring Cache for the catalog cache, `@Scheduled` low-stock alerts, Micrometer metrics, structured JSON logs, full test pyramid | |
+| LedgerX | `@Transactional` propagation done deliberately (idempotency row + journal entries in one transaction), `REQUIRES_NEW` for the audit log, isolation-level experiments via `@Transactional(isolation = …)`, transactional outbox + `@TransactionalEventListener`, `@Scheduled` reconciliation and scheduled payments | |
+| ForgeCI | **Two Boot apps (api + worker) in one Maven reactor** sharing `core`; worker: `ApplicationRunner` loop, `ExecutorService` beans, graceful shutdown (`server.shutdown=graceful`, `SmartLifecycle`), docker-java client bean; api: **SSE** via `SseEmitter`, webhook filter verifying HMAC, GitHub OAuth (Spring Security OAuth2 client), Redis pub/sub listener | |
+| FlagForge | Multi-tenant authz (org roles), immutable config versions, evaluation service + Redis snapshot cache (`@Cacheable` vs explicit template — decision recorded), SSE propagation, SDK-key auth filter, rate limiting; Java SDK built *without* Spring | |
 
 ## Where to learn it in this repo
 

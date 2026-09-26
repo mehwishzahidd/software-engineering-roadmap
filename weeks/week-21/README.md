@@ -8,8 +8,8 @@
 |---|---:|---|
 | Project | 28 | Deterministic evaluation engine, server-side eval endpoint, Redis environment snapshots with invalidation, p99 latency measurement |
 | Learning | 7 | Hashing for deterministic bucketing, rule-engine design, Redis snapshot caching, hot-path latency; **C++ basics (≈4 h)** |
-| DSA | 7 | Mixed review — **6 new** + reviews |
-| Interview / review | 3 | Weekly mock, résumé defense, retro |
+| DSA (Python) | 7 | Mixed review — **6 new** + reviews + 1 Java rep |
+| Interview / review | 3 | Weekly mocks (Track A + B), résumé defense, retro |
 
 ---
 
@@ -58,7 +58,7 @@ public final class Bucketing {
 - Use a real MurmurHash3 (Guava `Hashing.murmur3_32_fixed()` or ~30 lines you write and test against known vectors). `String.hashCode()` is stable in practice but is not a specified contract for cross-language SDKs, and its distribution is poor for short keys.
 - A rollout of 25 % serves bucket `< 2500`. Raising it to 50 % keeps every user who was "in" still in — **stickiness** without storing anything.
 - **Interview angle:** "How do you guarantee a user sees the same variation across servers?" — pure function of inputs, no state. "Why 10 000 buckets?" — 0.01 % granularity, and it fits an `int` test table.
-- **Where FlagForge uses this:** `PercentageRule` evaluation; the SDK (M3) must produce the **same** bucket — the contract test asserts it.
+- **Where FlagForge uses this:** `PercentageRule` evaluation; the Java SDK (M3) **and the Python SDK/test client (M3–M4)** must produce the **same** bucket — the shared conformance vectors assert it in JUnit and in `pytest`. Pick a hash with a well-known Python implementation (`mmh3` package, or your own ~30-line pure-Python MurmurHash3 tested against the same vectors).
 
 ### 4.2 The evaluation algorithm
 
@@ -144,9 +144,9 @@ From [`20-cpp-basics/README.md`](../../20-cpp-basics/README.md): compile hello w
 - p99 spikes every ~10 minutes: TTL expiry causes a stampede on the DB — count `SELECT` statements at the spike; single-flight (M4) or jittered TTL fixes it.
 - Two servers disagree on a variation for the same user: compare snapshot `version`; if equal, compare the bucketing input string byte-for-byte (trailing whitespace, Unicode normalization of the user key).
 
-## 7. DSA — Mixed review (6 new)
+## 7. DSA — Mixed review (6 new, Python)
 
-Apply the Week 20 selection rule (two weakest patterns × 2, one stale pattern × 1, one unseen timed Medium). Record `weak` scores in the tracker before choosing. Suggested pool additions for this week (real numbers): Two Pointers 42 (Trapping Rain Water), 11 (Container With Most Water); Prefix Sums 560 (Subarray Sum Equals K), 238 (Product of Array Except Self); Tries 208 (Implement Trie), 211 (Design Add and Search Words); BST 230 (Kth Smallest Element in a BST), 98 (Validate Binary Search Tree); Greedy 55 (Jump Game), 134 (Gas Station); Union-Find 323 (Number of Connected Components — premium; use 547 Number of Provinces if unavailable), 721 (Accounts Merge).
+Apply the Week 20 selection rule (two weakest patterns × 2, one stale pattern × 1, one unseen timed Medium, plus 1 Java rep). All in Python; record `weak` scores in the tracker before choosing. This week's cheatsheet focus ([`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md)): `bisect` for binary-search-on-answer, `heapq` with tuples, `sorted(key=lambda ...)` cost O(n log n). **Java rep:** re-do LeetCode 146 (LRU Cache) in Java with `LinkedHashMap(accessOrder=true)` vs a hand-rolled doubly linked list — it doubles as Track B material (caching). Suggested pool additions for this week (real numbers): Two Pointers 42 (Trapping Rain Water), 11 (Container With Most Water); Prefix Sums 560 (Subarray Sum Equals K), 238 (Product of Array Except Self); Tries 208 (Implement Trie), 211 (Design Add and Search Words); BST 230 (Kth Smallest Element in a BST), 98 (Validate Binary Search Tree); Greedy 55 (Jump Game), 134 (Gas Station); Union-Find 323 (Number of Connected Components — premium; use 547 Number of Provinces if unavailable), 721 (Accounts Merge).
 
 Reviews due: Day-3 of W20 set, Day-7 of W19 graphs/bits, Day-14 of W18 2-D DP, Day-30 of W16 1-D DP + Intervals.
 
@@ -209,7 +209,11 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 
 ## 10. Interview preparation
 
-- **Weekly mock** (Tue): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md); ask for a hashing/design-a-data-structure question (e.g. LRU cache, 146) to connect with this week.
+**Track A (Python coding)**
+- **Weekly coding mock** (Tue, 45 min, Python): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md); ask for a hashing/design-a-data-structure question (e.g. LRU cache, 146 — `OrderedDict` in Python, then the Java rep) to connect with this week.
+
+**Track B (Java / projects / system design)**
+- **Weekly engineering mock** (Sat, 30 min): "walk me through what happens on `/evaluate` when Redis is down" and "how did you measure p99?"
 - **Résumé defense:** Redis and Java — [`17-resume-tech-defense/redis.md`](../../17-resume-tech-defense/redis.md), [`17-resume-tech-defense/java.md`](../../17-resume-tech-defense/java.md); 3 questions each from [`RESUME_INTERVIEW_QUESTIONS.md`](../../RESUME_INTERVIEW_QUESTIONS.md).
 - **System-design prep for W22 mock:** 45 min — practise "design a feature-flag service" with the latency numbers you measured this week; read [`16-interview-prep/system-design-interview.md`](../../16-interview-prep/system-design-interview.md).
 - **Applications:** continue at the junior-ready tier ([`JOB_READINESS.md`](../../JOB_READINESS.md)); FlagForge MVP can now appear on the résumé as "in progress" with honest scope.
@@ -226,11 +230,11 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 | Day | Plan |
 |---|---|
 | **Mon (8 h)** | Learning 2: bucketing + rule-engine design (1) · C++ (1) · Project 4.5: `eval` module, bucketing + vectors · DSA 1.5 |
-| **Tue (8 h)** | Project 5: evaluator + unit tests, snapshot builder · DSA 2 + reviews · Mock 1 h |
+| **Tue (8 h)** | Project 5: evaluator + unit tests, snapshot builder · DSA 2 + reviews · Track A mock 45 min + review |
 | **Wed (8 h)** | Learning 2: Redis snapshot caching + after-commit invalidation (1) · C++ (1) · Project 4.5: cache-aside, invalidation, degrade · DSA 1.5 |
 | **Thu (8 h)** | Project 5: SDK-key auth, `/evaluate`, `/snapshot` ETag, ITs · DSA 2 (timed unseen Medium) · Docs 1: "How evaluation works" |
-| **Fri (5 h)** | Project 3: JMH + k6 runs · C++ (1) · DSA reviews 1 |
-| **Sat (6 h)** | Project 4: failure scenarios, PERFORMANCE.md, tag MVP · C++ (1) · Interview 1: system-design practice |
+| **Fri (5 h)** | Project 3: JMH + k6 runs · C++ (1) · DSA reviews 1 + Java rep (146) |
+| **Sat (6 h)** | Project 4: failure scenarios, PERFORMANCE.md, tag MVP · C++ (1) · Track B mock 30 min + system-design practice 30 min |
 | **Sun (2–3 h)** | End-of-week test · reviews · trackers · plan W22 · rest |
 
 ## 13. End-of-week test
@@ -239,7 +243,7 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 2. Draw the cache-aside race and explain after-commit invalidation plus the remaining window.
 3. State your measured p50/p95/p99 for `/evaluate` at 200 VUs and the breakdown of where the time goes.
 4. In C++: what is RAII; what does `std::unique_ptr` guarantee that a raw pointer does not?
-5. Timed: LeetCode 146 (LRU Cache) in 30 min, explaining the invariants out loud.
+5. Timed, Python: LeetCode 146 (LRU Cache) in 30 min with `OrderedDict` **and** with a hand-written doubly linked list, explaining the invariants out loud.
 
 Pass: 4/5.
 
@@ -254,7 +258,7 @@ Pass: 4/5.
 ## 15. Expected deliverables
 
 - FlagForge `v0.5-mvp`; `docs/PERFORMANCE.md` section 1 with methodology.
-- Trackers: project (M2 + numbers), DSA (6 new with selection reasons + reviews), interview (mock), technology (Redis "cache design + measurement"; C++ "basics"), weekly progress.
+- Trackers: project (M2 + numbers), DSA (6 new in Python with selection reasons + reviews + Java rep), interview (Track A + B mocks), technology (Redis "cache design + measurement"; C++ "basics"), weekly progress.
 
 ## 16. If behind / stretch
 

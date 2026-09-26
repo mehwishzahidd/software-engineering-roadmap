@@ -2,7 +2,8 @@
 
 > **Goal:** when an interviewer sees "JavaScript" on your résumé, you can (1) describe truthfully
 > where you used it in past roles, (2) answer language-level questions from *current* knowledge
-> (ES2022+), and (3) point at code you wrote in this roadmap — the TeamBoard and PulseWatch frontends.
+> (ES2022+), and (3) point at code you wrote in this roadmap — FlowGrid's operations dashboard (W7),
+> ForgeCI's live-log UI (W16) and FlagForge's admin dashboard (W23).
 >
 > **Honesty rule:** describe past work at the level you actually did it ("I maintained form
 > validation and API calls in an existing jQuery/React front end"), never inflate it. Your depth
@@ -14,10 +15,11 @@
 
 | Project | Where JavaScript shows up | What I can point at |
 |---|---|---|
-| **P3 TeamBoard** (W14–18) | React + TS frontend compiles to JS; `fetch`-based typed API client; async loading/error states; token handling | `src/api/client.ts` (wraps `fetch`, attaches `Authorization`, maps non-2xx to typed errors), board view state updates with immutable array ops |
-| **P4 PulseWatch** (W22) | React/TS status dashboard polling the public status API | polling with `setInterval` + cleanup, `AbortController` to cancel in-flight requests, `Promise.allSettled` to load monitors + incidents together |
-| **P4 load test** (W22) | k6 scripts are plain JavaScript | `loadtest/status-page.js` — stages, thresholds, checks |
-| **Week 14 exercises** | Closures, event-loop ordering, promise chains | [`../07-javascript-typescript/exercises.md`](../07-javascript-typescript/exercises.md) |
+| **FlowGrid** M4 (W7) | React + TS dashboard compiles to JS; `fetch`-based typed API client; async loading/error states; JWT handling; search/filter/sort/pagination state | `src/api/client.ts` (wraps `fetch`, attaches `Authorization`, maps ProblemDetail to typed errors), inventory/orders tables updated with immutable array ops, low-stock view polling with `setInterval` + cleanup |
+| **FlowGrid** M5 (W8) | k6 scripts are plain JavaScript | `loadtest/order-create.js` — stages, thresholds, checks, a fresh `Idempotency-Key` per iteration |
+| **ForgeCI** M3 (W16) | Live build logs over **SSE** | `EventSource` with `Last-Event-ID` replay-from-sequence on reconnect, append-only log buffer, close on unmount, `AbortController` for the build-detail fetch |
+| **FlagForge** M4 (W23) | Admin dashboard: rules editor, versions, rollback, audit | forms-heavy state, optimistic updates, `Promise.allSettled` to load flag + versions + audit together |
+| **Week 6 exercises** | Closures, event-loop ordering, promise chains | [`../07-javascript-typescript/exercises.md`](../07-javascript-typescript/exercises.md) |
 
 ## Where to learn it in this repo
 
@@ -133,7 +135,7 @@ Spread `{...o}` / `[...a]` / `Object.assign` copy one level; nested objects are 
 
 - Past role, truthful scope: which app, which part (forms, API calls, UI logic), team size, whether you maintained or created it.
 - Bridge: "I've been away from day-to-day work since <year>, so I rebuilt my fundamentals in modern ES2022+ and TypeScript."
-- Current evidence: TeamBoard frontend — typed API client over `fetch`, auth token handling, optimistic UI; PulseWatch dashboard polling with abort/cleanup.
+- Current evidence: FlowGrid dashboard — typed API client over `fetch`, JWT handling, paginated tables; ForgeCI live-log view over SSE with reconnect/replay; FlagForge admin with optimistic updates.
 - Follow-up they'll ask: "Show me how your API client handles a 401."
 </details>
 
@@ -151,7 +153,7 @@ Narrate: sync first → microtasks (all) → next macrotask. Mention `await` spl
 
 <details><summary><b>R4. "Explain closures with an example from your code."</b></summary>
 
-Debounced search input in TeamBoard issue filter; or `useEffect` cleanup capturing the `AbortController`. Also mention the stale-closure bug in `setInterval` and fix via functional state updates or a ref.
+Debounced SKU search input in FlowGrid's inventory view; or `useEffect` cleanup capturing the `AbortController`/`EventSource`. Also mention the stale-closure bug in `setInterval` and fix via functional state updates or a ref.
 </details>
 
 <details><summary><b>R5. "How is JavaScript different from Java?"</b></summary>
@@ -161,7 +163,7 @@ Dynamic vs static typing; prototypes vs classes; single-threaded event loop vs t
 
 <details><summary><b>R6. "Why is <code>0.1 + 0.2 !== 0.3</code>, and how do you handle money?"</b></summary>
 
-IEEE-754 binary floats. For money: keep amounts as integer minor units (cents) or strings from the API, format with `Intl.NumberFormat`. Tie to Ledger: the backend uses `BigDecimal`; the frontend never does arithmetic on money it doesn't need to.
+IEEE-754 binary floats. For money: keep amounts as integer minor units (cents) or strings from the API, format with `Intl.NumberFormat`. Tie to LedgerX: the backend uses `BigDecimal` and the API returns amounts as strings; the frontend never does arithmetic on money it doesn't need to.
 </details>
 
 ## 4. Practical tasks (doable live)
@@ -214,7 +216,7 @@ Don't block the main thread: chunk work, move to a Web Worker, or do it server-s
 
 <details><summary><b>A3. Polling vs WebSockets vs Server-Sent Events for a status dashboard?</b></summary>
 
-Polling (PulseWatch's choice): simplest, cacheable (Redis-cached status endpoint), fine at 15–30 s intervals. SSE: one-way server push over HTTP. WebSockets: bidirectional, more infra. Choose the simplest that meets freshness needs.
+Polling (FlowGrid's low-stock view): simplest, cacheable (Redis low-stock cache), fine at 15–30 s. SSE (ForgeCI live logs, FlagForge config propagation): one-way server push over plain HTTP, auto-reconnect with `Last-Event-ID`, works through proxies — chosen over WebSockets because the client never needs to send. WebSockets: bidirectional, more infra. Choose the simplest that meets freshness needs.
 </details>
 
 ## 7. Common mistakes
@@ -273,8 +275,8 @@ Polling (PulseWatch's choice): simplest, cacheable (Redis-cached status endpoint
 - **Spring Boot:** JS calls REST endpoints with JSON; must handle CORS (dev) and `ProblemDetail` errors; sends `Authorization: Bearer <jwt>`.
 - **Postgres:** never directly — all data goes through the API; IDs are strings/numbers, timestamps ISO-8601 (`Instant` → `"2026-01-01T10:00:00Z"`).
 - **React/TS:** JS is the runtime; TS types erase to it.
-- **Docker/nginx:** Vite builds static JS bundles served by nginx in the TeamBoard Compose stack.
-- **AWS:** bundles could be served from S3 (+CloudFront); in PulseWatch nginx on EC2 serves them.
+- **Docker/nginx:** Vite builds static JS bundles served by nginx in every project's Compose stack.
+- **AWS:** bundles could be served from S3 (+CloudFront); from FlowGrid onward nginx on EC2 serves them.
 - **CI:** `npm ci && npm run lint && npm test && npm run build` in GitHub Actions.
 
 ## 13. One small hands-on exercise
@@ -296,5 +298,5 @@ Acceptance criteria:
 - [ ] Write debounce, throttle, promiseAll, retry from a blank file
 - [ ] Explain why `fetch` doesn't reject on 500 and show my client's fix
 - [ ] Know the ES2020–ES2024 features I use (`?.`, `??`, `#private`, `at()`, `toSorted`, `structuredClone`)
-- [ ] Can describe past JS work truthfully in 60 seconds and bridge to TeamBoard
+- [ ] Can describe past JS work truthfully in 60 seconds and bridge to FlowGrid / ForgeCI
 - [ ] Diagnose a CORS failure from the Network tab

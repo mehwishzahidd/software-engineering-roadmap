@@ -317,12 +317,12 @@ Two tracks, never mixed (ROADMAP §10): **Track A = coding interview in Python**
 
 | Day | Plan |
 |---|---|
-| **Mon (8 h)** | Learning 2: Testcontainers + Spring Boot 3 service connections · Project 4.5: `AbstractIntegrationTest`, `WebhookToResultIT` · DSA 1.5: 494, 64 |
-| **Tue (8 h)** | Project 5: concurrency ITs (exactly-once, project limit) · DSA 2: 97, 221 + Day-3 reviews · Mock 1 h |
-| **Wed (8 h)** | Learning 2: Compose healthchecks/replicas, GHCR publishing · Project 4.5: `compose.yaml`, `.env.example`, `--scale` test · DSA 1.5: 72 |
-| **Thu (8 h)** | Project 5: failure suite scenarios 1–3 with regression tests · DSA 2: 329 + Day-7 reviews · Docs 1: TESTING.md |
-| **Fri (5 h)** | Project 3: scenarios 4–6, CI image publishing · DSA reviews 1 · Retro 1 |
-| **Sat (7 h)** | Project 5: benchmark matrix, `PERFORMANCE.md` draft, tag `v1.0` · OA sim #2 (90 min) + review (30 min) |
+| **Mon (8 h)** | Learning 2: Testcontainers + Spring Boot 3 service connections · Project 4.5: `AbstractIntegrationTest`, `WebhookToResultIT`, `tools/repogen` · DSA 1.5: 494, 64 (Python) |
+| **Tue (8 h)** | Project 5: concurrency ITs (exactly-once, project limit) · DSA 2: 97, 221 + Day-3 reviews · Track A mock 45 min + review |
+| **Wed (8 h)** | Learning 2: Compose healthchecks/replicas, GHCR publishing, Python tooling patterns · Project 4.5: `compose.yaml`, `.env.example`, `--scale` test, `tools/loadsim` · DSA 1.5: 72 |
+| **Thu (8 h)** | Project 5: failure suite scenarios 1–3 with regression tests · DSA 2: 329 + Day-7 reviews · Docs 1: TESTING.md (incl. tools) |
+| **Fri (5 h)** | Project 3: scenarios 4–6, CI image publishing, `tools/loganalyze` · DSA reviews 1 + Java rep (1143) · Retro 1 |
+| **Sat (7 h)** | Project 5: benchmark matrix via `loadsim`, `PERFORMANCE.md` draft, tag `v1.0` · OA sim #2 (90 min) + review (30 min) · Track B mock 30 min |
 | **Sun (2–3 h)** | End-of-week test · Day-14/30 reviews · trackers · plan W19 · rest |
 
 ## 13. End-of-week test (45 min, closed notes)
@@ -331,9 +331,10 @@ Two tracks, never mixed (ROADMAP §10): **Track A = coding interview in Python**
 2. Explain the exactly-once guarantee of your queue: what makes it *at-least-once*, and which constraint turns duplicate execution into a no-op?
 3. Draw your Compose stack and label every healthcheck and dependency.
 4. Given a benchmark that shows 40 jobs/min with 5 workers and 38 jobs/min with 3, what do you conclude and what would you measure next?
-5. Solve LeetCode 62 (Unique Paths) in 10 min as a warm-up, then 1143 (LCS) in 20 min — both from Week 17, now timed.
+5. In Python: solve LeetCode 62 (Unique Paths) in 10 min as a warm-up, then 1143 (LCS) in 20 min — both from Week 17, now timed. Then explain the `[[0] * n] * m` aliasing bug from memory.
+6. Explain what `tools/loadsim` measures, how it signs webhooks, and what its tests cover.
 
-Pass: 4/5 with confident explanations. Fail → remediation block in W19 Sunday.
+Pass: 5/6 with confident explanations. Fail → remediation block in W19 Sunday.
 
 ## 14. Mastery checklist
 
@@ -343,19 +344,20 @@ Pass: 4/5 with confident explanations. Fail → remediation block in W19 Sunday.
 - [ ] I can bring the whole stack up from a clean clone and scale workers
 - [ ] My CI publishes sha-tagged images and I can say what a rollback is
 - [ ] My benchmark numbers have environment, load, warm-up, percentiles and a bottleneck analysis
-- [ ] I can solve Edit Distance and Interleaving String from a blank file, explaining the transition
+- [ ] I can solve Edit Distance and Interleaving String in Python from a blank file, explaining the transition
+- [ ] I have shipped tested, documented Python tooling (`repogen`, `loadsim`, `loganalyze`) that the benchmark and failure suite actually use
 
 ## 15. Expected deliverables
 
 - ForgeCI `v1.0` tagged; milestone M5 closed; `docs/PERFORMANCE.md`, `docs/TESTING.md` committed.
 - [`trackers/project-tracker.md`](../../trackers/project-tracker.md): M5 row complete, measured numbers pasted with link to report.
-- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md): 7 new + reviews logged.
-- [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md): OA sim #2 score, mock feedback.
-- [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md): Testcontainers, Docker Compose, GitHub Actions moved to "used in production-like setup".
+- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md): 7 new (Python) + reviews + 1 Java rep logged.
+- [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md): OA sim #2 score (Python problems + Java debugging task separately), Track A and Track B mock feedback.
+- [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md): Testcontainers, Docker Compose, GitHub Actions moved to "used in production-like setup"; Python "project tooling with tests".
 - [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md): retro (what broke, what I would do differently).
 
 ## 16. If behind / stretch
 
-**Behind:** keep tests and the Compose stack; drop the deploy job (M6 covers AWS) and reduce the benchmark to one worker count with one honest paragraph. Do not tag `v1.0` without ITs and the failure suite.
+**Behind:** keep tests and the Compose stack; drop the deploy job (M6 covers AWS) and reduce the benchmark to one worker count with one honest paragraph. Keep `repogen` + `loadsim` (they are the benchmark); `loganalyze` may slip to W19. Do not tag `v1.0` without ITs and the failure suite.
 
 **Stretch:** GitHub Actions job matrix running ITs against Postgres 15 and 16; k6 script that fires signed webhooks at 5 rps; per-step timing histogram in the UI.

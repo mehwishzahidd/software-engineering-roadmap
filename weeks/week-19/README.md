@@ -8,8 +8,8 @@
 |---|---:|---|
 | Project | 32 | `needs:` job dependencies, topological scheduling, fan-out/fan-in, fail-fast; AWS deployment of a multi-service app; docs |
 | Learning | 5 | DAGs from DSA to production, Docker-socket security, AWS multi-service deployment, SQS considered vs Redis |
-| DSA | 6 | Advanced Graphs + Bit Manipulation — **7 new** + reviews |
-| Interview / review | 4 | OA simulation #3, weekly mock, **ForgeCI deep-dive rehearsal** |
+| DSA (Python) | 6 | Advanced Graphs + Bit Manipulation — **7 new** + reviews + 1 Java rep |
+| Interview / review | 4 | OA simulation #3 (Track A), weekly mocks (Track A + B), **ForgeCI deep-dive rehearsal** (Track B) |
 
 ---
 
@@ -140,19 +140,21 @@ Draw the topology with SG arrows and the IAM instance-role permissions (CloudWat
 - A fan-in job never starts although all dependencies succeeded. Query `SELECT name, pending_deps, status FROM jobs WHERE build_id = …` — is `pending_deps` stuck at 1 (a double-decrement guard bug?) or 0 with status `PENDING` (enqueue lost)?
 - Deploy works but the UI shows no live logs: SSE through a reverse proxy needs buffering off (`X-Accel-Buffering: no` for nginx) and the security group must allow long-lived connections (it does; check the proxy first).
 
-## 7. DSA — Advanced Graphs + Bit Manipulation (7 new)
+## 7. DSA — Advanced Graphs + Bit Manipulation (7 new, Python)
 
-Guides: [`03-dsa/22-advanced-graphs.md`](../../03-dsa/22-advanced-graphs.md), [`03-dsa/23-bit-manipulation.md`](../../03-dsa/23-bit-manipulation.md).
+Guides: [`03-dsa/22-advanced-graphs.md`](../../03-dsa/22-advanced-graphs.md), [`03-dsa/23-bit-manipulation.md`](../../03-dsa/23-bit-manipulation.md). Cheatsheet: [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) — `heapq` is a **min-heap of tuples** (`(dist, node)`; ties compare the node, so keep it comparable), `defaultdict(list)` adjacency, `float('inf')`, Python ints do not overflow (bit tricks still need masking for "32-bit" problems: `& 0xFFFFFFFF`).
 
 | # | Problem | Pattern note | Time limit |
 |---|---|---|---|
-| 743 | Network Delay Time | Dijkstra with `PriorityQueue<int[]>`; adjacency list | 30 min |
+| 743 | Network Delay Time | Dijkstra with `heapq` of `(dist, node)`; `defaultdict(list)` adjacency | 30 min |
 | 1584 | Min Cost to Connect All Points | Prim's (O(n²) is fine) — MST awareness | 30 min |
-| 787 | Cheapest Flights Within K Stops | Bellman-Ford with k+1 relaxations (Dijkstra breaks with the stop limit — explain why) | 35 min |
-| 136 | Single Number | XOR identity | 10 min |
-| 191 | Number of 1 Bits | `n & (n - 1)` trick; `Integer.bitCount` for comparison | 10 min |
+| 787 | Cheapest Flights Within K Stops | Bellman-Ford with k+1 relaxations over a copied `dist` list (Dijkstra breaks with the stop limit — explain why) | 35 min |
+| 136 | Single Number | XOR identity; `functools.reduce(operator.xor, nums)` | 10 min |
+| 191 | Number of 1 Bits | `n & (n - 1)` trick; `bin(n).count('1')` / `int.bit_count()` for comparison | 10 min |
 | 338 | Counting Bits | `dp[i] = dp[i >> 1] + (i & 1)` | 15 min |
-| 268 | Missing Number | XOR or sum; explain overflow-safety | 10 min |
+| 268 | Missing Number | XOR or Gauss sum; note Python has no overflow — say what you would do in Java | 10 min |
+
+**Java rep (1):** re-do 743 in Java with `PriorityQueue<int[]>` and `Comparator.comparingInt(a -> a[0])` — it keeps Java collections fluent for Track B and it is the same algorithm your DAG scheduler cousin uses. Log under "Java rep", not as new.
 
 Reviews due: Day-3 of W18 2-D DP, Day-7 of W17 Greedy, Day-14 of W16 Intervals/1-D DP, Day-30 of W14 Topological Sort + Union-Find (which you are also using in the project this week — note in the tracker how the production use changed your understanding).
 
@@ -216,9 +218,12 @@ Spec: [`18-projects/forgeci/README.md`](../../18-projects/forgeci/README.md) · 
 
 ## 10. Interview preparation
 
-- **ForgeCI deep-dive rehearsal** (Sat, 2 h): record yourself doing the 12-minute walkthrough per [`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md), then answer 10 questions from [`18-projects/forgeci/interview-questions.md`](../../18-projects/forgeci/interview-questions.md) cold. Watch the recording; note every "um, I think". Redo the weakest 3 answers.
-- **OA simulation #3** (Fri or Sat, 90–120 min): [`OA_PREP.md`](../../OA_PREP.md) — include one graph problem and one buggy-library task ([`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md)).
-- **Weekly mock** (Tue): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md). Target score ≥ 3/4 — the junior-ready criterion.
+**Track A (Python coding)**
+- **OA simulation #3** (Fri, 90–120 min): [`OA_PREP.md`](../../OA_PREP.md) — two Python algorithm problems (include one graph problem) + the Java "existing codebase / failing tests" task from [`21-debugging-code-reading/exercises/buggy-library/`](../../21-debugging-code-reading/exercises/buggy-library/) ([`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md)). Log the two parts separately.
+- **Weekly coding mock** (Tue, 45 min, Python): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md). Target score ≥ 3/4 — the junior-ready criterion in [`JOB_READINESS.md`](../../JOB_READINESS.md).
+
+**Track B (Java / projects / résumé)**
+- **ForgeCI deep-dive rehearsal** (Sat, 2 h): record yourself doing the 12-minute walkthrough per [`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md), then answer 10 questions from [`18-projects/forgeci/interview-questions.md`](../../18-projects/forgeci/interview-questions.md) cold. Watch the recording; note every "um, I think". Redo the weakest 3 answers. Include one answer about the Python tools ("how do you reproduce your benchmark?").
 - **Résumé defense:** AWS and Redis this week — [`17-resume-tech-defense/aws.md`](../../17-resume-tech-defense/aws.md), [`17-resume-tech-defense/redis.md`](../../17-resume-tech-defense/redis.md).
 - **Applications:** with three projects (two deployed, ForgeCI deploying this week) you are at the **junior-role-ready** threshold of [`JOB_READINESS.md`](../../JOB_READINESS.md) — raise weekly application volume to that tier's target and start tracking response rates in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
 - **Recruiter screen** prep: 20 min reading [`16-interview-prep/recruiter-screen.md`](../../16-interview-prep/recruiter-screen.md); update your 60-second "about me" to mention ForgeCI.
@@ -233,20 +238,20 @@ Spec: [`18-projects/forgeci/README.md`](../../18-projects/forgeci/README.md) · 
 
 | Day | Plan |
 |---|---|
-| **Mon (8 h)** | Learning 2: DAG scheduling + parser design · Project 4.5: parser + schema + unit tests · DSA 1.5: 743 |
-| **Tue (8 h)** | Project 5: `DagScheduler` transactional decrement/enqueue, `DagSchedulingIT` · DSA 2: 1584, 136 + reviews · Mock 1 h |
+| **Mon (8 h)** | Learning 2: DAG scheduling + parser design · Project 4.5: parser + schema + unit tests · DSA 1.5: 743 (Python) |
+| **Tue (8 h)** | Project 5: `DagScheduler` transactional decrement/enqueue, `DagSchedulingIT` · DSA 2: 1584, 136 + reviews · Track A mock 45 min + review |
 | **Wed (8 h)** | Learning 2: Docker-socket security, SQS vs Redis · Project 4.5: fail-fast + tests, ADRs · DSA 1.5: 787 |
 | **Thu (8 h)** | Project 5: AWS — budget alarm, IAM, RDS, EC2, Compose, CloudWatch · DSA 2: 191, 338 · Docs 1: SECURITY.md |
-| **Fri (5 h)** | Project 3: deploy job in CI, smoke test via real push, DEPLOYMENT.md · OA sim #3 (counts toward interview hours) · Retro |
-| **Sat (7 h)** | Project 5: UI DAG view, crash test, release `v1.1-dag` · Deep-dive rehearsal 2 h |
-| **Sun (2–3 h)** | End-of-week test · reviews (268 as warm-up) · trackers · plan W20 · rest |
+| **Fri (5 h)** | Project 3: deploy job in CI, smoke test via real push (use `loadsim` for the smoke), DEPLOYMENT.md · OA sim #3 (counts toward interview hours) · Retro |
+| **Sat (7 h)** | Project 5: UI DAG view, crash test, release `v1.1-dag` · Track B deep-dive rehearsal 2 h |
+| **Sun (2–3 h)** | End-of-week test · reviews (268 as warm-up) + Java rep (743) · trackers · plan W20 · rest |
 
 ## 13. End-of-week test
 
 1. Implement Kahn's algorithm on paper for a 6-node graph, then explain how your scheduler differs (event-driven, persisted in-degree).
 2. Given `fail_fast: true` and a failing job with two running siblings and three pending dependents, list every job's final status.
 3. Write the SG rules for api / worker / RDS / Redis from memory.
-4. Why does Dijkstra fail for LeetCode 787, and what did you use instead?
+4. Why does Dijkstra fail for LeetCode 787, and what did you use instead? Write the Bellman-Ford loop in Python from memory (why copy `dist` each round?).
 5. Explain what the Docker socket mount grants and the three hardening measures you applied to step containers.
 
 Pass: 4/5.
@@ -258,13 +263,13 @@ Pass: 4/5.
 - [ ] I can deploy a Compose-based multi-service app to AWS with least-privilege IAM and correct SGs
 - [ ] I can argue Redis vs SQS with concrete trade-offs and a migration path
 - [ ] I can give the ForgeCI deep-dive in 12 minutes without notes and answer "how did you test X?" for every pillar
-- [ ] Dijkstra, Prim, Bellman-Ford(k), XOR tricks — solved independently
+- [ ] Dijkstra, Prim, Bellman-Ford(k), XOR tricks — solved independently in Python; Dijkstra also written in Java with `PriorityQueue`
 
 ## 15. Expected deliverables
 
 - ForgeCI `v1.1-dag` released; live (or on-demand) AWS deployment documented.
 - [`trackers/project-tracker.md`](../../trackers/project-tracker.md): ForgeCI phase closed — hours actually spent vs 170–200 target.
-- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md), [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md) (OA #3, mock, deep-dive self-score), [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md), [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md).
+- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md) (7 Python + Java rep), [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md) (OA #3 split Python/Java parts, Track A mock, Track B deep-dive self-score), [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md), [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md).
 
 ## 16. If behind / stretch
 

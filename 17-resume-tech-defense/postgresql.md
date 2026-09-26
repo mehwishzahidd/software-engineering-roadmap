@@ -1,6 +1,6 @@
 # PostgreSQL — Résumé Defense
 
-**Target level:** L3 · **Learned:** Weeks 5–8 (psql, schema, JDBC, transactions, `EXPLAIN`), Week 10 (Flyway, Docker Compose), Week 21 (RDS), Week 22 (index tuning) · **Version:** PostgreSQL 16
+**Target level:** L3 · **Learned:** Week 3 (`psql`, SQL basics), Week 4 (Flyway, Compose, joins), Week 5 (transactions, isolation, `FOR UPDATE` vs `@Version`), Week 6 (schema, indexes, `EXPLAIN`), Week 8 (RDS), Week 9 (internals, constraints, triggers, MVCC for LedgerX) · **Version:** PostgreSQL 16
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md) · General SQL: [sql.md](./sql.md)
 
 ---
@@ -64,7 +64,7 @@ SERIALIZABLE uses SSI — may abort with `40001`; the app must retry. READ UNCOM
 <details><summary><b>Q9. Row locking options?</b></summary>
 
 `SELECT ... FOR UPDATE` locks rows for modification; `FOR SHARE` weaker; `NOWAIT` errors instead of
-waiting; `SKIP LOCKED` skips locked rows — ideal for job-queue workers (PulseWatch alert jobs).
+waiting; `SKIP LOCKED` skips locked rows — ideal for job-queue workers (LedgerX's outbox relay and scheduled payments; ForgeCI weighed it against a Redis queue).
 </details>
 
 <details><summary><b>Q10. Index types?</b></summary>
@@ -83,7 +83,7 @@ Index Scan, Index Only Scan, Bitmap Heap Scan, Nested Loop/Hash Join/Merge Join,
 
 <details><summary><b>Q12. What is <code>ON CONFLICT</code> and <code>RETURNING</code>?</b></summary>
 
-`INSERT ... ON CONFLICT (bank_ref) DO NOTHING` / `DO UPDATE SET ... = EXCLUDED....` is an atomic upsert
+`INSERT ... ON CONFLICT (delivery_id) DO NOTHING` / `DO UPDATE SET ... = EXCLUDED....` is an atomic upsert
 relying on a unique index. `RETURNING id` returns values from inserted/updated rows in one round trip.
 </details>
 
@@ -99,21 +99,26 @@ externally) reuse connections. Size small: HikariCP's starting formula is `(db_c
 <details><summary><b>R1. "Tell me about your PostgreSQL experience."</b></summary>
 
 - Truthful past (e.g. "queried and occasionally modified tables in an existing Postgres DB; DBAs owned the schema").
-- Current: Ledger (JDBC, atomic import, unique-constraint dedupe, `EXPLAIN`), TicketHold (Flyway, JPA,
-  optimistic locking), PulseWatch on RDS with an `EXPLAIN`-driven composite index on `check_results`.
+- Current: FlowGrid (Flyway, JPA, `SELECT … FOR UPDATE` reservations measured against `@Version`,
+  `EXPLAIN`-driven index on the low-stock query, RDS in W8), LedgerX (append-only `ledger_entry` enforced by
+  trigger + revoked privileges, CHECK constraints, isolation-level experiments, ordered pessimistic locking,
+  materialized balances), ForgeCI (unique `X-GitHub-Delivery` for webhook dedupe, `log_chunks(job_id, seq)`
+  index for SSE replay, `SKIP LOCKED` weighed against the Redis queue).
 </details>
 
-<details><summary><b>R2. "How did you prevent double booking at the database level?"</b></summary>
+<details><summary><b>R2. "How did you prevent double reservation / a negative balance at the database level?"</b></summary>
 
-- `UNIQUE (seat_id)` on bookings (active), `@Version` column → `UPDATE ... WHERE version = ?` affects 0 rows on conflict → 409.
-- Alternative: `SELECT ... FOR UPDATE` (pessimistic) when contention is high; trade-off: waiting/deadlock risk vs retries.
+- FlowGrid: `SELECT … FOR UPDATE` on the `inventory_levels` row, check `available >= qty` and update in the same transaction; `CHECK (available >= 0)` as the last line of defence; measured against `@Version` → `UPDATE ... WHERE version = ?` affecting 0 rows → 409.
+- LedgerX: lock both accounts in ascending id order (deadlock-free), `CHECK (balance >= 0)` on the materialized balance, trigger rejecting UPDATE/DELETE on `ledger_entry`.
+- Trade-off: pessimistic = waiting/deadlock risk but no retries; optimistic = retries under contention (FlowGrid's test showed N-1 retries per burst).
 </details>
 
 <details><summary><b>R3. "Your query got slow as the table grew. Walk me through fixing it."</b></summary>
 
-- PulseWatch story: dashboard query `WHERE monitor_id = ? AND checked_at > now() - interval '24 hours' ORDER BY checked_at DESC`
-  → `EXPLAIN ANALYZE` showed Seq Scan + Sort → `CREATE INDEX CONCURRENTLY ON check_results (monitor_id, checked_at DESC)`
-  → Index Scan, no sort; numbers in README. Plus retention cleanup to bound table size.
+- ForgeCI story: SSE replay query `WHERE job_id = ? AND seq > ? ORDER BY seq` got slow as `log_chunks` grew
+  → `EXPLAIN ANALYZE` showed Seq Scan + Sort → `CREATE INDEX CONCURRENTLY ON log_chunks (job_id, seq)`
+  → Index Scan, no sort; numbers in PERFORMANCE.md. Plus batched retention deletes to bound table size.
+  Same method on FlowGrid's low-stock query and LedgerX's cursor-paginated history.
 </details>
 
 <details><summary><b>R4. "How do you change a schema in production safely?"</b></summary>
@@ -156,7 +161,7 @@ Often an idle-in-transaction session holding locks — set `idle_in_transaction_
 <details><summary><b>D3. "ERROR: deadlock detected".</b></summary>
 
 Two transactions lock rows in opposite order. Postgres aborts one. Fix: consistent lock ordering
-(e.g. sort seat IDs before locking), shorter transactions, retry on `40P01`.
+(e.g. LedgerX locks accounts in ascending id order), shorter transactions, retry on `40P01`.
 </details>
 
 <details><summary><b>D4. Table is huge on disk but has few rows.</b></summary>
@@ -173,11 +178,12 @@ Using `localhost` from inside the app container (should be the service name, e.g
 
 ## 6. Architecture questions
 
-- Optimistic vs pessimistic locking vs SERIALIZABLE + retry for seat booking — which, and why?
-- Using Postgres as a job queue (`SKIP LOCKED`) vs Redis/SQS for PulseWatch alerts.
-- Retention for `check_results`: batched deletes vs time-based partitioning (drop old partitions).
+- Optimistic vs pessimistic locking vs SERIALIZABLE + retry for FlowGrid reservations and LedgerX transfers — which, and why?
+- How does LedgerX make `ledger_entry` append-only *in the database* (trigger raising on UPDATE/DELETE, revoked privileges for the app role), and why not trust the application alone?
+- Using Postgres as a job queue (`SKIP LOCKED`) vs Redis (`BLMOVE`/Streams) vs SQS for ForgeCI — why Redis, and what would make you switch?
+- Retention for ForgeCI `log_chunks` and LedgerX audit rows: batched deletes vs time-based partitioning (drop old partitions).
 - Read replicas on RDS — what consistency issue appears (replication lag) and where would you route reads?
-- When is JSONB appropriate in TeamBoard (e.g. audit event payload) and when is it a design smell?
+- When is JSONB appropriate (FlowGrid/LedgerX audit event payloads, FlagForge rule definitions) and when is it a design smell?
 
 ## 7. Common mistakes
 
@@ -240,8 +246,8 @@ Pure caching/ephemeral counters (Redis), massive write-heavy key-value at global
 **Concurrency and performance lab (PostgreSQL 16 in Docker).**
 
 Acceptance criteria:
-- [ ] Load 1M rows into `check_results` via `generate_series`.
-- [ ] Capture `EXPLAIN (ANALYZE, BUFFERS)` of the dashboard query before and after a composite index; record timings.
+- [ ] Load 1M rows into `log_chunks` via `generate_series`.
+- [ ] Capture `EXPLAIN (ANALYZE, BUFFERS)` of the log-replay query before and after a composite index; record timings.
 - [ ] Reproduce a deadlock with two `psql` sessions, then prevent it with consistent lock ordering.
 - [ ] Implement a worker claim query using `FOR UPDATE SKIP LOCKED` and show two sessions claiming different rows.
 - [ ] Write up findings (≤ 1 page) and explain them aloud in 3 minutes.
@@ -261,10 +267,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P1 Ledger | `schema.sql`, JDBC, atomic import in one transaction, unique-constraint dedupe, `EXPLAIN` + index | |
-| P2 TicketHold | Flyway, JPA on Postgres, `@Version` optimistic locking, Postgres in Compose, Testcontainers | |
-| P3 TeamBoard | Schema from ERD, search/filter queries, audit table | |
-| P4 PulseWatch | RDS PostgreSQL, composite index `check_results(monitor_id, checked_at)`, retention cleanup | |
+| FlowGrid | Flyway migrations, JPA on Postgres, `SELECT … FOR UPDATE` reservations vs `@Version`, N-threads-one-unit test on Testcontainers, `EXPLAIN` + index on inventory/low-stock queries, Postgres in Compose → RDS (W8) | |
+| LedgerX | Double-entry schema (`account`, `ledger_entry`, `journal_txn`), **trigger + revoked privileges making `ledger_entry` append-only**, CHECK constraints, materialized balance with invariant check, isolation-level experiments, ordered locking, cursor pagination, transactional outbox, reconciliation query | |
+| ForgeCI | Unique constraint on `X-GitHub-Delivery` (idempotent webhooks), `log_chunks(job_id, seq)` index for SSE replay, lease/heartbeat columns for orphan recovery, Testcontainers Postgres + Redis | |
+| FlagForge | Immutable flag-config versions (insert-only; rollback = new version), audit history, org/project/environment model | |
 
 ## Where to learn it in this repo
 

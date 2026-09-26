@@ -1,6 +1,6 @@
 # Maven — Résumé Defense
 
-**Target level:** L2 (L3 on dependency conflicts and test phases) · **Learned:** Week 3 (P1 is a Maven project from day one); deepened Week 12 (Surefire/Failsafe in CI) · **Version:** Maven 3.9.x
+**Target level:** L2 (L3 on dependency conflicts and test phases) · **Learned:** Week 2 (every project is a Maven project from day one); deepened Week 5 (Surefire/Failsafe + Testcontainers in CI), Week 14 (ForgeCI multi-module reactor: core + api + worker), Week 22 (publishing the FlagForge SDK as a Maven artifact) · **Version:** Maven 3.9.x
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md)
 
 ---
@@ -98,8 +98,9 @@ inheriting shared config. Reactor builds them in dependency order. `mvn -pl api 
 <details><summary><b>R1. "How was your build set up in your previous role?"</b></summary>
 
 - Describe truthfully what you remember (Maven vs Gradle, CI server, whether you edited the pom or just ran builds).
-- If you only ran builds: say so, then: "Since then I've set up builds myself — Ledger's pom from
-  scratch, and TicketHold uses the Boot parent, Surefire + Failsafe, and `mvn verify` in GitHub Actions."
+- If you only ran builds: say so, then: "Since then I've set up builds myself — FlowGrid's pom on the
+  Boot parent with Surefire + Failsafe and `mvn verify` in GitHub Actions, ForgeCI as a multi-module
+  reactor (core, api, worker), and the FlagForge SDK published as its own artifact with semantic versioning."
 </details>
 
 <details><summary><b>R2. "You get a <code>NoSuchMethodError</code> at runtime but it compiled fine. What's going on?"</b></summary>
@@ -135,7 +136,7 @@ inheriting shared config. Reactor builds them in dependency order. `mvn -pl api 
 - [ ] Add a dependency, then find and explain a transitive conflict with `mvn dependency:tree`.
 - [ ] Configure Failsafe so `*IT` tests run in `mvn verify` but not `mvn test`.
 - [ ] Build an executable JAR (`maven-jar-plugin` manifest `mainClass` or Boot plugin) and run it with `java -jar`.
-- [ ] Run a single test: `mvn -Dtest=CsvImporterTest#rejectsBadDate test`.
+- [ ] Run a single test: `mvn -Dtest=ReservationServiceTest#rejectsBeyondAvailable test`.
 - [ ] Add the Maven Wrapper (`mvn wrapper:wrapper`) and commit it.
 
 ## 5. Debugging questions
@@ -165,7 +166,8 @@ versions, avoid ranges, use the wrapper, and reproduce with a clean `~/.m2` or `
 
 ## 6. Architecture questions
 
-- When would you split Ledger into modules (`ledger-core`, `ledger-cli`, `ledger-jdbc`)? What does it enforce? (Dependency direction: core depends on nothing.)
+- ForgeCI is split into modules (`forgeci-core`, `forgeci-api`, `forgeci-worker`). What does the split enforce? (Dependency direction: core depends on nothing Spring-Web; api and worker depend on core, never on each other; docker-java lives only in the worker.)
+- FlagForge's SDK is a separate artifact consumed by a sample app: what must its pom avoid (Spring, transitive bloat), how do you version it (semver, `sdk-v1.0.0` tags), and how do contract tests in the server module depend on it?
 - How do you share dependency versions across several services (company parent POM vs BOM)?
 - How would you structure the build so integration tests with Testcontainers don't slow down every developer run?
 
@@ -223,13 +225,13 @@ needing aggressive incremental/remote caching (Gradle/Bazel), non-JVM projects.
 
 ## 13. Hands-on exercise
 
-**Build a 2-module Ledger skeleton.**
+**Build a 3-module ForgeCI skeleton.**
 
 Acceptance criteria:
-- [ ] Parent pom (`packaging pom`) with `ledger-core` and `ledger-cli` modules; versions in parent `dependencyManagement`.
-- [ ] `ledger-cli` depends on `ledger-core`; core has no dependency on cli.
-- [ ] `mvn verify` runs unit tests via Surefire and one `*IT` via Failsafe.
-- [ ] `java -jar ledger-cli/target/ledger-cli-*.jar --help` runs.
+- [ ] Parent pom (`packaging pom`) with `forgeci-core`, `forgeci-api`, `forgeci-worker` modules; versions in parent `dependencyManagement`.
+- [ ] api and worker depend on core; core has no dependency on either and no `spring-boot-starter-web`.
+- [ ] `mvn verify` runs unit tests via Surefire and one `*IT` via Failsafe; `mvn -pl forgeci-worker -am package` builds only the worker and what it needs.
+- [ ] `java -jar forgeci-worker/target/forgeci-worker-*.jar` starts (and fails fast with a clear message when Redis is absent).
 - [ ] You can show and explain one transitive dependency using `dependency:tree`.
 
 ## 14. Mastery checklist
@@ -246,9 +248,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P1 Ledger | Hand-written `pom.xml` from Week 3, JUnit 5, executable CLI JAR, Postgres driver `runtime` scope | |
-| P2 TicketHold | Boot parent, Surefire + Failsafe/Testcontainers, `mvn verify` in GitHub Actions, JAR in Dockerfile | |
-| P4 PulseWatch | Maven cache in CI/CD pipeline, image build after tests | |
+| FlowGrid | Boot parent `pom.xml` from W4, Postgres driver `runtime` scope, Surefire + Failsafe/Testcontainers, `mvn verify` in GitHub Actions, JAR built in the multi-stage Dockerfile, Maven cache in the CI/CD pipeline | |
+| LedgerX | Same; JaCoCo report; `-Dtest=` targeted runs of the invariant suite | |
+| ForgeCI | **Multi-module reactor** (`forgeci-core`, `forgeci-api`, `forgeci-worker`): parent `dependencyManagement`, `mvn -pl forgeci-worker -am verify`, two Boot fat JARs → two images, docker-java isolated to the worker | |
+| FlagForge | **SDK as a separate Maven artifact** (`flagforge-sdk`): no Spring dependency, semver, installed to a local repo and consumed by the sample app; contract tests in the server module | |
 
 ## Where to learn it in this repo
 

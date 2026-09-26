@@ -6,10 +6,10 @@
 
 | Block | Hours | Focus |
 |---|---:|---|
-| Project | 28 | React admin dashboard, propagation (publish → Redis pub/sub → SSE → SDKs), stampede protection, Docker/AWS/CI, docs, benchmarks, failure exercises |
+| Project | 28 | React admin dashboard, propagation (publish → Redis pub/sub → SSE → SDKs), stampede protection, Docker/AWS/CI, docs, benchmarks, failure exercises; **Python: `tools/config-validator`, finish `sdk-python/` + `rollout-sim`** |
 | Learning | 5 | Pub/sub invalidation, cache-stampede protection, security review, AWS deploy repetition |
-| DSA | 7 | Timed mixed — **6 new** + reviews |
-| Interview / review | 5 | OA simulation #6, **FlagForge deep-dive rehearsal**, résumé defense complete for all technologies |
+| DSA (Python) | 7 | Timed mixed — **6 new** + reviews + 1 Java rep |
+| Interview / review | 5 | OA simulation #6 (Track A), **FlagForge deep-dive rehearsal** (Track B), résumé defense complete for all technologies |
 
 ---
 
@@ -36,6 +36,7 @@ deployed and are explainable** — the raw material for weeks 24–26.
 | Security review (first pass) | OWASP API Top 10 walk-through for your own endpoints: BOLA (tenant checks), broken auth (SDK keys), excessive data exposure (audit `before/after`), rate limiting, mass assignment | [`05-spring-boot/05-security-jwt.md`](../../05-spring-boot/05-security-jwt.md), [`06-rest-apis/api-design-guide.md`](../../06-rest-apis/api-design-guide.md) |
 | React forms-heavy admin | Rules editor as controlled forms, optimistic UI vs confirm-on-save, `If-Match` 412 handling, tables with pagination, SSE hook for live "version published" banner | [`08-react/03-forms-routing.md`](../../08-react/03-forms-routing.md), [`08-react/04-api-integration-auth.md`](../../08-react/04-api-integration-auth.md), [`08-react/05-architecture-testing.md`](../../08-react/05-architecture-testing.md) |
 | AWS deploy repetition | Same topology as ForgeCI minus workers; CloudWatch alarm on 5xx; budget; teardown script | [`12-aws/deploy-walkthrough.md`](../../12-aws/deploy-walkthrough.md), [`12-aws/cloudwatch.md`](../../12-aws/cloudwatch.md), [`12-aws/cost-safety.md`](../../12-aws/cost-safety.md), [`13-cicd/pipeline-examples.md`](../../13-cicd/pipeline-examples.md) |
+| Python: config validation tool | Reading a rules payload (`json`), typed model (`dataclasses`/`pydantic` optional), detecting overlaps/unreachable rules/invalid ranges, exit codes for CI, `argparse`, `pytest` parametrized cases | [`19-python/04-testing-and-scripting.md`](../../19-python/04-testing-and-scripting.md), [`19-python/02-interview-toolkit.md`](../../19-python/02-interview-toolkit.md) |
 
 ## 4. Concepts to learn
 
@@ -82,9 +83,25 @@ Screens: projects/environments switcher · flag list (search, status, version) �
 
 Checklist to run against FlagForge: every tenant-scoped endpoint has a `CrossTenantAccessIT`; SDK keys hashed, shown once, revocable, scoped to one environment; audit `before/after` never includes secrets; admin API rate-limited per token (Redis `INCR` + `EXPIRE` or a token bucket); CORS restricted to the dashboard origin; security headers; dependency scan in CI (`mvn dependency-check` or GitHub Dependabot alerts enabled).
 
-### 4.5 Deploy in a day
+### 4.5 The configuration validator (`tools/config-validator`)
 
-Order: budget alarm → IAM role → RDS → EC2 (Compose: api, redis, ui via nginx) → CloudWatch logs + 5xx alarm → HTTPS (or IP allow-list) → smoke test (publish from the dashboard, sample app on your laptop sees the change) → teardown script tested. Write `docs/DEPLOYMENT.md` as you go, and time yourself: it is a résumé-defense answer ("I have deployed four Spring Boot systems to AWS; the fourth took a day").
+A Python linter for rule sets, runnable from the dashboard's CI or by hand: `python -m config_validator flag.json` → exit 0 (clean), 1 (warnings), 2 (errors). Checks to implement and test:
+
+| Check | Kind | Example |
+|---|---|---|
+| Percentage outside `0..10000`, duplicate priorities, unknown variation keys | error | `"serve": "onn"` |
+| **Unreachable rule**: a `PERCENTAGE` rule with `10000` (100 %) before other rules, or a `USER` rule whose users are all matched by an earlier `USER` rule | warning | rule 3 never evaluated |
+| **Overlap**: two `ATTRIBUTE` rules with identical predicates serving different variations (first wins silently) | warning | `country IN [DE]` twice |
+| Flag disabled but rules present | info | maybe intended |
+
+- Pure functions over a typed model; `pytest.mark.parametrize` with 15+ cases; `Counter` for duplicate detection; keep it O(rules²) at most (rule sets are tiny).
+- Reuse the same `bucketing-vectors.json` if you add a "preview: which of these sample users hit which rule" mode.
+- **Interview angle (Track B):** "How do you stop someone shipping a bad flag config?" — server-side validation (M1) *and* a CI-runnable linter with semantic checks the server does not do (unreachable/overlap).
+- **Where FlagForge uses this:** dashboard shows validator warnings before publish (call it via a small endpoint or run it in the ui CI against fixtures); `docs/TESTING.md`.
+
+### 4.6 Deploy in a day
+
+Order: budget alarm → IAM role → RDS → EC2 (Compose: api, redis, ui via nginx) → CloudWatch logs + 5xx alarm → HTTPS (or IP allow-list) → smoke test (publish from the dashboard; the Java sample app **and** the Python test client on your laptop both see the change) → teardown script tested. Write `docs/DEPLOYMENT.md` as you go, and time yourself: it is a résumé-defense answer ("I have deployed four Spring Boot systems to AWS; the fourth took a day").
 
 ## 5. Resources
 
@@ -115,9 +132,9 @@ For each of the 10 items write one line: "N/A because…", "covered by test X", 
 - Propagation p99 is 30 s instead of < 1 s: SSE nudges are lost because nginx buffers `text/event-stream` — set `proxy_buffering off` / `X-Accel-Buffering: no`; verify with `curl -N`.
 - Dashboard rules reorder saves wrong priorities: the client sends array index but the server expects explicit `priority`; write the contract down in `docs/API.md` and a test.
 
-## 7. DSA — Timed mixed (6 new)
+## 7. DSA — Timed mixed (6 new, Python)
 
-Selection rule as in Week 20, but **every problem is timed with the OA clock**: Easy 12 min, Medium 25 min, Hard 40 min, no hints before time is up. Log time-to-first-correct-submit. Two-problem "sets" (50 min for two Mediums) simulate OA pacing — do two such sets plus two singles.
+Selection rule as in Week 20, but **every problem is timed with the OA clock** in Python: Easy 12 min, Medium 25 min, Hard 40 min, no hints and no [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) open before time is up. Log time-to-first-correct-submit. Two-problem "sets" (50 min for two Mediums) simulate OA pacing — do two such sets plus two singles. **Java rep:** 207 (Course Schedule) in Java — Kahn's with `ArrayDeque` and `int[] indegree`; you shipped this algorithm in ForgeCI M6, so this rep is also Track B rehearsal.
 
 Pool additions (real numbers): 3 (Longest Substring Without Repeating Characters), 128 (Longest Consecutive Sequence), 155 (Min Stack), 33 (Search in Rotated Sorted Array), 143 (Reorder List), 199 (Binary Tree Right Side View), 207 (Course Schedule), 322 (Coin Change), 57 (Insert Interval), 78 (Subsets).
 
@@ -138,7 +155,9 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 - [ ] AWS: deploy per §4.5; `docs/DEPLOYMENT.md`; teardown script
 - [ ] Benchmarks recorded ([`benchmark-report.md`](../../18-projects/templates/benchmark-report.md)): `/evaluate` p50/p95/p99 at 3 load levels, propagation latency, stampede before/after; `docs/PERFORMANCE.md`
 - [ ] Failure exercises from `failure-engineering.md` with regression tests
-- [ ] Docs: README (what/why/run/demo GIF placeholder), ARCHITECTURE, API, DATABASE, TESTING, SECURITY, DESIGN_DECISIONS (ADRs), PERFORMANCE
+- [ ] Python `tools/config-validator`: checks table above, exit codes, ≥ 15 parametrized `pytest` cases, README; wired into the ui CI against fixture configs
+- [ ] Python `sdk-python/` finished (polling, offline, contract test vs deployed server) and `tools/rollout-sim` result table in `docs/TESTING.md`; `pytest` for all three Python components runs in CI
+- [ ] Docs: README (what/why/run/demo GIF placeholder), ARCHITECTURE, API, DATABASE, TESTING (incl. "Python components" section), SECURITY, DESIGN_DECISIONS (ADRs), PERFORMANCE
 - [ ] Tag `v1.0`; release notes
 
 ### Acceptance summary
@@ -148,6 +167,7 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 - Dashboard covers flags, rules, versions, rollback, audit, keys; rules editor tested.
 - Deployed on AWS with alarms and a tested teardown; CI builds + publishes + (manual) deploys.
 - All docs present; `v1.0` tagged; README honest about scope (segments, scheduled rollouts, TS SDK are ADVANCED/not done).
+- Python components (`sdk-python/`, `tools/rollout-sim`, `tools/config-validator`) each have README, `pyproject.toml`, type hints, green `pytest` in CI, and are referenced from TESTING.md/PERFORMANCE.md where used — **`v1.0` is not tagged without them**.
 
 ### Verification tests
 
@@ -160,7 +180,9 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 | `RulesEditorTest` (RTL) | 3 rules | drag rule 3 to top | priorities 1,2,3 re-assigned; save payload correct |
 | `Publish412Test` (RTL) | stale `If-Match` | save | banner "reload and retry"; no data loss in form |
 | `AdminRateLimitIT` | 100 requests/10 s | | 429 with `Retry-After` |
-| `DeploySmokeTest` (manual, documented) | AWS stack | dashboard publish | laptop sample app logs new value |
+| `DeploySmokeTest` (manual, documented) | AWS stack | dashboard publish | laptop Java sample app and Python client both log the new value |
+| `test_unreachable_rule` / `test_overlap` / `test_exit_codes` (pytest) | fixture configs | validator | expected warnings/errors and exit code |
+| `test_python_contract_vs_deployed` (pytest, opt-in via env var) | deployed server | 50 contexts | Python SDK == server |
 
 ### Failure scenarios to run
 
@@ -181,10 +203,13 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 
 ## 10. Interview preparation
 
-- **FlagForge deep-dive rehearsal** (Sat, 2 h): [`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md) + [`18-projects/flagforge/interview-questions.md`](../../18-projects/flagforge/interview-questions.md). Record; 12 minutes; then 10 cold questions. Compare with the ForgeCI recording from W19 — is the structure tighter?
-- **OA simulation #6** (Fri, 90–120 min): [`OA_PREP.md`](../../OA_PREP.md) with a repo-modification drill from [`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md).
-- **Weekly coding mock** (Tue): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md).
-- **Résumé defense — completion gate:** by Sunday every technology in [`RESUME_TECH_DEFENSE.md`](../../RESUME_TECH_DEFENSE.md)'s matrix (Java, Spring Boot, PostgreSQL, MySQL, REST, React, TypeScript, JavaScript, Docker, AWS, Redis, Git, GitHub, Maven, JUnit, CI/CD, Linux) has been drilled with [`RESUME_INTERVIEW_QUESTIONS.md`](../../RESUME_INTERVIEW_QUESTIONS.md) and has a "which project proves it" line. This week's remaining gaps are typically MySQL ([`17-resume-tech-defense/mysql.md`](../../17-resume-tech-defense/mysql.md) — the Postgres diff), Linux ([`17-resume-tech-defense/linux.md`](../../17-resume-tech-defense/linux.md)), TypeScript ([`17-resume-tech-defense/typescript.md`](../../17-resume-tech-defense/typescript.md)), GitHub ([`17-resume-tech-defense/github.md`](../../17-resume-tech-defense/github.md)).
+**Track A (Python coding)**
+- **OA simulation #6** (Fri, 90–120 min): [`OA_PREP.md`](../../OA_PREP.md) — two Python problems as a timed set + the Java repo-modification drill from [`21-debugging-code-reading/drills.md`](../../21-debugging-code-reading/drills.md) on [`buggy-library`](../../21-debugging-code-reading/exercises/buggy-library/).
+- **Weekly coding mock** (Tue, 45 min, Python): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md).
+
+**Track B (Java / projects / résumé)**
+- **FlagForge deep-dive rehearsal** (Sat, 2 h): [`16-interview-prep/project-deep-dive.md`](../../16-interview-prep/project-deep-dive.md) + [`18-projects/flagforge/interview-questions.md`](../../18-projects/flagforge/interview-questions.md). Record; 12 minutes; then 10 cold questions, including "what does the Python side of the project do and why is it not just a script?". Compare with the ForgeCI recording from W19 — is the structure tighter?
+- **Résumé defense — completion gate:** by Sunday every technology in [`RESUME_TECH_DEFENSE.md`](../../RESUME_TECH_DEFENSE.md)'s matrix (Java, Spring Boot, PostgreSQL, MySQL, REST, React, TypeScript, JavaScript, Docker, AWS, Redis, Git, GitHub, Maven, JUnit, CI/CD, Linux, **Python**) has been drilled with [`RESUME_INTERVIEW_QUESTIONS.md`](../../RESUME_INTERVIEW_QUESTIONS.md) and has a "which project proves it" line. This week's remaining gaps are typically MySQL ([`17-resume-tech-defense/mysql.md`](../../17-resume-tech-defense/mysql.md) — the Postgres diff), Linux ([`17-resume-tech-defense/linux.md`](../../17-resume-tech-defense/linux.md)), TypeScript ([`17-resume-tech-defense/typescript.md`](../../17-resume-tech-defense/typescript.md)), GitHub ([`17-resume-tech-defense/github.md`](../../17-resume-tech-defense/github.md)), Python ([`17-resume-tech-defense/python.md`](../../17-resume-tech-defense/python.md) — proven by the four projects' `tools/` and `sdk-python/`, plus daily DSA).
 - **Behavioral:** story bank should have ≥ 8 stories; add "a time I cut scope" from this week ([`16-interview-prep/behavioral.md`](../../16-interview-prep/behavioral.md)).
 - **Applications:** with four projects, move to the higher volume band in [`JOB_READINESS.md`](../../JOB_READINESS.md); update the résumé with FlagForge `v1.0` **only with measured numbers**.
 
@@ -199,11 +224,11 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 | Day | Plan |
 |---|---|
 | **Mon (8 h)** | Learning 2: pub/sub invalidation + stampede protection · Project 4.5: propagation path, subscriber, SSE nudge · DSA 1.5 (timed set) |
-| **Tue (8 h)** | Project 5: single-flight + Redis lock, before/after measurement · DSA 2 + reviews · Mock 1 h |
-| **Wed (8 h)** | Learning 2: OWASP API Top 10 applied · Project 4.5: dashboard — flags, detail, rules editor · DSA 1.5 |
-| **Thu (8 h)** | Project 5: dashboard — versions/rollback/audit/keys, SSE banner, RTL tests · DSA 2 (timed set) · Docs 1: SECURITY.md |
-| **Fri (5 h)** | Project 3: AWS deploy in a day (start) · OA sim #6 · DSA reviews |
-| **Sat (7 h)** | Project 4: finish deploy, smoke test, benchmarks, docs set, `v1.0` · Deep-dive rehearsal 2 h · résumé-defense gaps 1 h |
+| **Tue (8 h)** | Project 5: single-flight + Redis lock, before/after measurement · DSA 2 + reviews · Track A mock 45 min + review |
+| **Wed (8 h)** | Learning 2: OWASP API Top 10 applied, validator design · Project 4.5: dashboard — flags, detail, rules editor; `tools/config-validator` core + tests · DSA 1.5 |
+| **Thu (8 h)** | Project 5: dashboard — versions/rollback/audit/keys, SSE banner, RTL tests; finish `sdk-python/` polling · DSA 2 (timed set) · Docs 1: SECURITY.md |
+| **Fri (5 h)** | Project 3: AWS deploy in a day (start); `rollout-sim` table into TESTING.md · OA sim #6 · DSA reviews + Java rep (207) |
+| **Sat (7 h)** | Project 4: finish deploy, smoke test (Java + Python clients), benchmarks, docs set, `v1.0` · Track B deep-dive rehearsal 2 h · résumé-defense gaps 1 h |
 | **Sun (2–3 h)** | End-of-week test · reviews · trackers · plan W24 · rest |
 
 ## 13. End-of-week test
@@ -212,9 +237,10 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 2. Implement single-flight from memory (≤ 15 lines) and explain the cross-instance extension.
 3. Name five OWASP API Top 10 items and how FlagForge addresses each.
 4. State the measured p99 evaluation latency and propagation latency, with load and environment.
-5. Timed OA set: two Mediums in 50 min from the pool above.
+5. Timed OA set (Python): two Mediums in 50 min from the pool above.
+6. Given a rules payload on paper, find the unreachable rule and the overlap by hand, then say how the validator detects each.
 
-Pass: 4/5.
+Pass: 5/6.
 
 ## 14. Mastery checklist
 
@@ -223,15 +249,16 @@ Pass: 4/5.
 - [ ] I can build a forms-heavy React admin with optimistic-concurrency handling and tests
 - [ ] I can run an OWASP API Top 10 review on my own code
 - [ ] I can deploy a Spring Boot + React + Redis + Postgres system to AWS in a day, with alarms and teardown
-- [ ] I can deliver the FlagForge deep-dive in 12 minutes and defend every résumé technology
+- [ ] I can deliver the FlagForge deep-dive in 12 minutes and defend every résumé technology, including Python via the project tooling
+- [ ] I can write a small Python linter with parametrized tests and CI exit codes
 
 ## 15. Expected deliverables
 
-- FlagForge `v1.0`; deployed; docs set; `docs/PERFORMANCE.md` with three measured tables.
-- Trackers: project (FlagForge phase closed; hours vs 100–120 target), DSA (6 timed + reviews), interview (OA #6, mock, deep-dive self-score, résumé-defense matrix complete), technology, weekly progress.
+- FlagForge `v1.0`; deployed; docs set; `docs/PERFORMANCE.md` with three measured tables; three Python components tested and documented.
+- Trackers: project (FlagForge phase closed; hours vs 100–120 target), DSA (6 timed in Python + reviews + Java rep), interview (OA #6 split, Track A mock, Track B deep-dive self-score, résumé-defense matrix complete incl. Python), technology, weekly progress.
 
 ## 16. If behind / stretch
 
-**Behind:** dashboard without the audit tab and SDK-key screen (API still works); keep propagation, stampede protection, deploy and docs — they are the engineering story. If AWS slips, deploy in W24 and say so in the README.
+**Behind:** dashboard without the audit tab and SDK-key screen (API still works); keep propagation, stampede protection, deploy and docs — they are the engineering story. The validator can shrink to errors + unreachable-rule detection (skip overlap). If AWS slips, deploy in W24 and say so in the README.
 
 **Stretch (ADVANCED tier, only after `v1.0`):** segments (reusable rule groups), scheduled rollouts (percentage ramps over time — reuse LedgerX's scheduling), TypeScript SDK from the conformance vectors.

@@ -2,11 +2,13 @@
 
 > **Goal:** defend "Redis" with truthful past context and current Redis 7 competence: data types,
 > TTL and eviction, cache-aside and invalidation, Spring Cache, rate limiting (token bucket),
-> atomicity (Lua / `MULTI`), persistence trade-offs — all used in PulseWatch.
+> atomicity (Lua / `MULTI`), reliable queues (`BLMOVE` / Streams), pub/sub, persistence trade-offs —
+> used for a different job in each project: FlowGrid's catalog cache, ForgeCI's job queue + pub/sub +
+> limits, FlagForge's config-snapshot cache and propagation.
 >
 > **Honesty rule:** most people's past Redis use is "Spring `@Cacheable` backed by a Redis
-> someone else ran". If that's yours, say so. PulseWatch is where you designed keys, TTLs and
-> a rate limiter yourself.
+> someone else ran". If that's yours, say so. FlowGrid, ForgeCI and FlagForge are where you designed
+> keys, TTLs, a queue, a semaphore and invalidation yourself.
 
 ---
 
@@ -14,9 +16,11 @@
 
 | Project | Redis evidence |
 |---|---|
-| **P4 PulseWatch** M1 (W19) | `redis:7` service in Compose |
-| **P4** M2 (W20) | **Cache-aside** for public status page (`status:page:{slug}`, TTL 30 s, evicted when an incident opens/closes); **token-bucket rate limiter** on public API (`rl:{apiKey or ip}` hash with `tokens`/`ts`, atomic Lua script); idempotency keys for alert jobs (`SET alert:{incidentId}:{channel} 1 NX EX 86400`) |
-| **P4** M4 (W22) | k6 load test shows p95 of status endpoint before/after cache; Micrometer cache hit/miss metrics |
+| **FlowGrid** M3 (W6) | `redis:7` in Compose; **cache-aside** for the product/SKU catalog (`catalog:sku:{id}`, TTL + explicit invalidation after commit on update); low-stock cache; **Redis-down behaviour = degrade to DB** (timeouts, health indicator, no request hangs); k6 p95 of catalog reads with/without cache (W8) |
+| **LedgerX** M2 (W10) | Redis considered for the idempotency store; **Postgres chosen** (durable, same transaction as the transfer) — Redis only as an optional fast pre-check / rate limit |
+| **ForgeCI** M2 (W15) | **Reliable job queue**: `LPUSH` + `BLMOVE queue processing:{worker}` with a lease key (or Streams consumer groups — decision documented); orphaned-job recovery via lease expiry |
+| **ForgeCI** M3–M4 (W16–17) | **Pub/sub** fan-out of log chunks to API instances for SSE; per-project **concurrency limit** as an atomic counter/semaphore (Lua); worker heartbeats (`SET worker:{id} … EX 15`) |
+| **FlagForge** M2–M4 (W21–23) | **Environment config snapshot cache** (`env:{envId}:snapshot`, invalidated on publish), p99 evaluation latency measured with/without cache; **publish → pub/sub → SSE** propagation to SDKs; **stampede protection** on snapshot rebuild (single-flight lock) |
 
 ## Where to learn it in this repo
 
@@ -51,7 +55,7 @@ Data in RAM, efficient data structures, single-threaded execution (no lock conte
 
 <details><summary><b>B5. Is Redis durable?</b></summary>
 
-Configurable: RDB snapshots (point-in-time, may lose minutes), AOF (append-only log, `appendfsync everysec` loses ≤ ~1 s), both, or none. Treat as a cache unless you configure and test durability; Postgres remains the source of truth in PulseWatch.
+Configurable: RDB snapshots (point-in-time, may lose minutes), AOF (append-only log, `appendfsync everysec` loses ≤ ~1 s), both, or none. Treat as a cache unless you configure and test durability; Postgres remains the source of truth in every project — including ForgeCI's queue, where the job row in Postgres is the record and Redis is the dispatch mechanism.
 </details>
 
 <details><summary><b>B6. What happens when memory is full?</b></summary>
@@ -61,9 +65,9 @@ Depends on `maxmemory-policy`: `noeviction` (writes error), `allkeys-lru`, `allk
 
 ## 2. Intermediate questions
 
-<details><summary><b>I1. Explain cache-aside with your status page.</b></summary>
+<details><summary><b>I1. Explain cache-aside with your FlowGrid catalog cache.</b></summary>
 
-Read: `GET status:page:{slug}` → hit: return; miss: query Postgres, `SET … EX 30`, return. Write path: when an incident opens/closes, `DEL status:page:{slug}` after the DB commit. TTL bounds staleness even if an invalidation is lost.
+Read: `GET catalog:sku:{id}` → hit: return; miss: query Postgres, `SET … EX 300`, return. Write path: when a SKU/product is updated, `DEL catalog:sku:{id}` after the DB commit. TTL bounds staleness even if an invalidation is lost. FlagForge does the same for a whole environment snapshot, invalidated on every publish.
 </details>
 
 <details><summary><b>I2. Cache invalidation pitfalls?</b></summary>
@@ -76,14 +80,14 @@ Race: reader loads old DB value, writer updates DB + deletes key, reader then wr
 Hot key expires, many requests miss simultaneously and hammer the DB. Mitigate: jittered TTLs, request coalescing / single-flight lock (`SET lock NX EX 5`), early refresh, serve stale while revalidating.
 </details>
 
-<details><summary><b>I4. How does your token-bucket rate limiter work, and why Lua?</b></summary>
+<details><summary><b>I4. How does ForgeCI's per-project concurrency limit work, and why Lua?</b></summary>
 
-Per client hash `{tokens, ts}`; on request: refill `tokens = min(cap, tokens + (now - ts) * rate)`, if `tokens >= 1` decrement and allow else deny with `429` + `Retry-After`. Read-modify-write must be atomic across API instances → a Lua script via `EVAL`/`EVALSHA` runs atomically on the server. Set a TTL so idle buckets expire.
+Key `limit:{projectId}` holds the number of running jobs; before starting one, a Lua script does `if GET < max then INCR and return 1 else return 0` atomically across N workers; on job end (in `finally`) `DECR`; a TTL/heartbeat sweep guards against a crashed worker leaving the counter high. Read-modify-write must be atomic across workers → `EVAL`/`EVALSHA` runs it on the server. FlagForge's token-bucket rate limiter on the eval endpoint is the same pattern with a `{tokens, ts}` hash: refill `tokens = min(cap, tokens + (now - ts) * rate)`, allow if `tokens >= 1`, else `429` + `Retry-After`; TTL so idle buckets expire.
 </details>
 
 <details><summary><b>I5. Fixed window vs sliding window vs token bucket?</b></summary>
 
-Fixed window (`INCR` + `EXPIRE` per minute): simple, allows 2× burst at boundaries. Sliding log (sorted set of timestamps): precise, more memory. Token bucket: smooth rate with controlled bursts — chosen for PulseWatch's public API.
+Fixed window (`INCR` + `EXPIRE` per minute): simple, allows 2× burst at boundaries. Sliding log (sorted set of timestamps): precise, more memory. Token bucket: smooth rate with controlled bursts — the right choice for FlagForge's SDK-facing eval endpoint.
 </details>
 
 <details><summary><b>I6. <code>MULTI/EXEC</code> vs Lua vs pipelining?</b></summary>
@@ -93,25 +97,30 @@ Pipelining: batch commands to save RTTs, not atomic. `MULTI/EXEC`: queued comman
 
 <details><summary><b>I7. How do you implement idempotency with Redis?</b></summary>
 
-`SET alert:{incidentId}:{channel} 1 NX EX 86400` — only the first worker to set it sends the alert. For stronger guarantees, a unique constraint in Postgres (`alert_deliveries(incident_id, channel)`) is the durable record; Redis is the fast pre-check.
+`SET idem:{key} <fingerprint> NX EX 86400` — only the first request with that key proceeds. For LedgerX I chose the durable version instead: the idempotency row lives in Postgres in the same transaction as the transfer (key, request fingerprint, status, stored response; unique constraint), so a crash between steps can't lose it. Redis is only ever a fast pre-check.
+</details>
+
+<details><summary><b>I8b. How is ForgeCI's queue made reliable?</b></summary>
+
+Producer `LPUSH queue jobId`. Worker `BLMOVE queue processing:{workerId} RIGHT LEFT 5` — the job moves atomically to a per-worker processing list, so a crash can't lose it in flight; the worker also sets `lease:{jobId} … EX 60` and refreshes it while running. On success it `LREM`s the id from its processing list. A sweeper finds ids whose lease expired (worker died) and moves them back to `queue` (bounded by a retry count for infra failures). Alternative: Streams + consumer groups (`XREADGROUP`, `XPENDING`, `XCLAIM`) give the same semantics with acks built in — decision and trade-offs documented in ForgeCI's ADR.
 </details>
 
 <details><summary><b>I8. How does Spring Cache map to Redis?</b></summary>
 
-`spring-boot-starter-data-redis` + `@EnableCaching`; `@Cacheable("statusPage")` stores values with a `RedisCacheManager` (configure TTL per cache and JSON serializer, not JDK serialization). `@CacheEvict` on writes. Know that self-invocation bypasses the proxy.
+`spring-boot-starter-data-redis` + `@EnableCaching`; `@Cacheable("catalog")` stores values with a `RedisCacheManager` (configure TTL per cache and JSON serializer, not JDK serialization). `@CacheEvict` on writes. Know that self-invocation bypasses the proxy.
 </details>
 
 ## 3. Realistic interview questions
 
 <details><summary><b>R1. "How did you use Redis?"</b></summary>
 
-Past truthfully; then PulseWatch: cache-aside with TTL + explicit eviction, token-bucket rate limiting with Lua, idempotency keys for alert jobs; show k6 numbers before/after.
+Past truthfully; then one line per project: FlowGrid — cache-aside catalog + low-stock cache with invalidation after commit and degrade-to-DB when Redis is down; ForgeCI — reliable job queue (`BLMOVE` + lease), pub/sub for live logs, Lua semaphore for per-project limits; FlagForge — environment snapshot cache invalidated on publish, pub/sub → SSE propagation, stampede protection; show measured numbers (k6 p95 with/without cache, queue wait time, eval p99).
 Follow-up: "What if Redis goes down?"
 </details>
 
 <details><summary><b>R2. "What if Redis goes down?"</b></summary>
 
-Cache: fall back to Postgres (with timeouts + circuit breaker so requests don't hang). Rate limiter: fail-open (availability) vs fail-closed (protection) — PulseWatch fails open for authenticated users and logs/alerts. Idempotency: DB unique constraint still prevents duplicate alerts.
+FlowGrid: catalog reads degrade to Postgres (with timeouts so requests don't hang), health shows DEGRADED — tested by killing the container in the failure-engineering exercise. ForgeCI: no new jobs are dispatched; running jobs finish; the API keeps accepting webhooks into Postgres and re-enqueues when Redis returns (leases re-established). FlagForge: eval falls back to a Postgres read of the current version (slower, correct); SDKs keep serving their last snapshot (stale-if-error); the rate limiter fails open and logs. LedgerX's idempotency is unaffected — it never depended on Redis.
 </details>
 
 <details><summary><b>R3. "Why not just cache in the JVM (Caffeine)?"</b></summary>
@@ -121,7 +130,7 @@ In-process cache is faster and simpler but per-instance (inconsistent across rep
 
 <details><summary><b>R4. "How do you choose a TTL?"</b></summary>
 
-From staleness tolerance and read/write ratio: status page tolerates 30 s; add jitter; measure hit ratio; shorter if invalidation is unreliable.
+From staleness tolerance and read/write ratio: FlowGrid's catalog tolerates minutes; a FlagForge snapshot tolerates seconds (so invalidate on publish and use TTL only as a backstop); add jitter; measure hit ratio; shorter if invalidation is unreliable.
 </details>
 
 <details><summary><b>R5. "Is Redis a database?"</b></summary>
@@ -133,20 +142,21 @@ It can be (persistence, replication, Sentinel/Cluster) but in my projects it's a
 
 1. In `redis-cli`: set a key with TTL, check TTL, overwrite and observe TTL cleared.
 2. Implement fixed-window rate limit with `INCR` + `EXPIRE` (handle the "first request" case atomically with `SET NX EX` or Lua).
-3. Write the token-bucket Lua script.
+3. Write the atomic semaphore (per-project limit) Lua script and the token-bucket script.
 4. Add `@Cacheable` + `@CacheEvict` to a service and prove hits in logs/metrics.
 5. Use `SCAN` (not `KEYS`) to list keys with a prefix.
+6. In two terminals: `LPUSH`/`BLMOVE` queue with a processing list, then simulate a dead worker and recover its job.
 
 ## 5. Debugging questions
 
-<details><summary><b>D1. Users see stale status for minutes after an incident resolves.</b></summary>
+<details><summary><b>D1. Ops sees a stale SKU name for minutes after a product update.</b></summary>
 
 Eviction ran before DB commit (race) or eviction missing on one code path; TTL too long. Move eviction to after-commit; add a test; check keys' TTL.
 </details>
 
 <details><summary><b>D2. Redis memory keeps growing.</b></summary>
 
-Keys without TTL (rate-limit buckets never expire), unbounded lists. `INFO memory`, `redis-cli --bigkeys`, `MEMORY USAGE`, `SCAN` sample `TTL`s. Add TTLs, set `maxmemory` + policy.
+Keys without TTL (worker heartbeats or limit counters never expire), processing lists left by crashed workers, unbounded lists. `INFO memory`, `redis-cli --bigkeys`, `MEMORY USAGE`, `SCAN` sample `TTL`s. Add TTLs, set `maxmemory` + policy.
 </details>
 
 <details><summary><b>D3. Latency spikes every few seconds.</b></summary>
@@ -161,14 +171,14 @@ Cached values in an old class format (JDK serialization or changed JSON shape). 
 
 ## 6. Architecture questions
 
-<details><summary><b>A1. How would you run Redis in production for PulseWatch?</b></summary>
+<details><summary><b>A1. How would you run Redis in production for ForgeCI?</b></summary>
 
-Currently one container on the EC2 host (acceptable: cache + limiter, Postgres is source of truth). Production: ElastiCache with replica + automatic failover, in a private subnet, SG from app only, AUTH/TLS.
+Currently one container on the EC2 host (acceptable: Postgres holds the job rows; a Redis restart loses only in-flight dispatch, recovered by the lease sweep). Production: ElastiCache with replica + automatic failover, private subnet, SG from app/worker only, AUTH/TLS; AOF `everysec` so queued entries survive a restart — or SQS if at-least-once + visibility timeout is all you need (weighed in W19).
 </details>
 
 <details><summary><b>A2. Redis as a job queue vs Postgres table vs a real broker?</b></summary>
 
-PulseWatch alerts use a Postgres `alert_jobs` table with `FOR UPDATE SKIP LOCKED` (transactional with incident creation). Redis Streams give consumer groups and speed but less transactional coupling. Kafka/SQS for high volume/durability across services.
+ForgeCI uses Redis (`BLMOVE` per-worker processing lists + leases) for low-latency dispatch, with the job row in Postgres as the record. LedgerX's outbox relay uses a Postgres table with `FOR UPDATE SKIP LOCKED` (transactional with the journal write). Redis Streams give consumer groups and acks; Kafka/SQS for high volume/durability across services.
 </details>
 
 ## 7. Common mistakes
@@ -205,7 +215,7 @@ PulseWatch alerts use a Postgres `alert_jobs` table with `FOR UPDATE SKIP LOCKED
 ## 10. When NOT to use it
 
 - As the only copy of important data.
-- When a DB index fixes the slow query (fix the query first — PulseWatch's composite index did more than caching for the dashboard).
+- When a DB index fixes the slow query (fix the query first — ForgeCI's `log_chunks(job_id, seq)` index did more than caching would have).
 - Single-instance app where Caffeine suffices.
 
 ## 11. Trade-offs
@@ -223,23 +233,24 @@ PulseWatch alerts use a Postgres `alert_jobs` table with `FOR UPDATE SKIP LOCKED
 - **Docker:** `redis:7-alpine` in Compose, Testcontainers `GenericContainer("redis:7")` in tests.
 - **AWS:** container on EC2 now; ElastiCache later.
 - **CI:** integration tests use Testcontainers Redis.
-- **React:** status dashboard benefits indirectly (fast cached endpoint).
+- **React:** ForgeCI's live log and FlagForge's dashboard receive pub/sub-driven SSE events; FlowGrid's dashboard reads the cached catalog.
 
 ## 13. One small hands-on exercise
 
-**Rate-limited endpoint.**
+**Rate-limited eval endpoint (FlagForge-style).**
 
-- [ ] `GET /api/public/status/{slug}` limited to 10 req / 10 s per IP with a Redis token bucket (Lua).
+- [ ] `POST /api/eval` limited to 100 req / 10 s per SDK key with a Redis token bucket (Lua).
 - [ ] Returns `429` with `Retry-After` when exhausted.
 - [ ] Works correctly with 2 API instances (prove via Compose `--scale api=2` + k6 or a bash loop).
 - [ ] Buckets expire after inactivity (check `TTL`).
-- [ ] Testcontainers test: 11th request in a burst gets 429.
+- [ ] Testcontainers test: 101st request in a burst gets 429; kill Redis → requests still succeed (fail-open) and a WARN is logged.
 
 ## 14. Mastery checklist
 
 - [ ] Explain cache-aside + invalidation race and my fix
 - [ ] Write the token-bucket Lua script from memory
 - [ ] Explain eviction policies and persistence modes
-- [ ] Explain Redis-down behaviour for each PulseWatch use
+- [ ] Explain Redis-down behaviour for each use in FlowGrid, ForgeCI and FlagForge
+- [ ] Explain the reliable-queue pattern (`BLMOVE` + lease) and its failure modes
 - [ ] Use `redis-cli` fluently: `TTL`, `SCAN`, `INFO`, `SLOWLOG`, `MONITOR` (dev only)
-- [ ] Truthful 60-second answer on past Redis use + PulseWatch bridge
+- [ ] Truthful 60-second answer on past Redis use + FlowGrid / ForgeCI / FlagForge bridge

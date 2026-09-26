@@ -1,7 +1,9 @@
 # Dockerfiles and Images
 
-> Weeks 12 and 19. Goal: a **small, secure, cache-friendly** image for a Spring Boot 3 / Java 21 service
-> (TicketHold, PulseWatch api/worker) and for the React frontend (TeamBoard), and the ability to explain every line.
+> Week 5 (FlowGrid API image), Week 8 (frontend image, registry push), Week 14 (layers and internals for ForgeCI).
+> Goal: a **small, secure, cache-friendly** image for a Spring Boot 3 / Java 21 service (FlowGrid, LedgerX, FlagForge API;
+> ForgeCI api + worker) and for a React frontend, and the ability to explain every line. The Dockerfiles here are the
+> *pattern*; write your own per project.
 
 ---
 
@@ -70,7 +72,7 @@ RUN mvn package -DskipTests
 CMD mvn spring-boot:run
 ```
 
-Problems: ~800 MB+ image containing Maven, the JDK, sources and `~/.m2`; any source change re-downloads all
+Problems: a large image (often several hundred MB) containing Maven, the JDK, sources and `~/.m2`; any source change re-downloads all
 dependencies; runs as root; shell-form CMD; `COPY . .` drags in `target/`, `.git`, `.env`.
 
 ---
@@ -111,19 +113,19 @@ ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 ```
 
 ```bash
-docker build -t tickethold-api:dev .
-docker image ls tickethold-api            # compare with the naive build
+docker build -t flowgrid-api:dev .
+docker image ls flowgrid-api            # compare with the naive build
 docker run --rm -p 8080:8080 \
-  -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/tickethold \
-  -e SPRING_DATASOURCE_USERNAME=tickethold -e SPRING_DATASOURCE_PASSWORD=tickethold \
-  tickethold-api:dev
+  -e SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/flowgrid \
+  -e SPRING_DATASOURCE_USERNAME=flowgrid -e SPRING_DATASOURCE_PASSWORD=flowgrid \
+  flowgrid-api:dev
 ```
 
 (`host.docker.internal` resolves to the host on Docker Desktop; on Linux add `--add-host=host.docker.internal:host-gateway`.
 Usually you'll run both in Compose instead.)
 
 Why each choice:
-- **Build stage** has Maven + JDK; **runtime stage** has only a JRE + the jar → typically ~200 MB vs ~800 MB.
+- **Build stage** has Maven + JDK; **runtime stage** has only a JRE + the jar → typically well under half the size. Measure both with `docker image ls` and record the numbers.
 - `dependency:go-offline` layer caches most dependencies. (It misses a few plugin deps; the BuildKit alternative is
   `RUN --mount=type=cache,target=/root/.m2 mvn -B package -DskipTests`, which keeps `~/.m2` between builds.)
 - `USER app` → a container escape or RCE doesn't start as root.
@@ -136,7 +138,7 @@ Why each choice:
 
 ## 5. Layered jars (awareness)
 
-A fat jar changes entirely on every build, so the whole ~60 MB layer is re-pushed. Spring Boot can split it into layers
+A fat jar changes entirely on every build, so the whole jar layer (tens of MB) is re-pushed. Spring Boot can split it into layers
 that change at different rates: `dependencies`, `spring-boot-loader`, `snapshot-dependencies`, `application`.
 Only the small `application` layer changes on a typical commit → faster pushes/pulls.
 
@@ -189,7 +191,7 @@ node_modules/
 
 ---
 
-## 7. Frontend image (TeamBoard / PulseWatch dashboard)
+## 7. Frontend image (nginx + static build)
 
 ```dockerfile
 # syntax=docker/dockerfile:1
@@ -227,7 +229,7 @@ server {
 }
 ```
 
-Final image: nginx + static files, ~50 MB, no Node at runtime. `.dockerignore` for the web app must exclude `node_modules/` and `dist/`.
+Final image: nginx + static files — small (tens of MB), no Node at runtime. `.dockerignore` for the web app must exclude `node_modules/` and `dist/`.
 
 ---
 
@@ -254,17 +256,17 @@ Tag with **immutable** identifiers (git SHA, semver) — never deploy `latest`.
 ```bash
 # GitHub Container Registry (GHCR)
 echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-username> --password-stdin   # PAT with write:packages; in Actions use GITHUB_TOKEN
-docker tag pulsewatch-api:dev ghcr.io/<github-username>/pulsewatch-api:1.0.0
-docker tag pulsewatch-api:dev ghcr.io/<github-username>/pulsewatch-api:$(git rev-parse --short HEAD)
-docker push ghcr.io/<github-username>/pulsewatch-api:1.0.0
-docker push ghcr.io/<github-username>/pulsewatch-api:$(git rev-parse --short HEAD)
+docker tag flowgrid-api:dev ghcr.io/<github-username>/flowgrid-api:1.0.0
+docker tag flowgrid-api:dev ghcr.io/<github-username>/flowgrid-api:$(git rev-parse --short HEAD)
+docker push ghcr.io/<github-username>/flowgrid-api:1.0.0
+docker push ghcr.io/<github-username>/flowgrid-api:$(git rev-parse --short HEAD)
 
 # Amazon ECR
-aws ecr create-repository --repository-name pulsewatch-api --region eu-central-1
+aws ecr create-repository --repository-name flowgrid-api --region eu-central-1
 aws ecr get-login-password --region eu-central-1 \
   | docker login --username AWS --password-stdin <account-id>.dkr.ecr.eu-central-1.amazonaws.com
-docker tag pulsewatch-api:dev <account-id>.dkr.ecr.eu-central-1.amazonaws.com/pulsewatch-api:1.0.0
-docker push <account-id>.dkr.ecr.eu-central-1.amazonaws.com/pulsewatch-api:1.0.0
+docker tag flowgrid-api:dev <account-id>.dkr.ecr.eu-central-1.amazonaws.com/flowgrid-api:1.0.0
+docker push <account-id>.dkr.ecr.eu-central-1.amazonaws.com/flowgrid-api:1.0.0
 ```
 
 On EC2, pulling from ECR uses the instance's **IAM role** (no keys on the box) — [12-aws/iam.md](../12-aws/iam.md).
@@ -275,7 +277,7 @@ CI automation of build → push: [13-cicd/pipeline-examples.md](../13-cicd/pipel
 An image built on an Apple-silicon Mac is `linux/arm64`; an x86 EC2 instance needs `linux/amd64` → `exec format error`.
 
 ```bash
-docker buildx build --platform linux/amd64 -t ghcr.io/<you>/pulsewatch-api:1.0.0 --push .
+docker buildx build --platform linux/amd64 -t ghcr.io/<you>/flowgrid-api:1.0.0 --push .
 # or build in CI on an amd64 runner; or choose a Graviton (arm64) instance deliberately
 ```
 
@@ -316,7 +318,7 @@ writable layer, process namespace and network. Many containers can run from one 
 <details><summary>Why a multi-stage build?</summary>
 
 To build with heavy tools (Maven, JDK, Node) and ship only what runs (JRE + jar, or nginx + static files). My
-TicketHold image went from ~800 MB to ~200 MB and no longer contains sources or build tools.
+FlowGrid image dropped from the naive build's size to a JRE-only image and no longer contains sources or build tools — quote your own measured `docker image ls` numbers, never estimates.
 </details>
 
 <details><summary>How does layer caching affect how you write a Dockerfile?</summary>
@@ -350,6 +352,6 @@ VMs run a full guest OS on virtualised hardware — stronger isolation, more ove
 - [ ] Write the multi-stage Spring Boot Dockerfile from memory; explain every line.
 - [ ] Measure image size before/after and the rebuild time after a one-line code change.
 - [ ] Non-root user, exec-form entrypoint, `.dockerignore`, pinned base.
-- [ ] Build the TeamBoard nginx image with SPA fallback and `/api` proxy.
+- [ ] Build the FlowGrid dashboard nginx image with SPA fallback and `/api` proxy.
 - [ ] Push an image to GHCR (and/or ECR) with a SHA tag.
 - [ ] Explain layered jars and when they help.

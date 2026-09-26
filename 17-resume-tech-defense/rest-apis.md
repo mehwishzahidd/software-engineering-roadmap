@@ -1,6 +1,6 @@
 # REST APIs — Résumé Defense
 
-**Target level:** L4 · **Learned:** Week 9 (HTTP + REST), Week 10 (validation, errors, pagination), Week 12 (idempotency), Week 20 (rate limiting)
+**Target level:** L4 · **Learned:** Week 3 (HTTP + REST), Week 4 (validation, ProblemDetail, pagination, OpenAPI), Week 5 (Idempotency-Key), Week 11 (cursor pagination), Week 14 (webhooks — consuming and producing), Week 22 (SDK-facing API design)
 Method: [`../RESUME_TECH_DEFENSE.md`](../RESUME_TECH_DEFENSE.md) · Index: [`README.md`](./README.md)
 
 ---
@@ -49,7 +49,7 @@ Path identifies a resource (`/events/42`); query filters/sorts/paginates a colle
 <details><summary><b>Q6. Design good resource URIs.</b></summary>
 
 Plural nouns, hierarchy for ownership, no verbs: `GET /orgs/{orgId}/projects/{projectId}/issues`.
-Actions that don't fit CRUD become sub-resources: `POST /holds/{id}/confirmation` → creates a booking.
+Actions that don't fit CRUD become sub-resources: `POST /orders/{id}/cancellation` → releases reservations (FlowGrid); `POST /journal-transactions/{id}/reversal` → compensating entries (LedgerX).
 Keep nesting ≤ 2 levels.
 </details>
 
@@ -57,8 +57,8 @@ Keep nesting ≤ 2 levels.
 
 RFC 7807/9457 Problem Details, `Content-Type: application/problem+json`:
 ```json
-{"type":"https://tickethold.example/problems/seat-unavailable","title":"Seat unavailable",
- "status":409,"detail":"Seat A12 is held by another customer","instance":"/api/holds"}
+{"type":"https://flowgrid.example/problems/insufficient-stock","title":"Insufficient stock",
+ "status":409,"detail":"SKU WH-1-A12 has 0 available in warehouse 1","instance":"/api/orders"}
 ```
 Add an `errors` array for field validation. Never leak stack traces.
 </details>
@@ -98,38 +98,38 @@ enforced by browsers, not servers — curl ignores it. Not a security boundary f
 
 ## 3. Realistic interview questions
 
-<details><summary><b>R1. "Design an API for booking seats at an event."</b></summary>
+<details><summary><b>R1. "Design an API for placing an order that reserves stock across warehouses."</b></summary>
 
-- Resources: `events`, `seats`, `holds`, `bookings`. `GET /events/{id}/seats?status=AVAILABLE`,
-  `POST /holds {seatIds}` → 201 with `expiresAt`, `POST /bookings {holdId}` + `Idempotency-Key` → 201,
-  `DELETE /holds/{id}` → 204.
-- Conflicts → 409 ProblemDetail; expired hold → 410 or 409; validation → 400.
-- Concurrency: optimistic locking; hold expiry job. This *is* TicketHold — show it.
+- Resources: `warehouses`, `skus`, `inventory-levels`, `orders`, `reservations`, `shipments`.
+  `GET /skus/{id}/inventory?warehouseId=`, `POST /orders {lines}` + `Idempotency-Key` → 201 with reservations,
+  `POST /orders/{id}/cancellation` → 204 releasing reservations, `GET /orders?status=&page=&size=&sort=`.
+- Insufficient stock → 409 ProblemDetail; validation → 400; same key with a different body → 422.
+- Concurrency: `SELECT … FOR UPDATE` per inventory row; reservation state machine. This *is* FlowGrid M2 — show it.
 </details>
 
 <details><summary><b>R2. "You mentioned REST APIs on your résumé — what did you build or consume?"</b></summary>
 
 - Truthful past: which APIs, consumed vs built, your part.
-- Current: TicketHold/TeamBoard APIs designed from scratch; Postman collection; PulseWatch public status API with rate limiting.
+- Current: FlowGrid's and LedgerX's APIs designed from scratch (OpenAPI via springdoc, Postman collection); ForgeCI both *consumes* GitHub's REST API and *receives* its webhooks; FlagForge's eval API is designed for an SDK I also wrote, so I've been on both sides of the contract.
 </details>
 
 <details><summary><b>R3. "401 vs 403?"</b></summary>
 
 - 401: no/invalid credentials — "who are you?" (should include `WWW-Authenticate`). 403: known user lacks permission.
-- TeamBoard example: VIEWER trying to create an issue → 403; expired JWT → 401.
+- FlowGrid example: VIEWER trying to adjust stock → 403; expired JWT → 401.
 - Some APIs return 404 instead of 403 to avoid revealing a resource exists.
 </details>
 
 <details><summary><b>R4. "PUT vs PATCH? When would you use each?"</b></summary>
 
 - PUT replaces the full representation (idempotent); missing fields reset. PATCH partial update (JSON Merge Patch or JSON Patch).
-- TeamBoard: `PATCH /issues/{id}` for status changes; validates allowed transition TODO→IN_PROGRESS etc.
+- FlowGrid: `PATCH /pick-lists/{id}` for status changes; validates allowed transition PICKING→PACKED etc. FlagForge: no PATCH on a config version at all — versions are immutable; `POST /flags/{key}/versions` creates the next one.
 </details>
 
 <details><summary><b>R5. "How would you protect a public API from abuse?"</b></summary>
 
 - Rate limiting (token bucket per API key/IP in Redis, return 429 + `Retry-After`), auth, input validation,
-  payload size limits, pagination caps, timeouts. PulseWatch M2 is the evidence.
+  payload size limits, pagination caps, timeouts. FlagForge's eval endpoint (per-SDK-key limit) is the evidence; ForgeCI's webhook receiver adds HMAC signature verification and delivery-id dedupe.
 </details>
 
 <details><summary><b>R6. "REST vs GraphQL vs gRPC?"</b></summary>
@@ -140,7 +140,7 @@ enforced by browsers, not servers — curl ignores it. Not a security boundary f
 
 ## 4. Practical tasks (live)
 
-- [ ] Sketch endpoints + status codes for a TeamBoard feature (comments) in 10 minutes.
+- [ ] Sketch endpoints + status codes for a FlowGrid feature (returns: restock or quarantine) in 10 minutes.
 - [ ] With curl: `POST` JSON with a bearer token, show headers with `-i`/`-v`, follow `Location`.
 - [ ] Implement a paginated `GET` returning `{content, page, size, totalElements}` with max `size` of 100.
 - [ ] Return a 400 ProblemDetail listing field errors for an invalid body.
@@ -160,10 +160,10 @@ Check the `OPTIONS` response in DevTools Network tab. Configure CORS in Spring S
 Unsupported Media Type: missing/wrong `Content-Type: application/json`. 406 would be an `Accept` mismatch.
 </details>
 
-<details><summary><b>D3. Duplicate bookings appear when mobile network is flaky.</b></summary>
+<details><summary><b>D3. Duplicate orders appear when the client's network is flaky.</b></summary>
 
 Client retries a non-idempotent POST after a timeout even though the first succeeded. Add
-Idempotency-Key handling + unique constraint on the business key (seat per event).
+Idempotency-Key handling + unique constraint on the stored key (and on any natural business key).
 </details>
 
 <details><summary><b>D4. Endpoint returns 200 with an error message in the body.</b></summary>
@@ -180,9 +180,11 @@ Deep `OFFSET` scans. Switch to keyset pagination with an index on the sort colum
 
 - How do you evolve an API used by a React app you control vs third-party clients?
 - Where does validation belong (DTO Bean Validation vs domain invariants vs DB constraints)? All three — why?
-- Synchronous request vs `202 Accepted` + job resource for PulseWatch CSV exports to S3?
-- How would you expose PulseWatch's public status page for 10k req/s (caching headers, Redis cache, CDN)?
-- Webhooks for alerts: signing, retries with backoff, idempotency on the receiver.
+- Synchronous request vs `202 Accepted` + job resource for FlowGrid report exports to S3 — and for ForgeCI builds (`POST` returns 202 + `/builds/{id}` to poll or stream)?
+- How would you serve FlagForge's eval endpoint at 10k req/s (Redis snapshot, local SDK evaluation so most calls never reach the server, `ETag`/304 on snapshot polls)?
+- Webhooks (ForgeCI receives GitHub's): HMAC-SHA256 signature, `X-GitHub-Delivery` dedupe, respond 2xx fast then process async, sender-side retries with backoff.
+- Cursor pagination for LedgerX history (`?after=<cursor>`): encoding the cursor, stability under inserts, why not offset.
+- Designing for an SDK (FlagForge): versioning the wire format, `ETag`/`If-None-Match` on snapshot polls, SSE stream for updates, defaults when the server is unreachable.
 
 ## 7. Common mistakes
 
@@ -240,12 +242,12 @@ real-time push (WebSockets/SSE), event-driven workflows (message queues).
 
 ## 13. Hands-on exercise
 
-**Design and implement TeamBoard's comments API.**
+**Design and implement FlowGrid's returns API.**
 
 Acceptance criteria:
 - [ ] Written endpoint table (method, path, request, success code, error codes) reviewed before coding.
-- [ ] `GET /issues/{id}/comments` paginated with max size; `POST` → 201 + `Location`; `DELETE` → 204.
-- [ ] VIEWER cannot post (403); non-member gets 404; invalid body → 400 ProblemDetail with field errors.
+- [ ] `GET /orders/{id}/returns` paginated with max size; `POST` (lines + disposition `RESTOCK|QUARANTINE`) → 201 + `Location`; `POST /returns/{id}/cancellation` → 204.
+- [ ] VIEWER cannot post (403); unknown order → 404; invalid body → 400 ProblemDetail with field errors; returned quantity > shipped → 422.
 - [ ] `@WebMvcTest` asserts every status code in the table.
 - [ ] Postman/curl script demonstrates each case.
 
@@ -264,9 +266,10 @@ Acceptance criteria:
 
 | Project | What it demonstrates | Fill in: file / commit |
 |---|---|---|
-| P2 TicketHold | Resource design (holds/bookings), ProblemDetail, validation, pagination, Idempotency-Key, 409 on conflicts, Postman collection | |
-| P3 TeamBoard | Nested resources, PATCH status workflow, filters/search, 401 vs 403 by role, CORS with React | |
-| P4 PulseWatch | Public status API with Redis cache + token-bucket rate limiting (429), webhook alerts with retry | |
+| FlowGrid | Resource design (warehouses / skus / orders / reservations / shipments), ProblemDetail, Bean Validation, offset pagination + sort/filter, **Idempotency-Key** on order creation, 409 on insufficient stock, 401/403 by role, OpenAPI (springdoc), Postman collection, CORS with the React dashboard | |
+| LedgerX | Idempotency done properly (key + request fingerprint + stored response; 422 on same key/different body), **cursor pagination** for history, sub-resource actions (`/reversal`, `/payment-requests/{id}/acceptance`), money as strings | |
+| ForgeCI | **Webhook receiver** (HMAC-SHA256, delivery-id dedupe, fast 2xx), GitHub REST API client (auth, pagination, rate limits), `202 Accepted` + build resource, **SSE** log endpoint with `Last-Event-ID` replay | |
+| FlagForge | **SDK-facing API**: eval endpoint, snapshot endpoint with `ETag`/`304`, SSE update stream, SDK-key auth, rate limit (429 + `Retry-After`), versioned immutable configs | |
 
 ## Where to learn it in this repo
 

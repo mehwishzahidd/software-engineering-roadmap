@@ -2,7 +2,7 @@
 
 > **Goal:** defend "TypeScript" on your résumé with truthful past context plus current TS 5
 > fluency: the type system, narrowing, generics, `tsconfig` strictness, and typing a real API
-> client and React components (TeamBoard, PulseWatch dashboard).
+> client and React components (FlowGrid dashboard, ForgeCI live-log UI, FlagForge admin).
 >
 > **Honesty rule:** if your past TS usage was light (e.g. adding types to an existing codebase),
 > say so. Then show depth through what you built here.
@@ -13,9 +13,10 @@
 
 | Project | Where TypeScript shows up | What I can point at |
 |---|---|---|
-| **P3 TeamBoard** (W16–18) | Entire Vite frontend in `strict` TS; DTO types mirroring Spring DTOs; discriminated unions for request state; typed role checks | `src/api/types.ts` (`Issue`, `IssueStatus` union, `Page<T>`), `src/api/client.ts` generic `request<T>()`, `can(role, action)` helper |
-| **P3 tests** (W17) | Vitest + RTL tests are TS | typed mock responses using `satisfies` |
-| **P4 PulseWatch dashboard** (W22) | Status dashboard in TS | `MonitorStatus = "UP" \| "DOWN" \| "DEGRADED"`, exhaustive `switch` with `never` |
+| **FlowGrid** M4 (W7) | Entire Vite dashboard in `strict` TS; DTO types mirroring Spring records; discriminated unions for request state; typed role checks | `src/api/types.ts` (`InventoryLevel`, `Order`, `OrderStatus` union, `Page<T>`), `src/api/client.ts` generic `request<T>()`, `can(role, action)` over `ADMIN \| OPS_MANAGER \| WAREHOUSE_ASSOCIATE \| VIEWER` |
+| **FlowGrid tests** (W7) | Vitest + RTL tests are TS | typed mock responses using `satisfies` |
+| **ForgeCI** M3 (W16) | Live build UI | `JobStatus = "QUEUED" \| "RUNNING" \| "SUCCEEDED" \| "FAILED" \| "CANCELLED" \| "TIMED_OUT"`, exhaustive `switch` with `never` for badges; typed SSE payloads (`LogChunk { seq: number; text: string }`) |
+| **FlagForge** M4 (W23) | Rules editor | `Rule` discriminated union (`kind: "attribute" \| "user" \| "percentage"`), `readonly` `FlagVersion` types; a TS SDK is the ADVANCED multi-language option |
 
 ## Where to learn it in this repo
 
@@ -56,7 +57,7 @@ Both describe object shapes. `interface` supports declaration merging and `exten
 
 <details><summary><b>B6. Name five utility types.</b></summary>
 
-`Partial<T>`, `Required<T>`, `Pick<T,K>`, `Omit<T,K>`, `Record<K,V>`, `Readonly<T>`, `ReturnType<F>`, `Awaited<T>`, `NonNullable<T>`. Example: `type IssueUpdate = Partial<Pick<Issue, "title" | "status" | "assigneeId">>`.
+`Partial<T>`, `Required<T>`, `Pick<T,K>`, `Omit<T,K>`, `Record<K,V>`, `Readonly<T>`, `ReturnType<F>`, `Awaited<T>`, `NonNullable<T>`. Example: `type TransferUpdate = Partial<Pick<StockTransfer, "quantity" | "toWarehouseId" | "note">>`.
 </details>
 
 <details><summary><b>B7. What does <code>strict: true</code> enable?</b></summary>
@@ -86,7 +87,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) throw await ApiError.from(res);
   return (await res.json()) as T; // assertion: runtime not checked
 }
-const page = await request<Page<Issue>>("/orgs/1/issues?page=0");
+const page = await request<Page<Order>>("/orders?page=0");
 ```
 Constraints: `<T extends { id: number }>`. Mention the `as T` is a trust boundary — validate with zod if the data is untrusted.
 </details>
@@ -94,9 +95,10 @@ Constraints: `<T extends { id: number }>`. Mention the `as T` is a trust boundar
 <details><summary><b>I3. Exhaustiveness checking with <code>never</code>.</b></summary>
 
 ```ts
-function color(s: MonitorStatus) {
+function badge(s: JobStatus) {
   switch (s) {
-    case "UP": return "green"; case "DOWN": return "red"; case "DEGRADED": return "amber";
+    case "QUEUED": case "CANCELLED": return "grey"; case "RUNNING": return "blue";
+    case "SUCCEEDED": return "green"; case "FAILED": return "red"; case "TIMED_OUT": return "amber";
     default: { const x: never = s; return x; }
   }
 }
@@ -119,24 +121,24 @@ const routes = { board: "/board", issue: "/issues/:id" } satisfies Record<string
 
 <details><summary><b>I6. Mapped and conditional types — one practical example each.</b></summary>
 
-Mapped: `type Flags<T> = { [K in keyof T]: boolean }` (form "touched" state). Conditional: `type Unwrap<T> = T extends Promise<infer U> ? U : T`. Template literal types: `` type Perm = `${"issue"|"comment"}:${"read"|"write"}` ``.
+Mapped: `type Flags<T> = { [K in keyof T]: boolean }` (form "touched" state). Conditional: `type Unwrap<T> = T extends Promise<infer U> ? U : T`. Template literal types: `` type Perm = `${"flag"|"rule"}:${"read"|"write"}` ``.
 </details>
 
 <details><summary><b>I7. How do you keep frontend types in sync with Spring DTOs?</b></summary>
 
-Options: hand-written types reviewed with DTO changes (TeamBoard, small API); generate from OpenAPI (springdoc → `openapi-typescript`) for larger APIs; runtime validation with zod at the boundary. Trade-off: generation adds a build step but removes drift.
+Options: hand-written types reviewed with DTO changes (FlowGrid, small API); generate from OpenAPI (springdoc → `openapi-typescript`) for larger APIs; runtime validation with zod at the boundary. Trade-off: generation adds a build step but removes drift.
 </details>
 
 <details><summary><b>I8. What's <code>keyof</code> and indexed access?</b></summary>
 
-`keyof Issue` → union of property names. `Issue["status"]` → the property type. Combined: `function sortBy<K extends keyof Issue>(k: K)`.
+`keyof Order` → union of property names. `Order["status"]` → the property type. Combined: `function sortBy<K extends keyof Order>(k: K)`.
 </details>
 
 ## 3. Realistic interview questions
 
 <details><summary><b>R1. "Why did you use TypeScript instead of plain JavaScript?"</b></summary>
 
-Catch shape mismatches with the API at compile time, safe refactors, self-documenting props, editor tooling. Concrete: renaming `assignee` → `assigneeId` in the DTO produced compile errors in 6 components instead of runtime `undefined`s.
+Catch shape mismatches with the API at compile time, safe refactors, self-documenting props, editor tooling. Concrete: renaming `warehouse` → `warehouseId` in the DTO produced compile errors in 6 components instead of runtime `undefined`s.
 </details>
 
 <details><summary><b>R2. "How do you type an API response you don't fully trust?"</b></summary>
@@ -146,12 +148,12 @@ Treat it as `unknown`, validate (zod schema / type guard), then narrow. For a fi
 
 <details><summary><b>R3. "How do you model user roles in the frontend?"</b></summary>
 
-`type Role = "OWNER" | "ADMIN" | "MEMBER" | "VIEWER"`; a `can(role, action)` function with a typed permission map; UI hides actions, **backend enforces** — the frontend check is UX, not security.
+`type Role = "ADMIN" | "OPS_MANAGER" | "WAREHOUSE_ASSOCIATE" | "VIEWER"`; a `can(role, action)` function with a typed permission map; UI hides actions, **backend enforces** — the frontend check is UX, not security.
 </details>
 
 <details><summary><b>R4. "Explain a TypeScript error you had to fight."</b></summary>
 
-Truthful example from TeamBoard: `Object is possibly 'undefined'` after `noUncheckedIndexedAccess`; or a union not narrowing because the check happened in a helper — fixed with a type guard `isApiError(e): e is ApiError`.
+Truthful example from FlowGrid: `Object is possibly 'undefined'` after `noUncheckedIndexedAccess`; or a union not narrowing because the check happened in a helper — fixed with a type guard `isApiError(e): e is ApiError`.
 </details>
 
 <details><summary><b>R5. "How is TypeScript's type system different from Java's?"</b></summary>
@@ -161,7 +163,7 @@ Structural vs nominal; erased vs reified-at-runtime classes (Java generics are a
 
 <details><summary><b>R6. "Your résumé says TypeScript — when did you last use it professionally?"</b></summary>
 
-State the real date and context. "Since then I've built TeamBoard's frontend in strict TS 5 — here's the typed client and the discriminated-union load state." Don't round dates up.
+State the real date and context. "Since then I've built FlowGrid's dashboard, ForgeCI's live-log UI and FlagForge's admin in strict TS 5 — here's the typed client and the discriminated-union load state." Don't round dates up.
 </details>
 
 ## 4. Practical tasks (doable live)
@@ -180,19 +182,19 @@ State the real date and context. "Since then I've built TeamBoard's frontend in 
 Vite/esbuild strips types without checking. CI runs `tsc --noEmit` (or `vue-tsc`/`tsc -b`). Run the same command locally; add it to a pre-push script.
 </details>
 
-<details><summary><b>D2. Types say <code>issue.assignee.name</code> exists, runtime crashes.</b></summary>
+<details><summary><b>D2. Types say <code>order.shipment.carrier</code> exists, runtime crashes.</b></summary>
 
-The API returns `assignee: null` for unassigned issues; the type lied. Fix the type (`assignee: User | null`), handle null in UI, add a test fixture with null.
+The API returns `shipment: null` for unshipped orders; the type lied. Fix the type (`shipment: Shipment | null`), handle null in UI, add a test fixture with null.
 </details>
 
-<details><summary><b>D3. <code>as Issue[]</code> everywhere and bugs slip through.</b></summary>
+<details><summary><b>D3. <code>as Order[]</code> everywhere and bugs slip through.</b></summary>
 
 Assertions bypass checking. Replace with typed `request<T>` at one boundary + validation, remove casts in components.
 </details>
 
-<details><summary><b>D4. "Type 'string' is not assignable to type 'IssueStatus'."</b></summary>
+<details><summary><b>D4. "Type 'string' is not assignable to type 'OrderStatus'."</b></summary>
 
-A literal widened to `string` (e.g. from `useState("TODO")` or an object literal). Fix: annotate (`useState<IssueStatus>("TODO")`) or `as const`.
+A literal widened to `string` (e.g. from `useState("RESERVED")` or an object literal). Fix: annotate (`useState<OrderStatus>("RESERVED")`) or `as const`.
 </details>
 
 ## 6. Architecture questions
@@ -202,7 +204,7 @@ A literal widened to `string` (e.g. from `useState("TODO")` or an object literal
 `src/api/types.ts` (wire types matching DTOs) separate from view-model types; components import from the API layer. Don't let backend entity shapes leak through the entire UI.
 </details>
 
-<details><summary><b>A2. Hand-written types vs OpenAPI codegen for TeamBoard?</b></summary>
+<details><summary><b>A2. Hand-written types vs OpenAPI codegen for FlowGrid?</b></summary>
 
 Hand-written for ~15 endpoints and one developer; codegen once multiple teams/clients consume the API. Either way, the Spring side remains the source of truth.
 </details>
@@ -262,9 +264,9 @@ Hand-written for ~15 endpoints and one developer; codegen once multiple teams/cl
 
 ## 13. One small hands-on exercise
 
-**Typed TeamBoard API module.**
+**Typed FlowGrid API module.**
 
-- [ ] `types.ts` with `Issue`, `IssueStatus`, `Role`, `Page<T>`, `ProblemDetail` matching the Spring DTOs.
+- [ ] `types.ts` with `InventoryLevel`, `Order`, `OrderStatus`, `Role`, `Page<T>`, `ProblemDetail` matching the Spring DTOs.
 - [ ] `request<T>` with `ApiError` on non-2xx; `isProblemDetail` type guard.
 - [ ] `Load<T>` discriminated union + a component rendering all four states with an exhaustive `switch`.
 - [ ] `strict` + `noUncheckedIndexedAccess` on; zero `any`, zero `as` outside `request`.
@@ -278,4 +280,4 @@ Hand-written for ~15 endpoints and one developer; codegen once multiple teams/cl
 - [ ] Use and explain 6 utility types
 - [ ] Explain `satisfies` vs `as`
 - [ ] Explain structural vs nominal typing with a Java comparison
-- [ ] Truthful 60-second answer on past TS use + TeamBoard bridge
+- [ ] Truthful 60-second answer on past TS use + FlowGrid bridge

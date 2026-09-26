@@ -2,7 +2,8 @@
 
 > **Goal:** defend "Linux" with truthful past context and current command-line fluency: filesystem,
 > permissions, processes and signals, `systemd`, networking tools, log inspection, `ssh`, and
-> Bash scripting — exercised on the PulseWatch EC2 host and in every container you build.
+> Bash scripting — exercised on the EC2 hosts of all four projects, inside every container you build,
+> and in ForgeCI, whose workers spawn processes, forward signals and enforce timeouts inside containers.
 >
 > **Honesty rule:** "I used Linux daily as a developer (terminal, SSH to servers, reading logs)"
 > is different from "I administered Linux servers". Claim the one that's true.
@@ -13,10 +14,11 @@
 
 | Project | Linux evidence |
 |---|---|
-| **All projects** | Terminal-driven workflow from Week 1: Git, Maven, `psql`, `curl` |
-| **P2/P3** | Containers are Linux processes: signals + graceful shutdown, non-root users in Dockerfiles, reading logs with `docker compose logs -f api \| grep requestId=` |
-| **P4 PulseWatch** M3 (W21) | EC2 (Amazon Linux 2023 / Ubuntu): installed Docker, `systemd` unit to start the Compose stack on boot, `journalctl`, disk checks (`df -h`, `du`), `ss -tlnp`, SSM Session Manager instead of open port 22 |
-| **P4** polish | `scripts/backup.sh`, `scripts/teardown.sh`, `scripts/smoke.sh` in Bash with `set -euo pipefail` |
+| **All projects** | Terminal-driven workflow from Week 1: Git, Maven, `psql`, `curl`; containers are Linux processes: signals + graceful shutdown, non-root users in Dockerfiles, `docker compose logs -f api \| grep requestId=` |
+| **FlowGrid** M5 (W8) | EC2 (Amazon Linux 2023 / Ubuntu): installed Docker, `systemd` unit to start the Compose stack on boot, `journalctl`, disk checks (`df -h`, `du`), `ss -tlnp`, SSM Session Manager instead of open port 22; `scripts/smoke.sh`, `scripts/backup.sh` with `set -euo pipefail` |
+| **ForgeCI** M1–M2 (W14–15) | **Linux deep dive** because workers run user-supplied steps in containers: processes, `fork`/`exec`, stdout/stderr capture, exit codes, signals (SIGTERM then SIGKILL on timeout), permissions, non-root user in the job image |
+| **ForgeCI** M4–M6 (W17–19) | Graceful shutdown on SIGTERM (finish or release the current job), worker EC2 with the Docker socket (why that is root-equivalent), rotation of job logs |
+| **Polish** (W24–26) | `scripts/teardown.sh`, runbooks per project |
 
 ## Where to learn it in this repo
 
@@ -43,7 +45,7 @@ Type (`-` file, `d` dir) then owner/group/other triplets of read/write/execute. 
 
 <details><summary><b>B3. How do you follow a log and filter it?</b></summary>
 
-`tail -f app.log | grep --line-buffered ERROR`; for systemd services `journalctl -u pulsewatch -f`; for containers `docker compose logs -f api`.
+`tail -f app.log | grep --line-buffered ERROR`; for systemd services `journalctl -u flowgrid -f`; for containers `docker compose logs -f api`.
 </details>
 
 <details><summary><b>B4. Absolute vs relative paths, and what's in <code>/etc</code>, <code>/var/log</code>, <code>/home</code>, <code>/tmp</code>?</b></summary>
@@ -77,21 +79,21 @@ Process: own address space; threads share it. `ps -eLf`, `top -H -p <pid>`, and 
 
 ```ini
 [Unit]
-Description=PulseWatch stack
+Description=FlowGrid stack
 Requires=docker.service
 After=docker.service network-online.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-WorkingDirectory=/opt/pulsewatch
+WorkingDirectory=/opt/flowgrid
 ExecStart=/usr/bin/docker compose up -d
 ExecStop=/usr/bin/docker compose down
 
 [Install]
 WantedBy=multi-user.target
 ```
-`systemctl daemon-reload && systemctl enable --now pulsewatch`.
+`systemctl daemon-reload && systemctl enable --now flowgrid`.
 </details>
 
 <details><summary><b>I4. The disk is full — how do you find what's using it?</b></summary>
@@ -114,16 +116,21 @@ Load average = runnable + uninterruptible tasks averaged over 1/5/15 min; compar
 `#!/usr/bin/env bash`, `set -euo pipefail`, quote variables `"$var"`, `trap cleanup EXIT`, check args, `shellcheck`. Use `[[ ]]` for tests, `$(...)` for command substitution.
 </details>
 
+<details><summary><b>I8b. How does ForgeCI stop a job that exceeds its timeout?</b></summary>
+
+The step runs as a process inside the job container. On timeout the worker sends `SIGTERM` (container `stop` with a grace period) so a well-behaved process can flush; if it is still alive after the grace period, `SIGKILL` (container `kill`). The worker records the exit code (`137` = killed by SIGKILL, `143` = SIGTERM) and marks the job `TIMED_OUT`, not `FAILED`, so the retry policy treats it differently. `finally` removes the container so a stuck process can't leak.
+</details>
+
 <details><summary><b>I8. SSH keys and hardening?</b></summary>
 
-Key pair; public key in `~/.ssh/authorized_keys` (perm 600, dir 700). Disable password auth and root login; restrict SG to your IP — or avoid 22 entirely with SSM Session Manager (PulseWatch).
+Key pair; public key in `~/.ssh/authorized_keys` (perm 600, dir 700). Disable password auth and root login; restrict SG to your IP — or avoid 22 entirely with SSM Session Manager (FlowGrid onward).
 </details>
 
 ## 3. Realistic interview questions
 
 <details><summary><b>R1. "You list Linux — how comfortable are you on a server?"</b></summary>
 
-Truthful past (daily terminal, SSH to dev/staging, log reading). Now: set up PulseWatch's EC2 host — Docker, systemd unit, log inspection, disk/port checks, Bash scripts. Offer to do it live.
+Truthful past (daily terminal, SSH to dev/staging, log reading). Now: set up FlowGrid's EC2 host — Docker, systemd unit, log inspection, disk/port checks, Bash scripts — and repeated it three times; in ForgeCI I wrote the code that runs processes in containers and handles their signals and exit codes. Offer to do it live.
 </details>
 
 <details><summary><b>R2. "The API is slow on the server. What commands do you run first?"</b></summary>
@@ -153,7 +160,7 @@ while true; do
   sleep 10
 done
 ```
-Mention PulseWatch is the "real" version of this.
+Mention ForgeCI's per-job timeout is the "real" version of this loop: `SIGTERM`, wait, `SIGKILL`, record exit code 137/143.
 </details>
 
 ## 4. Practical tasks (doable live)
@@ -173,7 +180,7 @@ Missing execute bit (`chmod +x`), `noexec` mount, wrong owner, or CRLF line endi
 
 <details><summary><b>D2. Service won't start after reboot.</b></summary>
 
-`systemctl status pulsewatch`, `journalctl -u pulsewatch -b`, unit not enabled, dependency (docker) not ready, working directory or env file missing.
+`systemctl status flowgrid`, `journalctl -u flowgrid -b`, unit not enabled, dependency (docker) not ready, working directory or env file missing.
 </details>
 
 <details><summary><b>D3. "Address already in use".</b></summary>
@@ -252,7 +259,7 @@ Host stays minimal (Docker + agent); app dependencies are versioned in images; r
 
 ## 13. One small hands-on exercise
 
-**Ops toolkit for PulseWatch host (local VM or container is fine).**
+**Ops toolkit for the FlowGrid host (local VM or container is fine).**
 
 - [ ] `smoke.sh URL` exits non-zero if health isn't `UP` within 30 s (retry loop).
 - [ ] `backup.sh` dumps Postgres, gzips, retains 7 files, logs to stderr on failure.
@@ -266,4 +273,4 @@ Host stays minimal (Docker + agent); app dependencies are versioned in images; r
 - [ ] Explain signals and exit codes 137/143
 - [ ] Write a safe Bash script from scratch
 - [ ] Write a systemd unit and read journald logs
-- [ ] Truthful 60-second answer on past Linux use + PulseWatch bridge
+- [ ] Truthful 60-second answer on past Linux use + FlowGrid / ForgeCI bridge
