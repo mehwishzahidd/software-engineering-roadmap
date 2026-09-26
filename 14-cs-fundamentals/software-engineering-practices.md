@@ -318,7 +318,7 @@ disagree-and-commit.
 Rules:
 - **Structured logs** (JSON) with consistent fields: `timestamp, level, logger, message, requestId, userId, orderId / jobId`.
 - **Correlation IDs**: put a request ID in MDC at the edge (filter), include it in every line and in error responses. Clear MDC after the request (thread reuse!).
-- Use **parameterized logging**: `log.info("Monitor {} failed {} times", id, count)` — no string concatenation, cheap when disabled.
+- Use **parameterized logging**: `log.info("Job {} failed on attempt {}", jobId, attempt)` — no string concatenation, cheap when disabled.
 - Log exceptions **once**, with the stack trace, at the boundary where you handle them: `log.error("Report export failed for warehouse {}", warehouseId, e)`. Don't log-and-rethrow at every layer.
 - **Never log** secrets, passwords, tokens, full card numbers, presigned URLs; be careful with emails/PII.
 - Logs are not metrics: count things with metrics (Micrometer), use logs for detail.

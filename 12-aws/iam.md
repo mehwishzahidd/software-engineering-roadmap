@@ -186,7 +186,7 @@ Spring Boot (AWS SDK v2)
   instance role, rotated automatically before expiry.
 - Your code does nothing special: `S3Client.builder().region(Region.EU_WEST_1).build()`.
 - Containers on the instance can reach IMDS too. With **IMDSv2** and the default hop limit of 1,
-  containers on a bridge network *cannot*; set the hop limit to 2 (see [ec2.md](./ec2.md#imdsv2-and-docker)).
+  containers on a bridge network *cannot*; set the hop limit to 2 (see [ec2.md](./ec2.md#5-imdsv2-and-docker)).
 - **Break it:** set `AWS_ACCESS_KEY_ID=bogus` in the container env → the chain stops at step 2
   and you get `InvalidAccessKeyId`. This is why you never mix mechanisms.
 

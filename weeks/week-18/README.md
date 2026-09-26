@@ -152,6 +152,30 @@ FROM jobs WHERE started_at IS NOT NULL AND enqueued_at > now() - interval '15 mi
 
 - **Interview angle:** "What was your throughput?" — "X jobs/min with 3 workers on a 2-vCPU laptop, 2-second jobs, p95 queue wait Y ms; bottleneck was container start time, not the queue." That sentence is only allowed if you ran it.
 
+### 4.6 The Python tools that make the measurement repeatable
+
+Three small, tested Python programs under `tools/` (each: `README.md`, `pyproject.toml`, type hints, `pytest`):
+
+| Tool | Purpose | Used by |
+|---|---|---|
+| `tools/repogen` | Creates local Git repositories with `.forgeci.yml` variants: passing, failing step, slow (`sleep 30`), timeout, bad config (cycle/unknown image); pushes to a local bare remote or a GitHub test org | failure suite, ITs (seed data), benchmark |
+| `tools/loadsim` | Fires **HMAC-signed** webhook payloads at a configurable rate/concurrency, polls build status, reports queue wait and completion percentiles as CSV/JSON | benchmark matrix, chaos runs |
+| `tools/loganalyze` | Parses persisted logs/results (via API or DB), reports failure taxonomy counts (app vs infra), retry counts, per-step durations | PERFORMANCE.md, failure-engineering write-ups |
+
+The signing helper is the same computation your Java receiver verifies — a good cross-check:
+
+```python
+import hmac, hashlib
+
+def sign(secret: bytes, body: bytes) -> str:
+    return "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+```
+
+- Percentiles: `statistics.quantiles(waits, n=100)[94]` for p95 — or `numpy.percentile` if you already depend on it; say which in the README.
+- Concurrency: `concurrent.futures.ThreadPoolExecutor` is enough at 5–20 rps; note the GIL is irrelevant for I/O-bound load.
+- **Interview angle (Track B):** "How did you load-test it?" — a tool you wrote, with tests, that anyone can rerun: `python -m loadsim --rate 5 --jobs 100 --out run3.csv`.
+- **Where ForgeCI uses this:** `docs/PERFORMANCE.md` links the exact commands and CSVs for every table.
+
 ## 5. Resources
 
 - Testcontainers Java docs (modules: PostgreSQL, GenericContainer) and Spring Boot 3 "Testcontainers support" reference section.
@@ -171,9 +195,13 @@ Write `AbstractIntegrationTest` (Postgres + Redis, static, reused by all ITs). A
 
 On a machine (or a fresh clone) with only Docker: `docker compose up --build` → open the UI → register a repo → push → see a green build. Acceptance: no manual step besides `.env` with the GitHub secret.
 
+### Exercise C — `tools/repogen` first (1.5 h)
+
+Write the generator before the failure suite: `python -m repogen --variant failing --out /tmp/r1` creates a repo with one commit and a `.forgeci.yml`. Tests with `tmp_path`: each variant produces a valid Git repo, the YAML parses, the `bad-config` variant does not. Acceptance: `pytest tools/repogen -q` green; README with the variants table.
+
 ### Break it (inside ForgeCI)
 
-- Start the stack with `--scale worker=3`, enqueue 20 jobs, `docker kill` one worker mid-job. Predict: which job status, when does the lease expire, who picks it up, does the retry counter increase (it should — infra failure)?
+- Start the stack with `--scale worker=3`, enqueue 20 jobs with `loadsim`, `docker kill` one worker mid-job. Predict: which job status, when does the lease expire, who picks it up, does the retry counter increase (it should — infra failure)?
 - `docker compose restart redis` while jobs are queued. Predict: what is lost if you use a plain list vs Streams vs AOF persistence?
 - Remove the healthcheck `condition` from `api.depends_on`. Predict the first log line.
 
@@ -182,9 +210,9 @@ On a machine (or a fresh clone) with only Docker: `docker compose up --build` �
 - A job shows `RUNNING` forever after a worker crash. Use `redis-cli` (`LRANGE processing:<worker>`, `TTL lease:<jobId>`) and the `jobs` table to find whether the lease was never written, never expired, or expired but the reaper didn't run.
 - Integration tests pass locally but fail in CI with `Connection refused`. Check whether CI uses Testcontainers (needs Docker) or you accidentally left a `localhost` property in `application-test.yml`.
 
-## 7. DSA — 2-D Dynamic Programming (7 new)
+## 7. DSA — 2-D Dynamic Programming (7 new, Python)
 
-Guide: [`03-dsa/21-dp-2d.md`](../../03-dsa/21-dp-2d.md). Toolkit: [`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md). Week 17 opened 2-D DP; this week finishes the core set.
+Guide: [`03-dsa/21-dp-2d.md`](../../03-dsa/21-dp-2d.md) (Python templates first). Templates and pitfalls: [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) — for 2-D DP: `[[0] * (n + 1) for _ in range(m + 1)]` (never `[[0] * n] * m` — aliasing), `functools.lru_cache` for top-down with `sys.setrecursionlimit` awareness, rolling rows to cut memory. Week 17 opened 2-D DP; this week finishes the core set.
 
 | # | Problem | Pattern note | Time limit |
 |---|---|---|---|
@@ -196,7 +224,7 @@ Guide: [`03-dsa/21-dp-2d.md`](../../03-dsa/21-dp-2d.md). Toolkit: [`03-dsa/java-
 | 329 | Longest Increasing Path in a Matrix | DFS + memo — DP without a table order | 35 min |
 | 115 | Distinct Subsequences | Skip vs match; watch `long` overflow | 35 min |
 
-Rules: 25–35 min then read the editorial and log `Solved With Solution`; re-implement blank-file the same day. Reviews due this week: Day-3 of Week 17's Greedy/2-D DP set, Day-7 of Week 16's Intervals, Day-14 of Week 15's 1-D DP, Day-30 of Week 13's Graphs. Log everything in [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md).
+Rules: 25–35 min then read the editorial and log `Solved With Solution`; re-implement blank-file the same day. **Java rep (1, not counted as new):** re-do 1143 (LCS) from Week 17 in Java with `int[][]` — log in the tracker's "Java rep" column ([`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md)). Reviews due this week: Day-3 of Week 17's Greedy/2-D DP set, Day-7 of Week 16's Intervals, Day-14 of Week 15's 1-D DP, Day-30 of Week 13's Graphs. Log everything in [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md).
 
 ## 8. Project work — ForgeCI M5
 
@@ -212,7 +240,8 @@ Spec: [`18-projects/forgeci/README.md`](../../18-projects/forgeci/README.md) · 
 - [ ] Fault-injection hook + injectable `Clock` (if not done in M4)
 - [ ] `compose.yaml`: api, worker (replicas), postgres, redis, ui, healthchecks, `.env.example`
 - [ ] CI: `mvn verify` (unit + IT) → build 3 images → push to GHCR on `main` → optional deploy job (manual `workflow_dispatch` is fine this week)
-- [ ] Benchmark: 3 runs × worker count {1, 3, 5} × 100 jobs; record with `benchmark-report.md`; write `docs/PERFORMANCE.md` draft
+- [ ] Python `tools/repogen`, `tools/loadsim`, `tools/loganalyze`: README, `pyproject.toml`, type hints, `pytest` tests, run in CI (`pytest tools/` job)
+- [ ] Benchmark: 3 runs × worker count {1, 3, 5} × 100 jobs driven by `loadsim`; record with `benchmark-report.md`; write `docs/PERFORMANCE.md` draft
 - [ ] Docs: README (run in 3 commands), ARCHITECTURE (queue + worker + execution diagram), TESTING (how ITs run, how to arm failure points)
 - [ ] Tag `v1.0`, GitHub release notes listing what is measured and what is not
 
@@ -221,7 +250,8 @@ Spec: [`18-projects/forgeci/README.md`](../../18-projects/forgeci/README.md) · 
 - `mvn verify` green locally and in CI, including ITs on real Postgres + Redis.
 - Compose stack up from a clean clone; `--scale worker=5` works without config change.
 - Every failure scenario has a linked regression test (issue → PR → test name).
-- Benchmark report has environment, load profile, warm-up, duration, p50/p95/p99, worker count, and a one-paragraph bottleneck analysis.
+- Benchmark report has environment, load profile, warm-up, duration, p50/p95/p99, worker count, and a one-paragraph bottleneck analysis — reproducible with the documented `loadsim` command.
+- Python tools have passing `pytest` suites, READMEs and are referenced from `docs/TESTING.md`/`docs/PERFORMANCE.md` where used.
 - `v1.0` tag exists; README states the tier honestly ("Strong Résumé Version; DAG pipelines are M6").
 
 ### Verification tests you write (describe, then implement)
@@ -235,6 +265,9 @@ Spec: [`18-projects/forgeci/README.md`](../../18-projects/forgeci/README.md) · 
 | `RedisRestartIT` | 10 queued jobs | Redis container restarted | zero lost jobs (Streams/AOF) **or** documented loss + DB-backed requeue |
 | `ProjectLimitIT` | limit 2, 20 jobs | workers drain | max concurrent per project observed == 2 |
 | `GracefulShutdownIT` | job running | SIGTERM to worker | job finishes or is released within `shutdownTimeout`; no orphan |
+| `test_sign_matches_java` (pytest) | known secret + body | `sign()` | equals the signature the Java receiver accepts (fixture vector exported from a JUnit test) |
+| `test_loadsim_percentiles` (pytest) | synthetic waits | report | p50/p95 computed correctly; CSV columns stable |
+| `test_loganalyze_taxonomy` (pytest) | fixture log/result JSON | analyse | app vs infra counts correct; retries summed |
 
 ### Failure scenarios to run this week (from `failure-engineering.md`)
 
@@ -262,9 +295,15 @@ Do not write implementations from this file — the spec and milestone files giv
 
 ## 10. Interview preparation
 
-- **OA simulation #2** (Sat, 90 min): per [`OA_PREP.md`](../../OA_PREP.md) — two timed problems (one Medium from this week's DP set, one unseen Medium from a weak pattern) plus a 20-minute debugging task from [`21-debugging-code-reading/exercises/buggy-library/`](../../21-debugging-code-reading/exercises/buggy-library/). Score against [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md); log in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
-- **Weekly mock** (Tue, 1 h): coding mock per [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md). Ask the interviewer to probe "how would you test this?" — M5 is a testing week.
-- **Résumé defense drill** (3 questions): Docker and CI/CD this week — [`17-resume-tech-defense/docker.md`](../../17-resume-tech-defense/docker.md), [`17-resume-tech-defense/cicd.md`](../../17-resume-tech-defense/cicd.md), [`RESUME_INTERVIEW_QUESTIONS.md`](../../RESUME_INTERVIEW_QUESTIONS.md).
+Two tracks, never mixed (ROADMAP §10): **Track A = coding interview in Python**, **Track B = software-engineering/résumé interview in Java, Spring, SQL, Docker, AWS…**
+
+**Track A (Python)**
+- **OA simulation #2** (Sat, 90 min): per [`OA_PREP.md`](../../OA_PREP.md) — two timed algorithm problems **in Python** (one Medium from this week's DP set, one unseen Medium from a weak pattern), then the OA's "existing codebase / failing tests" task, which stays **in Java**: 20 minutes on [`21-debugging-code-reading/exercises/buggy-library/`](../../21-debugging-code-reading/exercises/buggy-library/). Score against [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md); log in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
+- **Weekly coding mock** (Tue, 45 min, Python): [`16-interview-prep/mock-interviews.md`](../../16-interview-prep/mock-interviews.md), method from [`16-interview-prep/coding-interview-method.md`](../../16-interview-prep/coding-interview-method.md); keep [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) closed during the mock.
+
+**Track B (Java / projects)**
+- **Weekly engineering mock** (Sat, 30 min): ask the interviewer to probe "how would you test this?" on ForgeCI — M5 is a testing week. Expected answers: Testcontainers, failure points, exactly-once test, the Python load tool.
+- **Résumé defense drill** (3 questions): Docker and CI/CD this week — [`17-resume-tech-defense/docker.md`](../../17-resume-tech-defense/docker.md), [`17-resume-tech-defense/cicd.md`](../../17-resume-tech-defense/cicd.md), [`RESUME_INTERVIEW_QUESTIONS.md`](../../RESUME_INTERVIEW_QUESTIONS.md). Add one Python question from [`17-resume-tech-defense/python.md`](../../17-resume-tech-defense/python.md) ("what Python have you written professionally-style?" → the ForgeCI tools).
 - **Story bank:** add one STAR story from this week's failure debugging ([`16-interview-prep/behavioral.md`](../../16-interview-prep/behavioral.md)).
 - **Applications:** you crossed OA-ready around W16–17 ([`JOB_READINESS.md`](../../JOB_READINESS.md)); keep the weekly volume target there (internship + new-grad roles), and log every OA invitation as a real data point.
 

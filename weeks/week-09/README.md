@@ -28,7 +28,7 @@ The point of this week is not the endpoints. It is that you can say, in an inter
 
 - [Checkpoint 8](../../checkpoints/checkpoint-08.md) passed (or its remediation plan written). FlowGrid v1.0 tagged and deployed.
 - You can create a Spring Boot + Flyway + Postgres + JWT skeleton from memory in ≤ 2 hours ([Week 4](../week-04/)). If not, that is Monday's first project block — time-box it.
-- Recursion is solid ([Week 8](../week-08/)) — every tree problem this week is recursion.
+- Recursion is solid in Python ([Week 8](../week-08/)) — every tree problem this week is recursion. Remember `sys.setrecursionlimit` and the `TreeNode` template in [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md).
 - Read the LedgerX spec before writing code: [`18-projects/ledgerx/README.md`](../../18-projects/ledgerx/README.md).
 
 ## 3. Learning topics
@@ -185,11 +185,11 @@ Heap pages, tuple headers, B-tree index on `(account_id, created_at)`, WAL as th
 - A `DataIntegrityViolationException` appears on deposit only in CI, not locally. Hypothesis list: seed migration order, test isolation (`@Transactional` tests rolling back seed data?), Testcontainers reuse. Find it with `docker logs` and Flyway's `info` output.
 - `GET /balance` returns `100.00` derived but `100.0000` materialized and your JSON test fails on string compare. Fix the serialization (Jackson `BigDecimal` scale) — not the test.
 
-## 7. DSA — Trees (8 new problems)
+## 7. DSA — Trees (8 new problems, in Python)
 
-Pattern guide: [`03-dsa/10-trees.md`](../../03-dsa/10-trees.md) · Toolkit: [`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md) · Method: [`16-interview-prep/coding-interview-method.md`](../../16-interview-prep/coding-interview-method.md)
+**Language: Python (Track A).** Pattern guide: [`03-dsa/10-trees.md`](../../03-dsa/10-trees.md) · Templates: [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) (tree/BFS templates, `deque`) · Method: [`16-interview-prep/coding-interview-method.md`](../../16-interview-prep/coding-interview-method.md)
 
-Read §1–§5 of the guide on Monday (45 min), then solve. Write the recursive **and** the iterative version for the first two.
+Read §1–§5 of the guide on Monday (45 min), then solve. Write the recursive **and** the iterative (explicit stack) version for the first two. BFS uses `collections.deque` — never `list.pop(0)` (O(n)).
 
 | # | Problem | Difficulty | Time limit | Day |
 |---|---|---|---|---|
@@ -204,7 +204,9 @@ Read §1–§5 of the guide on Monday (45 min), then solve. Write the recursive 
 
 **Reviews due this week** (from [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md)): Day-3 of Thu/Fri Week 8 recursion problems; Day-7 of Week 8's first half; Day-14 of Week 7 linked lists; Day-30 of Week 5 stack/queue. Friday's DSA hour is reviews only.
 
-Rules: 5 minutes of thinking out loud before code; if stuck at the time limit, read the hint, then the solution, mark `Solved With Solution`, and re-solve from blank on Day 3.
+**Java rep (1 problem, ≤ 30 min, Fri):** re-solve #102 (Level Order) in Java with `ArrayDeque` + `List<List<Integer>>` — you already know the algorithm; the point is keeping Java collections fluent for Track B. Toolkit: [`03-dsa/java-dsa-toolkit.md`](../../03-dsa/java-dsa-toolkit.md). Mark the "Java rep" column in the tracker.
+
+Rules: 5 minutes of thinking out loud before code; if stuck at the time limit, read the hint, then the solution, mark `Solved With Solution`, and re-solve from blank on Day 3. Python pitfall of the week: a mutable default argument (`def dfs(node, path=[])`) is shared across calls — pass the list explicitly.
 
 ## 8. Project work — LedgerX M1 (Ledger core)
 
@@ -268,8 +270,10 @@ From [`failure-engineering.md`](../../18-projects/ledgerx/failure-engineering.md
 
 ## 10. Interview preparation
 
-- **Think-aloud (Tue, 45 min):** LeetCode 102 (Level Order) recorded; score with [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md). Log in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
-- **Résumé-defense drill (Sat, 45 min) — this week's techs: PostgreSQL, JUnit, Maven.** Three questions from [`17-resume-tech-defense/postgresql.md`](../../17-resume-tech-defense/postgresql.md), [`17-resume-tech-defense/junit.md`](../../17-resume-tech-defense/junit.md), [`17-resume-tech-defense/maven.md`](../../17-resume-tech-defense/maven.md). Answer out loud, 2 minutes each, with a LedgerX or FlowGrid example.
+Two tracks, never mixed: **Track A = coding interview, in Python**; **Track B = software-engineering / résumé interview, in Java/Spring/SQL/etc.** (ROADMAP §10).
+
+- **Think-aloud (Tue, 45 min) — Track A, Python:** LeetCode 102 (Level Order) recorded; score with [`INTERVIEW_CHECKLIST.md`](../../INTERVIEW_CHECKLIST.md). Log in [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md).
+- **Résumé-defense drill (Sat, 45 min) — Track B — this week's techs: PostgreSQL, JUnit, Maven.** Three questions from [`17-resume-tech-defense/postgresql.md`](../../17-resume-tech-defense/postgresql.md), [`17-resume-tech-defense/junit.md`](../../17-resume-tech-defense/junit.md), [`17-resume-tech-defense/maven.md`](../../17-resume-tech-defense/maven.md). Answer out loud, 2 minutes each, with a LedgerX or FlowGrid example.
 - **Story bank (Sat, 30 min):** add one story from this week (e.g., "I found the orphaned journal row and wrote the atomicity test") using [`16-interview-prep/behavioral.md`](../../16-interview-prep/behavioral.md).
 - **Applications:** you are in the early stage since Week 8 ([`JOB_READINESS.md`](../../JOB_READINESS.md)). Sunday: 2–3 long-timeline internship/new-grad applications where FlowGrid alone is a fair story. Track in the interview tracker.
 
@@ -287,13 +291,13 @@ From [`failure-engineering.md`](../../18-projects/ledgerx/failure-engineering.md
 | **Tue** (8h) | — | Migrations, entities, immutability trigger/REVOKE (5h) | #226, #100 + Day-3 reviews (2h) | Think-aloud #102 (1h) |
 | **Wed** (8h) | Constraints/triggers, MVCC lab (2h) | Deposit/withdraw services, balance service, errors (4.5h) | #572, #543 (1.5h) | — |
 | **Thu** (8h) | — | Controllers, JWT, ownership, OpenAPI (5h) | #110, #102 + Day-7 reviews (2h) | `docs/DATABASE.md` + ERD (1h) |
-| **Fri** (5h) | — | Testcontainers invariant suite (3h) | Reviews only (1h) | Retro prep: what broke, what I learned (1h) |
+| **Fri** (5h) | — | Testcontainers invariant suite (3h) | Reviews + Java rep #102 (1h) | Retro prep: what broke, what I learned (1h) |
 | **Sat** (6h) | — | Failure scenarios, PR self-review, tag `m1` (4h) | — | Résumé-defense drill + story bank (2h) |
 | **Sun** (2–3h) | — | — | Day-14/30 reviews | End-of-week test (§13), trackers, plan Week 10, 2–3 applications |
 
 ## 13. End-of-week test (Sunday, 75 min, closed notes)
 
-**Part A — DSA (30 min).** Solve LeetCode **199. Binary Tree Right Side View** (Medium) in ≤ 25 min, then explain BFS vs DFS-right-first approaches out loud.
+**Part A — DSA (30 min, Python).** Solve LeetCode **199. Binary Tree Right Side View** (Medium) in ≤ 25 min, then explain BFS vs DFS-right-first approaches out loud.
 
 **Part B — Concepts (20 min).**
 
@@ -323,14 +327,14 @@ Pass: A solved in time · B ≥ 5/6 · C works · D fluent without restarting.
 - [ ] I can write an append-only trigger and a `REVOKE` from memory.
 - [ ] I know why `SUM` in one statement is consistent and why balance-then-write is not.
 - [ ] I can write the derived vs materialized balance trade-off as an ADR.
-- [ ] All 8 tree problems attempted; ≥ 6 `Solved Independently` or `Solved With Hint`; all reviews done.
+- [ ] All 8 tree problems attempted in Python; ≥ 6 `Solved Independently` or `Solved With Hint`; all reviews done; one Java rep done.
 - [ ] Think-aloud recorded and scored; 3 résumé-defense answers logged.
 
 ## 15. Expected deliverables
 
 - `ledgerx` repo: M1 milestone closed, tag `m1`, CI green, `docs/adr/0001`, `0002`, `docs/DATABASE.md`, `docs/FAILURES.md` (3 scenarios).
 - [`trackers/project-tracker.md`](../../trackers/project-tracker.md): LedgerX M1 row filled (hours, PRs, what slipped).
-- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md): 8 tree rows with statuses + next review dates.
+- [`trackers/dsa-tracker.md`](../../trackers/dsa-tracker.md): 8 tree rows (Python) with statuses + next review dates; "Java rep" column ticked for #102.
 - [`trackers/technology-tracker.md`](../../trackers/technology-tracker.md): PostgreSQL triggers/MVCC, `BigDecimal` marked with evidence links.
 - [`trackers/interview-tracker.md`](../../trackers/interview-tracker.md): think-aloud score, drill answers, applications sent.
 - [`trackers/weekly-progress.md`](../../trackers/weekly-progress.md): Week 9 retro (3 wins, 3 problems, 1 change for next week).

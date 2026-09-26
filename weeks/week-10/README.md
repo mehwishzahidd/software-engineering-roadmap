@@ -25,7 +25,7 @@ Ship `POST /transfers` such that:
 
 - Week 9 acceptance criteria green; tag `m1` exists. If withdrawal slipped, finish it **Monday morning** before anything else.
 - You can explain FlowGrid's N-threads-one-unit test ([Week 5](../week-05/)) without looking. This week generalises it.
-- Trees are comfortable (BST problems assume you can traverse).
+- Trees are comfortable in Python (BST problems assume you can traverse); you know the `TreeNode`/DFS templates in [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md).
 
 ## 3. Learning topics
 
@@ -185,9 +185,9 @@ Run it **20 times in a loop** (`@RepeatedTest(20)`) before trusting it. Use a re
 - The concurrency test passes alone, fails when the suite runs. Suspects: shared Testcontainers DB with leftover rows; test ordering; connection pool size 2 with 2 threads + 1 idempotency `REQUIRES_NEW` = **pool exhaustion deadlock** (classic!). Prove it with HikariCP's `leakDetectionThreshold` and by raising `maximumPoolSize`.
 - Transfer succeeds but replay returns `409 IN_PROGRESS` forever: the completion write happened in the outer transaction that rolled back for an unrelated reason. Fix the ordering/propagation and add a test.
 
-## 7. DSA — Binary Search Trees + Tries (8 new problems)
+## 7. DSA — Binary Search Trees + Tries (8 new problems, in Python)
 
-Guides: [`03-dsa/11-bst.md`](../../03-dsa/11-bst.md) · [`03-dsa/12-tries.md`](../../03-dsa/12-tries.md) · finish Week 9 leftovers first if any.
+**Language: Python (Track A).** Guides: [`03-dsa/11-bst.md`](../../03-dsa/11-bst.md) · [`03-dsa/12-tries.md`](../../03-dsa/12-tries.md) · Templates: [`PYTHON_INTERVIEW_CHEATSHEET.md`](../../PYTHON_INTERVIEW_CHEATSHEET.md) · finish Week 9 leftovers first if any. Trie node in Python: a class with `children: dict[str, TrieNode]` and `end: bool` (or a nested `dict` with a sentinel key — know both; the class version reads better in interviews). Use `float('-inf')`/`float('inf')` for BST bounds.
 
 | # | Problem | Difficulty | Time limit | Day |
 |---|---|---|---|---|
@@ -201,6 +201,8 @@ Guides: [`03-dsa/11-bst.md`](../../03-dsa/11-bst.md) · [`03-dsa/12-tries.md`](.
 | 1448 | Count Good Nodes in Binary Tree | Medium | 20 min | Fri (if reviews done) |
 
 Reviews due: Day-3 of Week 9 Thu/Fri; Day-7 of Week 9 Mon–Wed; Day-14 of Week 8 recursion; Day-30 of Week 6 binary search. Explain #98's min/max-bound approach vs inorder approach out loud — both are interview-standard.
+
+**Java rep (Fri, ≤ 30 min):** #208 Implement Trie in Java (`Map<Character, Node>` or `Node[26]`) — a data-structure design problem is the best kind of Java rep because it exercises classes, not just collections. Tick the tracker's "Java rep" column.
 
 ## 8. Project work — LedgerX M2 (Idempotent concurrent transfers) = MVP
 

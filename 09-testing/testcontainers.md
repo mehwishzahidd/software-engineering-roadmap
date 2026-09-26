@@ -1,8 +1,8 @@
 # Testcontainers
 
-> **Week 12** · P2 TicketHold M4–M5, then P3 TeamBoard and P4 PulseWatch (Postgres + Redis).
-> Testcontainers starts real, throwaway Docker containers from your tests. Your integration tests hit **the same
-> PostgreSQL 16** you run in production instead of an in-memory imitation.
+> **Week 5** (FlowGrid M2: the reservation concurrency test), **Week 10** (LedgerX: concurrent transfers),
+> **Week 18** (ForgeCI M5: Postgres + Redis, chaos-style tests). Testcontainers starts real, throwaway Docker containers
+> from your tests, so integration tests hit **the same PostgreSQL 16 and Redis 7** you run in production.
 > Prereq: Docker running locally (`docker info` works). Docker basics: [11-docker/](../11-docker/README.md).
 
 ---
@@ -11,9 +11,9 @@
 
 | Approach | Problem |
 |---|---|
-| H2 in Postgres mode | different SQL, types (`jsonb`, `timestamptz`), locking, constraint timing — false greens |
+| H2 in Postgres mode | different SQL, types (`jsonb`, `timestamptz`), locking (`FOR UPDATE` semantics), triggers — false greens |
 | A shared dev database | tests pollute each other and your data; not reproducible in CI |
-| Mocking repositories | the query is never executed |
+| Mocking repositories | the query and the lock never execute |
 | **Testcontainers** | real engine, fresh per run, same in CI; costs a few seconds of startup |
 
 ---
@@ -42,8 +42,8 @@ Versions are managed by the Spring Boot parent (Boot 3.x manages Testcontainers 
 
 > **Version note:** Testcontainers 2.x (used by Spring Boot 4) renamed modules (e.g. `testcontainers-postgresql`,
 > `testcontainers-junit-jupiter`) and moved container classes into per-module packages (e.g.
-> `org.testcontainers.postgresql.PostgreSQLContainer`, no generic parameter). Concepts are identical — check the
-> docs for the major version your Boot version manages.
+> `org.testcontainers.postgresql.PostgreSQLContainer`, no generic parameter). Concepts are identical — check the docs
+> for the major version your Boot version manages.
 
 ---
 
@@ -57,30 +57,28 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 
 @SpringBootTest
 @Testcontainers
-class EventRepositoryIT {
+class SkuRepositoryIT {
 
     @Container
     @ServiceConnection
     static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
 
-    @Autowired EventRepository events;
+    @Autowired SkuRepository skus;
 
     @Test
-    void savesAndFindsUpcomingEvents() {
-        events.save(TestData.event("Jazz Night", Instant.parse("2026-06-01T19:00:00Z")));
-        assertThat(events.findUpcoming(Instant.parse("2026-05-01T00:00:00Z"))).hasSize(1);
+    void findsByCodeCaseInsensitively() {
+        skus.save(TestData.sku("BOLT-M8-50"));
+        assertThat(skus.findByCodeIgnoreCase("bolt-m8-50")).isPresent();
     }
 }
 ```
-
-What each piece does:
 
 | Piece | Effect |
 |---|---|
 | `@Testcontainers` | JUnit extension that starts/stops fields annotated `@Container` |
 | `@Container` on a **static** field | one container per test **class** (instance field → one per test method: slow) |
-| `@ServiceConnection` (Boot 3.1+) | Boot creates `JdbcConnectionDetails` from the container → `spring.datasource.url/username/password` are wired automatically |
-| `"postgres:16-alpine"` | **pin the tag** to match production (P4 uses RDS PostgreSQL 16) |
+| `@ServiceConnection` (Boot 3.1+) | Boot creates connection details from the container → `spring.datasource.*` wired automatically |
+| `"postgres:16-alpine"` | **pin the tag** to match production (RDS PostgreSQL 16) |
 
 Flyway runs against the container on context startup, so migrations are tested too.
 
@@ -95,16 +93,15 @@ static void props(DynamicPropertyRegistry r) {
 }
 ```
 
-You'll see this in many existing codebases and tutorials. Still needed for things without a service-connection
-integration (e.g. custom properties).
+You'll see this in many codebases and tutorials. Still needed for properties without a service-connection integration.
 
 ---
 
-## 4. Share one container across the suite
+## 4. Share containers across the suite
 
-Per-class containers restart Postgres for every test class (≈2–5 s each). Two common patterns:
+Per-class containers restart Postgres for every test class (≈ 2–5 s each). Two common patterns:
 
-### A. `@TestConfiguration` bean (Boot 3.1+) — recommended
+### A. `@TestConfiguration` beans (Boot 3.1+) — recommended
 
 ```java
 @TestConfiguration(proxyBeanMethods = false)
@@ -117,7 +114,7 @@ public class TestcontainersConfig {
     }
 
     @Bean
-    @ServiceConnection(name = "redis")          // PulseWatch: Boot wires spring.data.redis.* from this
+    @ServiceConnection(name = "redis")          // Boot wires spring.data.redis.* from this
     GenericContainer<?> redis() {
         return new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
     }
@@ -127,16 +124,16 @@ public class TestcontainersConfig {
 ```java
 @SpringBootTest
 @Import(TestcontainersConfig.class)
-class MonitorServiceIT { /* ... */ }
+class AllocationServiceIT { /* ... */ }
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Import(TestcontainersConfig.class)
-class CheckResultRepositoryIT { /* ... */ }
+class InventoryLevelRepositoryIT { /* ... */ }
 ```
 
-Container beans are started with the context and — because Spring caches contexts with identical configuration —
-shared by every test class that uses the same setup.
+Container beans start with the context and — because Spring caches contexts with identical configuration — are shared by
+every test class using the same setup. FlowGrid needs Redis from M3 (catalog cache), ForgeCI from M2 (queue).
 
 ### B. Singleton container in an abstract base class
 
@@ -154,85 +151,90 @@ No `@Container`/`@Testcontainers` here on purpose: the JUnit extension would sto
 
 ## 5. Test isolation with a shared database
 
-A shared container means shared data. Options:
-
 | Strategy | When |
 |---|---|
 | `@Transactional` rollback (default in `@DataJpaTest`) | single-thread repository tests |
-| Truncate tables in `@BeforeEach` (`@Sql` script or `JdbcTemplate`) | `@SpringBootTest` with `RANDOM_PORT`, multi-threaded tests |
-| Unique data per test (random emails/names) | tests that just need "some" data |
+| Truncate tables before each test (`@Sql` or `JdbcTemplate`) | `@SpringBootTest` with `RANDOM_PORT`, multi-threaded tests |
+| Unique data per test (random SKU codes, emails) | tests that just need "some" data |
 | Never: rely on test order | — |
 
 ```java
-@Sql(statements = "TRUNCATE booking, hold, seat, event, venue RESTART IDENTITY CASCADE",
+@Sql(statements = "TRUNCATE reservation, inventory_level, sku, warehouse RESTART IDENTITY CASCADE",
      executionPhase = Sql.ExecutionPhase.BEFORE_TEST_METHOD)
 ```
 
 ---
 
-## 6. The TicketHold concurrency test
+## 6. Concurrency tests: the core evidence
 
-The whole point of P2: prove that N simultaneous holds on one seat produce **exactly one** winner.
-This can only be proven against a real database with real transactions.
+FlowGrid M2's acceptance criterion: *N threads try to reserve the last unit → exactly one succeeds.* LedgerX M2's: *balance
+$500, two concurrent $400 transfers → exactly one succeeds, balance never negative.* Only a real database with real
+transactions can prove these. The reusable part is the **harness** — release all threads at once and collect outcomes:
 
 ```java
-@SpringBootTest
-@Import(TestcontainersConfig.class)
-@Sql(statements = "TRUNCATE booking, hold, seat, event, venue RESTART IDENTITY CASCADE")
-class SeatHoldConcurrencyIT {
-
-    @Autowired HoldService holdService;
-    @Autowired TestDataFactory data;           // your helper that inserts venue/event/seat and returns ids
-
-    @Test
-    void manyConcurrentHolds_exactlyOneWins() throws Exception {
-        long seatId = data.createEventWithOneSeat();
-        int threads = 20;
-        var ready = new CountDownLatch(threads);
-        var start = new CountDownLatch(1);
-        var successes = new AtomicInteger();
-        var failures = new ConcurrentLinkedQueue<Throwable>();
-
-        try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {   // ExecutorService is AutoCloseable since Java 19
-            for (int i = 0; i < threads; i++) {
-                long userId = 1000 + i;
+public final class Concurrently {
+    /** Runs the task on n threads released simultaneously; returns each thread's outcome (null = success). */
+    public static List<Throwable> run(int n, IntConsumerWithException task) throws InterruptedException {
+        var ready = new CountDownLatch(n);
+        var go = new CountDownLatch(1);
+        var outcomes = Collections.synchronizedList(new ArrayList<Throwable>());
+        try (ExecutorService pool = Executors.newFixedThreadPool(n)) {   // AutoCloseable since Java 19: close() waits
+            for (int i = 0; i < n; i++) {
+                int id = i;
                 pool.submit(() -> {
                     ready.countDown();
-                    try {
-                        start.await();                       // release all threads at once
-                        holdService.hold(seatId, userId);
-                        successes.incrementAndGet();
-                    } catch (Throwable t) {
-                        failures.add(t);
-                    }
-                    return null;
+                    try { go.await(); task.accept(id); outcomes.add(null); }
+                    catch (Throwable t) { outcomes.add(t); }
                 });
             }
             ready.await();
-            start.countDown();
-        }                                                    // close() waits for all tasks
-
-        assertThat(successes.get()).isEqualTo(1);
-        assertThat(failures).hasSize(threads - 1)
-            .allSatisfy(t -> assertThat(t).isInstanceOfAny(
-                SeatUnavailableException.class,
-                ObjectOptimisticLockingFailureException.class,
-                DataIntegrityViolationException.class));
+            go.countDown();
+        }
+        return outcomes;
     }
+    @FunctionalInterface public interface IntConsumerWithException { void accept(int i) throws Exception; }
 }
 ```
 
+Then **you** write the test for your design. Describe it first:
+
+- Given: one SKU, one warehouse, `onHand = 1`, no reservations (inserted via repositories, committed — no `@Transactional` on the test).
+- When: 20 threads call the real `ReservationService.reserve(...)` for 1 unit each via `Concurrently.run(20, …)`.
+- Then: exactly 1 `null` outcome; 19 outcomes are your *expected* rejection type (e.g. `InsufficientStockException`,
+  or `ObjectOptimisticLockingFailureException` if you compare with `@Version`); `reserved == 1` in the DB; no unexpected exception types.
+
+LedgerX's version: two threads transfer $400 from a $500 wallet; assert one success, one `InsufficientFundsException`,
+final balance $100, and the ledger invariant (sum of entries per journal transaction = 0) still holds.
+
 Notes:
-- No `@Transactional` on this test: each thread must run and commit its own transaction.
-- **Break it:** remove the protection (unique partial index on active holds / `@Version` / `SELECT … FOR UPDATE`) and
-  run the test 10×. You'll see `successes > 1` at least sometimes. That red run is your interview story.
-- The accepted exception list must match *your* design (which mechanism rejects the losers). Be able to explain it.
+- No `@Transactional` on these tests: each thread must run and commit its own transaction.
+- **Break it:** remove the protection (`FOR UPDATE` / `@Version` / lock ordering) and run the test with `@RepeatedTest(20)`.
+  You'll see more than one success at least sometimes. That red run, and why it happened, is your interview story.
+- For LedgerX, also try two transfers in **opposite directions** (A→B and B→A) without lock ordering and observe the
+  deadlock Postgres detects (`40P01`). Then order locks by account id and watch it disappear.
 
 ---
 
-## 7. Reuse for fast local runs
+## 7. Chaos-style tests (Week 18, ForgeCI)
 
-By default containers are removed after the run. For a faster local loop, reuse a container between runs:
+Testcontainers gives you handles to the infrastructure, so you can break it on purpose:
+
+```java
+redis.stop();                                              // Redis disappears mid-test
+// assert: API returns a clear error / worker stops dequeuing / FlowGrid serves catalog from DB (degrade, don't crash)
+redis.start();                                             // note: a restarted container may get a NEW mapped port
+```
+
+Useful scenarios (describe expected behaviour first, then assert it): worker killed between dequeue and ack → job
+recovered after lease expiry; Postgres unavailable during log append → chunks retried or buffered, no duplicates;
+duplicate webhook delivery → one build. Use Awaitility (`await().atMost(10, SECONDS).until(...)`) instead of `sleep`.
+
+Toxiproxy (a Testcontainers module) can inject latency and dropped connections between your app and Redis/Postgres —
+optional, but good for timeout behaviour.
+
+---
+
+## 8. Reuse for fast local runs
 
 ```java
 new PostgreSQLContainer<>("postgres:16-alpine").withReuse(true);
@@ -245,45 +247,45 @@ testcontainers.reuse.enable=true
 
 - Reuse only activates when the property is set **and** `withReuse(true)` is used → CI (no property) still gets fresh containers.
 - Reused containers keep data between runs → your tests must clean up (§5).
-- Reused containers are not removed automatically: `docker ps` / `docker rm -f` them when done.
-- Treat reuse as a local convenience, not something correctness depends on.
+- Reused containers aren't removed automatically: `docker ps` / `docker rm -f` them when done.
+- A local convenience — correctness must never depend on it.
 
 ### Dev-time services (Boot 3.1+)
 
-You can run the *application* locally against Testcontainers:
-
 ```java
-// src/test/java/.../TestTicketHoldApplication.java
-public class TestTicketHoldApplication {
+// src/test/java/.../TestFlowGridApplication.java — run the app locally against containers
+public class TestFlowGridApplication {
     public static void main(String[] args) {
-        SpringApplication.from(TicketHoldApplication::main).with(TestcontainersConfig.class).run(args);
+        SpringApplication.from(FlowGridApplication::main).with(TestcontainersConfig.class).run(args);
     }
 }
 ```
 
-Alternatively, Boot's Docker Compose support starts services from `compose.yaml`. Either way, no manual DB setup.
+Alternatively, Boot's Docker Compose support (`spring-boot-docker-compose`) starts services from `compose.yaml`.
 
 ---
 
-## 8. CI considerations
+## 9. CI considerations
 
 - **GitHub Actions `ubuntu-latest`** runners have Docker, so Testcontainers works without extra setup ([13-cicd/github-actions.md](../13-cicd/github-actions.md)).
 - Name container tests `*IT` and run them via Failsafe in `mvn verify`; keep `mvn test` fast.
-- Pin image tags (`postgres:16-alpine`, not `latest`) → reproducible builds.
-- First run pulls images (≈ tens of seconds); later runs on the same runner are cached only if the runner persists — hosted runners start fresh.
-- Ryuk (the resource reaper container) cleans up after crashes; don't disable it unless your CI forbids privileged containers.
-- If CI is slow: share containers (§4), avoid per-method containers, and parallelise at the **class** level only after isolating data.
-- macOS/Windows with Docker Desktop, Colima or Podman may need `DOCKER_HOST` or socket configuration — see the Testcontainers docs "Supported Docker environments".
+- Pin image tags (`postgres:16-alpine`, `redis:7-alpine`) → reproducible builds.
+- Hosted runners start fresh, so images are pulled every run (tens of seconds). Keep images small (`-alpine`).
+- Ryuk (the resource-reaper container) cleans up after crashes; don't disable it unless your CI forbids it.
+- Concurrency tests are the likeliest to flake in CI (fewer cores, slower disks). If one flakes, the test is telling you
+  something — investigate before adding retries.
+- Docker Desktop alternatives (Colima, Podman, Rancher Desktop) may need `DOCKER_HOST` configuration — see the
+  Testcontainers docs, "Supported Docker environments".
 
 ---
 
 ## Break it
 
-1. Change the image to `postgres:12-alpine` and use a PG 13+ feature in a migration (e.g. `gen_random_uuid()` without `pgcrypto`). Watch Flyway fail. Tags matter.
+1. Change the image to `postgres:12-alpine` with a migration that uses `gen_random_uuid()` (built in only from PG 13). Watch Flyway fail. Tags matter.
 2. Make the `@Container` field non-static. Count container starts in the logs.
-3. Stop Docker and run `mvn verify`. Read the error ("Could not find a valid Docker environment"). Now you know what it looks like in CI.
-4. Add `@Transactional` to `SeatHoldConcurrencyIT`. What happens to the other threads' visibility and why?
-5. Replace Testcontainers with H2 for `HoldRepositoryTest` using a Postgres-specific query (`FOR UPDATE SKIP LOCKED`, `jsonb`). Observe.
+3. Stop Docker and run `mvn verify`. Read the error ("Could not find a valid Docker environment") so you recognise it in CI.
+4. Add `@Transactional` to the concurrency test. What happens to the other threads' visibility and why?
+5. Replace Testcontainers with H2 for a repository test using `FOR UPDATE SKIP LOCKED` or `jsonb`. Observe.
 
 ---
 
@@ -293,10 +295,11 @@ Alternatively, Boot's Docker Compose support starts services from `compose.yaml`
 |---|---|
 | `latest` image tag | pin version |
 | Non-static `@Container` | `static` (or a shared config bean) |
-| `@DataJpaTest` without `Replace.NONE` (silently H2 if on classpath, or failure) | add `@AutoConfigureTestDatabase(replace = NONE)` |
+| `@DataJpaTest` without `Replace.NONE` | add `@AutoConfigureTestDatabase(replace = NONE)` |
 | Tests depending on leftover data from reuse | clean state per test |
 | Running container tests in `mvn test` | `*IT` + Failsafe |
-| `@Transactional` concurrency test | let threads commit |
+| `@Transactional` on a concurrency test | let threads commit |
+| Asserting "no exception" in a concurrency test | assert exact success count **and** the expected failure types **and** DB state |
 
 ---
 
@@ -304,35 +307,37 @@ Alternatively, Boot's Docker Compose support starts services from `compose.yaml`
 
 <details><summary>Why Testcontainers instead of H2?</summary>
 
-H2 isn't Postgres: different SQL features, types, locking and constraint behaviour, so tests can pass on H2 and fail in
-production. Testcontainers runs the real Postgres 16 image in Docker for each test run, in CI too, at the cost of a few
-seconds' startup — which I amortise by sharing one container across the suite.
+H2 isn't Postgres: different SQL features, types, locking and trigger behaviour, so tests can pass on H2 and fail in
+production. Testcontainers runs the real Postgres 16 image for each test run, in CI too, at the cost of a few seconds'
+startup — which I amortise by sharing one container across the suite.
 </details>
 
 <details><summary>What does <code>@ServiceConnection</code> do?</summary>
 
 Since Boot 3.1, it tells Spring Boot to derive connection details (JDBC URL, credentials; Redis host/port) from the
-container, replacing the manual `@DynamicPropertySource` wiring.
+container, replacing manual `@DynamicPropertySource` wiring.
 </details>
 
-<details><summary>How did you prove there's no double-booking?</summary>
+<details><summary>How did you prove there's no overselling?</summary>
 
-A `@SpringBootTest` against Testcontainers Postgres releases 20 threads simultaneously with a latch to hold the same
-seat and asserts exactly one success and 19 expected failures. I watched it fail without the locking mechanism, then pass with it.
+A `@SpringBootTest` against Testcontainers Postgres releases 20 threads simultaneously with a latch to reserve the last
+unit and asserts exactly one success, 19 expected rejections, and `reserved = 1` in the database. I watched it fail with
+the row lock removed, then pass with it. (Say this only once you've done it.)
 </details>
 
 <details><summary>How do you keep container tests fast?</summary>
 
-One container per JVM/context shared across classes, pinned small images (`-alpine`), data cleanup instead of restarts,
-reuse locally, and running them only in `mvn verify` via Failsafe.
+One container per JVM/context shared across classes, small pinned images, data cleanup instead of restarts, reuse locally,
+and running them only in `mvn verify` via Failsafe.
 </details>
 
 ---
 
 ## Mastery checklist
 
-- [ ] `TestcontainersConfig` with Postgres (and Redis for P4) using `@ServiceConnection`.
-- [ ] All repository tests run on Postgres 16 via Testcontainers; H2 removed from the project.
-- [ ] `SeatHoldConcurrencyIT` passes, and I've seen it fail with protection removed.
+- [ ] `TestcontainersConfig` with Postgres (and Redis from FlowGrid M3 / ForgeCI M2) using `@ServiceConnection`.
+- [ ] All repository tests run on Postgres 16 via Testcontainers; no H2 in any project.
+- [ ] FlowGrid N-threads-one-unit test passes, and I've seen it fail with protection removed.
+- [ ] LedgerX $500/$400/$400 test passes; the deadlock experiment done and explained.
+- [ ] (W18) At least two chaos-style ForgeCI tests (Redis stop, worker loss).
 - [ ] `mvn verify` runs `*IT` in GitHub Actions and is green.
-- [ ] I can explain `@Container` static vs instance, reuse, and Ryuk.
