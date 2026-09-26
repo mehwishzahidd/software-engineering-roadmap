@@ -33,6 +33,58 @@ each file ≤ 300 lines; diagrams in `docs/diagrams/` (source + PNG/SVG).
 | `sdk-python/README.md`, `tools/README.md` | install (`pip install -e .[dev]`), usage examples with real output, how tests run, what each tool proves | M3, M4 |
 | `CHANGELOG.md` | server and SDK entries per tag; SDK follows semver | tags |
 
+### 1.1 Quality bar per document
+
+A reviewer (or interviewer skimming your repo for five minutes) should be able to answer the
+question in the right-hand column from the document alone.
+
+| Document | Must contain | The reader can answer |
+|---|---|---|
+| `ARCHITECTURE.md` | diagrams with protocols on arrows; the two planes; a numbered publish sequence; a numbered SDK evaluation sequence; a "what never happens" list (no DB on hot path, no network per evaluation, no exceptions to callers) | "Where does a request go, and what is guaranteed?" |
+| `EVALUATION.md` | pseudo-code of the order; operator table with types and missing-attribute behaviour; the bucketing algorithm at byte level with 3 worked examples from `bucket-vectors.json`; reasons table; lint rules table; change policy | "Could I implement a compatible SDK in another language from this alone?" (the Python SDK is the proof) |
+| `API.md` | one `curl` per endpoint with a real response; the error catalogue; the ETag/304 exchange shown verbatim; an SSE frame sample; rate-limit headers | "Can I use this API without reading code?" |
+| `DATABASE.md` | ERD; one paragraph per table on *why* it exists; the immutability migration; `EXPLAIN` output for the two hot queries (current-version-per-flag, key-hash lookup) | "Why is the schema shaped like this and is it indexed properly?" |
+| `SDK.md` | quick start ≤ 10 lines; builder option table with defaults; fallback table copied from [README §13.4](./README.md#13-sdk-design) as implemented; "what happens when" timeline for server down / key revoked / malformed response; versioning and install instructions; Python section | "Is it safe to put this in my service?" |
+| `TESTING.md` | one command per layer; what needs Docker; how to add a contract vector (and that both SDKs pick it up); where fault-injection toggles live; coverage numbers if you measure them (JaCoCo) | "How do I know it works, and how do I extend the tests?" |
+| `PERFORMANCE.md` | §2 protocol blocks; one table per benchmark; a short "what we changed because of this" list | "Are these numbers real and what do they mean?" |
+| `SECURITY.md` | threat table (asset → threat → control → test); runbooks; known gaps (be honest: no approvals, no SSO, single JWT secret) | "What did they think about, and what did they skip knowingly?" |
+| `DESIGN_DECISIONS.md` | one ADR per decision in the [template](../templates/adr.md): context, options, decision, consequences, status | "Did they consider alternatives?" |
+
+### 1.2 `docs/PERFORMANCE.md` skeleton
+
+```
+# Performance
+Summary table (one row per benchmark: headline number · setup one-liner · link to section)
+1. Server-side evaluation latency (k6)      — §2.1 protocol block + tables per cache state
+2. /config fetch: 200 vs 304 (k6)           — bytes, p99
+3. Local SDK evaluation (JMH)               — table by rule count; allocation/op
+4. Propagation delay publish → SDK          — SSE vs polling, 20 trials, min/median/p90/max
+5. Snapshot size & parse                    — 50/500/2000 flags table
+6. Stampede protection                      — DB rebuild counts (a)–(d)
+7. SSE fan-out                              — connections vs delivery p99 and memory
+8. Rollout distribution (correctness)       — simulator report
+Changes made because of measurements        — bullet list with PR links
+Known limitations of these measurements     — loopback, laptop, no TLS, synthetic data …
+```
+
+### 1.3 Python component README template (`sdk-python/README.md`, `tools/README.md`)
+
+```
+# flagforge (Python SDK)              # or: FlagForge tools
+What it is / is not (one paragraph; "test client implementing the evaluation contract; no SSE")
+Install:      python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"
+Quick start:  6-line example with real printed output
+Contract:     link to ../docs/EVALUATION.md and ../contract/; how the vector tests run
+CLI (tools):  each command, its flags, a real example run and its output (copied, not typed)
+Tests:        pytest -q; mypy --strict src; ruff check
+Limitations:  what is intentionally missing vs the Java SDK
+```
+
+Screenshots and demo: `docs/img/` — dashboard flag list, rules editor with a rollout, publish
+dialog with diff + lint warning, version history with a rollback, audit feed, SDK keys page;
+`docs/demo.gif` following the [README §24](./README.md#24-readme-and-demo-requirements) script;
+a second short GIF of the sample app surviving `docker stop server`.
+
 ---
 
 ## 2. Benchmarking protocol
