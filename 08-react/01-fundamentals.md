@@ -1,6 +1,7 @@
 # 01 — React Fundamentals
 
-> Week 15 · ≈ 4 hours. Build the **static TeamBoard board** while reading this file.
+> Week 7 · ≈ 1.5 hours. While reading, build a **static pick/pack board** for FlowGrid from hard-coded orders; wire it to
+> the API in [04](./04-api-integration-auth.md).
 
 ---
 
@@ -9,19 +10,20 @@
 A component is a function that returns JSX. Names start with a capital letter.
 
 ```tsx
-// src/features/issues/IssueCard.tsx
-type IssueCardProps = {
-  title: string;
-  status: IssueStatus;
+// src/features/orders/OrderCard.tsx
+type OrderCardProps = {
+  number: string;
+  status: OrderStatus;
+  units: number;
   assignee?: string | null;
 };
 
-export function IssueCard({ title, status, assignee }: IssueCardProps) {
+export function OrderCard({ number, status, units, assignee }: OrderCardProps) {
   return (
     <article className="card">
-      <h3>{title}</h3>
+      <h3>{number}</h3>
       <span className={`badge ${status.toLowerCase()}`}>{status}</span>
-      <p>{assignee ?? "Unassigned"}</p>
+      <p>{units} units · {assignee ?? "Unassigned"}</p>
     </article>
   );
 }
@@ -41,10 +43,10 @@ Props are the component's **read-only inputs**. Never mutate them.
 
 ```tsx
 type LaneProps = {
-  status: IssueStatus;
-  issues: Issue[];
-  onMove: (issueId: number, to: IssueStatus) => void;   // callback prop: child → parent communication
-  children?: React.ReactNode;                           // nested content
+  status: OrderStatus;
+  orders: OrderSummary[];
+  onAdvance: (orderId: number, to: OrderStatus) => void;   // callback prop: child → parent communication
+  children?: React.ReactNode;                              // nested content
 };
 ```
 
@@ -57,21 +59,21 @@ Data flows **down** via props; events flow **up** via callback props.
 ```tsx
 import { useState } from "react";
 
-export function NewIssueToggle() {
-  const [open, setOpen] = useState(false);
+export function LowStockToggle() {
+  const [onlyLow, setOnlyLow] = useState(false);
   return (
     <>
-      <button type="button" onClick={() => setOpen((o) => !o)}>
-        {open ? "Cancel" : "New issue"}
+      <button type="button" onClick={() => setOnlyLow((v) => !v)}>
+        {onlyLow ? "Show all SKUs" : "Show low stock only"}
       </button>
-      {open && <p>Form goes here</p>}
+      {onlyLow && <p>Filtering to SKUs below reorder point</p>}
     </>
   );
 }
 ```
 
 Key facts:
-- Calling the setter **schedules** a re-render; the `open` variable in the current render doesn't change.
+- Calling the setter **schedules** a re-render; the variable in the current render doesn't change.
 - React 18 **batches** multiple state updates in the same event (and in promises/timeouts) into one render.
 - Use the **updater form** `setX(prev => ...)` when the new value depends on the old one.
 
@@ -90,25 +92,28 @@ React decides whether to re-render by comparing state with `Object.is`. If you m
 set the same reference, **React sees no change**.
 
 ```tsx
-const [issues, setIssues] = useState<Issue[]>(initial);
+const [orders, setOrders] = useState<OrderSummary[]>(initial);
 
 // ❌ Mutation — same array reference; UI may not update
-issues.push(newIssue); setIssues(issues);
+orders.push(newOrder); setOrders(orders);
 
 // ✅ New arrays/objects
-setIssues((prev) => [...prev, newIssue]);                                      // add
-setIssues((prev) => prev.filter((i) => i.id !== id));                          // remove
-setIssues((prev) => prev.map((i) => (i.id === id ? { ...i, status: to } : i))); // update one
-setIssues((prev) => prev.toSorted((a, b) => a.title.localeCompare(b.title)));  // sort
+setOrders((prev) => [...prev, newOrder]);                                        // add
+setOrders((prev) => prev.filter((o) => o.id !== id));                            // remove
+setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: to } : o)));  // update one
+setOrders((prev) => prev.toSorted((a, b) => a.number.localeCompare(b.number)));  // sort
 ```
 
 Nested updates copy **every level** you change:
 
 ```tsx
-setIssue((prev) => ({ ...prev, assignee: prev.assignee && { ...prev.assignee, displayName: "Sam" } }));
+setOrder((prev) => ({
+  ...prev,
+  lines: prev.lines.map((l) => (l.skuId === skuId ? { ...l, picked: l.picked + 1 } : l)),
+}));
 ```
 
-> **Break it:** implement "move issue" with `issue.status = to; setIssues(issues)`. Click. Nothing moves
+> **Break it:** implement "advance order" with `order.status = to; setOrders(orders)`. Click. Nothing moves
 > (or it moves only on the next unrelated re-render). Explain why.
 
 ---
@@ -117,9 +122,9 @@ setIssue((prev) => ({ ...prev, assignee: prev.assignee && { ...prev.assignee, di
 
 ```tsx
 <ul>
-  {issues.map((issue) => (
-    <li key={issue.id}>
-      <IssueCard title={issue.title} status={issue.status} assignee={issue.assignee?.displayName} />
+  {orders.map((o) => (
+    <li key={o.id}>
+      <OrderCard number={o.number} status={o.status} units={o.units} assignee={o.assignee?.name} />
     </li>
   ))}
 </ul>
@@ -129,25 +134,27 @@ Keys tell React **which item is which** across renders so it can preserve compon
 
 | Key choice | Verdict |
 |---|---|
-| Database id (`issue.id`) | ✅ stable and unique |
+| Database id (`o.id`) | ✅ stable and unique |
 | Array index | ❌ when list can reorder/insert/delete — state attaches to the wrong item |
 | `Math.random()` / `crypto.randomUUID()` in render | ❌ new key every render → remount, lost state, slow |
 
-> **Break it:** give each `IssueCard` a local "expanded" state, use `key={index}`, expand the first card, then
-> prepend a new issue. The *new* first card is now expanded. Switch to `key={issue.id}` — fixed.
+> **Break it:** give each `OrderCard` a local "expanded" state, use `key={index}`, expand the first card, then
+> prepend a new order. The *new* first card is now expanded. Switch to `key={o.id}` — fixed.
+> (ForgeCI's log view, Week 16: key each log line by its **sequence number**, never by index.)
 
 ---
 
 ## 6. Conditional rendering and empty states
 
 ```tsx
-if (issues.length === 0) return <p className="empty">No issues yet. Create the first one.</p>;
+if (orders.length === 0) return <p className="empty">No orders waiting to be picked.</p>;
 
 return (
   <>
-    {isAdmin && <button type="button">Delete</button>}
+    {canCancel && <button type="button">Cancel order</button>}
     {error ? <p role="alert">{error}</p> : null}
-    {count > 0 && <span>{count}</span>}   {/* NOT {count && ...} — renders "0" when count is 0 */}
+    {lowStockCount > 0 && <span className="badge low">{lowStockCount}</span>}
+    {/* NOT {lowStockCount && ...} — renders "0" when the count is 0 */}
   </>
 );
 ```
@@ -157,7 +164,7 @@ return (
 ## 7. Events
 
 ```tsx
-function SearchBox({ onSearch }: { onSearch: (q: string) => void }) {
+function SkuSearch({ onSearch }: { onSearch: (q: string) => void }) {
   const [q, setQ] = useState("");
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -165,7 +172,7 @@ function SearchBox({ onSearch }: { onSearch: (q: string) => void }) {
   }
   return (
     <form onSubmit={handleSubmit} role="search">
-      <label htmlFor="q">Search issues</label>
+      <label htmlFor="q">Search SKUs</label>
       <input id="q" value={q} onChange={(e) => setQ(e.target.value)} />
       <button type="submit">Search</button>
     </form>
@@ -180,49 +187,47 @@ Pass a function, don't call it: `onClick={handleClick}` ✅, `onClick={handleCli
 ## 8. Lifting state up
 
 When two siblings need the same data, move the state to their **closest common parent** and pass it down.
+Here the lanes of the pick/pack board share one `orders` array owned by `PickPackBoard`:
 
 ```tsx
-const STATUSES = ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"] as const;
-type IssueStatus = (typeof STATUSES)[number];
+const LANES = ["ALLOCATED", "PICKING", "PACKED", "SHIPPED"] as const;
+type Lane = (typeof LANES)[number];
 
-export function Board({ initial }: { initial: Issue[] }) {
-  const [issues, setIssues] = useState(initial);
+export function PickPackBoard({ initial }: { initial: OrderSummary[] }) {
+  const [orders, setOrders] = useState(initial);
 
-  function move(id: number, to: IssueStatus) {
-    setIssues((prev) => prev.map((i) => (i.id === id ? { ...i, status: to } : i)));
+  function advance(id: number, to: Lane) {
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: to } : o)));
   }
 
   return (
     <div className="board">
-      {STATUSES.map((s) => (
-        <Lane key={s} status={s} issues={issues.filter((i) => i.status === s)} onMove={move} />
+      {LANES.map((lane) => (
+        <LaneColumn key={lane} status={lane} orders={orders.filter((o) => o.status === lane)} onAdvance={advance} />
       ))}
     </div>
   );
 }
 
-function Lane({ status, issues, onMove }: { status: IssueStatus; issues: Issue[]; onMove: (id: number, to: IssueStatus) => void }) {
-  const next = nextStatus(status);
+function LaneColumn({ status, orders, onAdvance }: { status: Lane; orders: OrderSummary[]; onAdvance: (id: number, to: Lane) => void }) {
+  const next = LANES[LANES.indexOf(status) + 1];      // Lane | undefined (noUncheckedIndexedAccess)
   return (
     <section className="lane" aria-labelledby={`lane-${status}`}>
-      <h2 id={`lane-${status}`}>{status} ({issues.length})</h2>
-      {issues.map((i) => (
-        <div key={i.id} className="card">
-          {i.title}
-          {next && <button type="button" onClick={() => onMove(i.id, next)}>→ {next}</button>}
+      <h2 id={`lane-${status}`}>{status} ({orders.length})</h2>
+      {orders.map((o) => (
+        <div key={o.id} className="card">
+          {o.number}
+          {next && <button type="button" onClick={() => onAdvance(o.id, next)}>→ {next}</button>}
         </div>
       ))}
     </section>
   );
 }
-
-function nextStatus(s: IssueStatus): IssueStatus | null {
-  const i = STATUSES.indexOf(s);
-  return STATUSES[i + 1] ?? null;
-}
 ```
 
-Note `issues.filter(...)` is **derived** during render — don't store filtered lists in separate state (they drift).
+Note `orders.filter(...)` is **derived** during render — don't store filtered lists in separate state (they drift).
+In the real dashboard, "advance" calls the API (the server's state machine decides whether `PICKING → PACKED` is legal)
+and then refreshes; this local version is only for learning state flow.
 
 **Rule of thumb for state:** minimal, non-redundant, single source of truth. If it can be computed from props/state, compute it.
 
@@ -232,7 +237,7 @@ Note `issues.filter(...)` is **derived** during render — don't store filtered 
 
 A component re-renders when: its state changes, its parent re-renders (by default, even with equal props),
 or a context it reads changes. Rendering ≠ DOM update: React diffs the new tree against the previous one
-(reconciliation) and commits only differences. Two heuristics make diffing O(n): different element **types**
+(reconciliation) and commits only differences. Two heuristics make diffing fast: different element **types**
 tear down the subtree; **keys** match children in lists.
 
 ---
@@ -248,7 +253,7 @@ function Panel({ title, actions, children }: { title: string; actions?: React.Re
     </section>
   );
 }
-// <Panel title="Monitors" actions={<button type="button">Add</button>}><MonitorGrid /></Panel>
+// <Panel title="Low stock" actions={<button type="button">Export CSV</button>}><LowStockTable /></Panel>
 ```
 
 React never uses component inheritance. You compose with props and `children`.
@@ -265,6 +270,7 @@ React never uses component inheritance. You compose with props and `children`.
 | `onClick={fn()}` | runs on render; "Too many re-renders" | `onClick={fn}` or `() => fn(x)` |
 | Duplicated derived state | filtered list out of sync | compute during render |
 | `setX(x + 1)` multiple times | only +1 | updater form |
+| Business rules only in the UI (e.g. allowed transitions) | API accepts illegal transitions | server enforces; UI mirrors for UX |
 
 ---
 
@@ -307,8 +313,8 @@ React 18 batches updates automatically, including inside promises and timeouts.
 ## Mastery checklist
 
 - [ ] Scaffold a Vite `react-ts` app and explain every file in `src/`.
-- [ ] Build the four-lane TeamBoard board from hard-coded data with typed props.
-- [ ] Add, remove, update and move issues immutably.
+- [ ] Build a static pick/pack board with typed props from hard-coded data.
+- [ ] Add, remove, update and move orders immutably.
 - [ ] Demonstrate the index-key bug and fix it.
 - [ ] Lift state from lanes to board; keep filtered lists derived.
 - [ ] Explain reconciliation and batching in ≤ 60 s each.

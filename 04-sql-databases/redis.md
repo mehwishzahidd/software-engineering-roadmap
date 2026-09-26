@@ -145,6 +145,11 @@ public ProductView product(String sku) {
 
 (`json` is a Jackson `ObjectMapper`; handle `JsonProcessingException` in real code.)
 
+**When Redis is down** (FlowGrid M3 requires this): a cache is an optimisation, never a dependency. Wrap cache reads and
+writes so that a connection error or timeout is **logged and counted, then treated as a miss**, and the request is served from
+Postgres. Set short client timeouts (e.g., `spring.data.redis.timeout=200ms`), so a dead Redis costs milliseconds per request
+instead of seconds. Measure what "degraded" means: the DB load and latency with Redis stopped.
+
 ### Other patterns
 
 | Pattern | How | Trade-off |
@@ -261,23 +266,58 @@ boolean tryAcquire(String apiKey) {
 
 Header conventions for the response side are in [`../06-rest-apis/api-design-guide.md`](../06-rest-apis/api-design-guide.md#rate-limiting).
 
-## 10. Pub/Sub vs Streams
+## 10. Queues and messaging: lists, Streams, Pub/Sub
 
-| | Pub/Sub (`PUBLISH`/`SUBSCRIBE`) | Streams (`XADD`/`XREADGROUP`/`XACK`) |
+### Reliable queue with lists + `BLMOVE` (ForgeCI M2 concept)
+
+A plain `LPUSH` / `BRPOP` queue **loses the job** if the worker crashes after popping it. The reliable pattern atomically moves
+the job into a per-worker "processing" list, so an in-flight job is always somewhere visible:
+
+```
+LPUSH app:queue:jobs job:981                                   # producer
+BLMOVE app:queue:jobs app:processing:w1 RIGHT LEFT 5           # worker w1: block up to 5 s, move atomically
+SET app:lease:job:981 w1 EX 60                                  # lease: "w1 owns this job for 60 s", renewed by heartbeat
+# ... run the job ...
+LREM app:processing:w1 1 job:981                                # done: remove from processing
+DEL app:lease:job:981
+```
+
+A **reaper** (scheduled task) scans processing lists. Any job whose lease has expired (the worker died) is moved back to the
+main queue with an incremented attempt count. The job may therefore run **twice**, so the job must be idempotent, or the DB
+must record which attempt "won". Designing the lease length, heartbeat and retry limits is ForgeCI M2/M4's job.
+
+### Streams (`XADD`/`XREADGROUP`/`XACK`)
+
+```
+XADD app:events * type order.created id 881
+XGROUP CREATE app:events notifier $ MKSTREAM
+XREADGROUP GROUP notifier worker-1 COUNT 10 BLOCK 5000 STREAMS app:events >
+XACK app:events notifier <entry-id>
+XPENDING app:events notifier                 # delivered but not acked (in-flight / crashed consumers)
+XAUTOCLAIM app:events notifier worker-2 60000 0-0   # take over entries idle > 60 s
+```
+
+Streams give you consumer groups, acks, a pending list and replay built in. Lists + `BLMOVE` are simpler, and you own the
+recovery logic.
+
+### Pub/Sub vs Streams
+
+| | Pub/Sub (`PUBLISH`/`SUBSCRIBE`) | Streams |
 |---|---|---|
 | Delivery | fire-and-forget to **currently connected** subscribers | persisted log; consumers read at their own pace |
 | Offline consumer | misses messages | catches up from its last id |
-| Consumer groups / acks | no | yes (`XPENDING` shows unacked, `XCLAIM`/`XAUTOCLAIM` to take over) |
-| Use | cache-invalidation broadcast, live notifications | job/event processing that must not be lost |
+| Consumer groups / acks | no | yes (`XPENDING`, `XAUTOCLAIM`) |
+| Use in this roadmap | ForgeCI live log fan-out to SSE connections (M3, the log itself is persisted in Postgres); FlagForge "config published" invalidation (M4) | job/event processing that must not be lost |
 
 ```
-XADD app:alerts * monitor 17 state DOWN
-XGROUP CREATE app:alerts senders $ MKSTREAM
-XREADGROUP GROUP senders worker-1 COUNT 10 BLOCK 5000 STREAMS app:alerts >
-XACK app:alerts senders <id>
+SUBSCRIBE app:build:77:logs           # API instance holding the SSE connections for build 77
+PUBLISH   app:build:77:logs "chunk 42"  # worker, after persisting chunk 42 in Postgres
 ```
 
-When a job must be created **in the same transaction** as other data (LedgerX's outbox), a Postgres table with `SKIP LOCKED` beats Redis. ForgeCI's job queue lives in Redis: it's latency-sensitive and ephemeral, and the durable truth (the build and job rows) is in Postgres anyway. ForgeCI M2 asks you to pick lists+`BLMOVE` or Streams and **justify** the choice. SQS is considered in Week 19; Kafka/RabbitMQ are awareness only.
+Because Pub/Sub drops messages when nobody is listening, the durable copy must live elsewhere. A reconnecting client
+replays from Postgres by sequence number (ForgeCI M3). When a job must be created **in the same transaction** as other data
+(LedgerX's outbox), a Postgres table with `SKIP LOCKED` ([`06-transactions.md`](./06-transactions.md)) beats Redis entirely.
+SQS is considered for ForgeCI in Week 19; Kafka/RabbitMQ are awareness only.
 
 ## 11. 🔨 Break it
 
@@ -337,9 +377,9 @@ Fixed window with INCR + EXPIRE per client per window (simple, bursty at edges);
 Not on its own: TTL expiry during long pauses and async replication failover can yield two holders. Use it to avoid duplicate work; for correctness rely on DB constraints/row locks or fencing tokens validated by the protected resource.
 </details>
 
-<details><summary>Pub/Sub vs Streams?</summary>
+<details><summary>Pub/Sub vs Streams? How do you make a Redis list queue reliable?</summary>
 
-Pub/Sub is fire-and-forget to connected subscribers — messages are lost if nobody's listening. Streams persist entries and support consumer groups, acknowledgements and replay.
+Pub/Sub is fire-and-forget to connected subscribers — messages are lost if nobody's listening. Streams persist entries and support consumer groups, acknowledgements and replay. A list queue becomes reliable with `BLMOVE` into a per-worker processing list plus a lease/heartbeat, and a reaper that re-queues expired jobs. Consumers must be idempotent because a job can run twice.
 </details>
 
 ## ✅ Mastery checklist

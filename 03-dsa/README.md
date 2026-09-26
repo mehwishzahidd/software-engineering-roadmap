@@ -1,13 +1,23 @@
-# 🧩 03 — Data Structures & Algorithms (Java 21)
+# 🧩 03 — Data Structures & Algorithms (Python-first, Java reps)
 
 > DSA runs **every week from Week 1 to Week 26** at **6–8 h/week** (≈180 h total, roughly 60% new problems / 40% spaced reviews),
 > in parallel with the four flagship projects (FlowGrid, LedgerX, ForgeCI, FlagForge).
 > The order, weeks and weekly counts below are copied from [`ROADMAP.md` §5 and §7](../ROADMAP.md#7-dsa-progression).
 > If this file ever disagrees with the roadmap, the roadmap wins.
 
-**Language:** Java 21 for every problem — the same language you will defend on your résumé and use in OAs.
 **Tracking:** every problem assigned in these guides is pre-listed in [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md).
-**Toolkit:** the Java APIs you need are collected in [`java-dsa-toolkit.md`](./java-dsa-toolkit.md) — read it in Week 1 and keep it open.
+**Python toolkit:** [`PYTHON_INTERVIEW_CHEATSHEET.md`](../PYTHON_INTERVIEW_CHEATSHEET.md) + [`19-python/02-interview-toolkit.md`](../19-python/02-interview-toolkit.md) + [`19-python/03-pitfalls-and-complexity.md`](../19-python/03-pitfalls-and-complexity.md) — read them in Weeks 1–2 and keep the cheatsheet open.
+**Java quick reference:** [`java-dsa-toolkit.md`](./java-dsa-toolkit.md) — only for the weekly Java rep.
+
+### Language rule: Python-first, one Java rep per week
+
+| Track | Language | Used for |
+|---|---|---|
+| **A · Coding interview** | **Python 3.12** | Every new DSA problem, every spaced review, NeetCode, LeetCode, OAs (HackerRank/CodeSignal/Amazon-style), timed mocks, explaining algorithms. ≈90% of all algorithm practice. |
+| **B · Software-engineering / résumé interview** | **Java 21** | FlowGrid, LedgerX, ForgeCI, FlagForge, Spring Boot, concurrency, "walk me through your code". |
+
+**The Java-rep rule.** Once per week, take **one problem you already solved in Python** (the guide's "The same in Java" section names it) and re-implement it in Java from a blank file: `HashMap`/`HashSet`, `ArrayList`, `ArrayDeque`, `PriorityQueue` + `Comparator`, BFS/DFS, trees, recursion. Log it with the tracker's **Java rep ✓** column. A Java rep is **never** counted as a new problem, and you **never** solve everything twice. Why bother: an interviewer on Track B may ask you to write a quick loop over a `Map` or a comparator in Java; your backend code uses the same collections every day.
+
 
 ---
 
@@ -31,9 +41,10 @@
 By the end of Week 26 you should be able to:
 
 - [ ] Recognise which of the 23 patterns a new problem belongs to within ~3 minutes, and say *why* (the signal in the statement).
-- [ ] Solve an unseen **Easy** in ≤ 15 min and an unseen **Medium** in ≤ 25–30 min in Java, talking while you code.
+- [ ] Solve an unseen **Easy** in ≤ 15 min and an unseen **Medium** in ≤ 25–30 min in **Python**, talking while you code.
 - [ ] State time and space complexity for every solution without hesitation, including the recursion stack.
-- [ ] Write from a blank file, without looking anything up: binary search, BFS with `ArrayDeque`, DFS on a grid, union-find, a trie, a heap-based top-K, a backtracking template, and a memo + tabulation DP.
+- [ ] Write in Python from a blank file, without looking anything up: binary search (and `bisect`), BFS with `collections.deque`, DFS on a grid, union-find, a trie, a `heapq` top-K, a backtracking template, and a memo (`@cache`) + tabulation DP.
+- [ ] Re-write any of those in Java 21 on request (≈20 Java reps logged by Week 26).
 - [ ] Pass a 70–120 min OA with 1–2 problems (see [`OA_PREP.md`](../OA_PREP.md)).
 - [ ] Have ≈185 problems logged in the tracker, with the NeetCode 150 core at `Solved Independently` or better and ≥ 60% of all problems `Mastered`.
 
