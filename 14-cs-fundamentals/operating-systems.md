@@ -1,8 +1,9 @@
-# Operating Systems (Week 13, revisited Week 19)
+# Operating Systems (Week 14, with the Linux and Docker deep dive)
 
 > **Practical use:** read `top`/`ps` output meaningfully, understand why your container was
 > `OOMKilled` (exit 137), why `docker stop` takes 10 seconds, why you get "Too many open files",
-> how to get a Java thread dump from a hung process, and how many threads P4's checker should use.
+> how to get a Java thread dump from a hung process, how many threads a ForgeCI worker should use, and
+> how ForgeCI cancels a running build (signals to a container's PID 1).
 > **Interview use:** process vs thread, context switch, virtual memory, system calls, "what happens when you run a program?"
 
 Hands-on Linux commands live in [`10-linux/commands.md`](../10-linux/commands.md); this file is the *why*.
@@ -54,10 +55,12 @@ of CPU weighted by its **nice** value. You don't need the algorithm — you need
 | Workload | Characteristic | Thread-count heuristic |
 |---|---|---|
 | **CPU-bound** (hashing, JSON of big payloads, image resize) | Always runnable | ≈ number of cores (`Runtime.getRuntime().availableProcessors()`) |
-| **I/O-bound** (HTTP checks, DB calls) | Mostly blocked waiting | Many more threads: cores × (1 + wait time / compute time) — or **virtual threads** |
+| **I/O-bound** (HTTP calls, DB calls, waiting on containers) | Mostly blocked waiting | Many more threads: cores × (1 + wait time / compute time) — or **virtual threads** |
 
-P4's checker is I/O-bound (waits on remote HTTP with timeouts) → virtual threads
-(`Executors.newVirtualThreadPerTaskExecutor()`) or a sizable bounded pool. More platform threads
+A ForgeCI worker's JVM is mostly I/O-bound (waits on the Docker daemon, `git clone`, container exit,
+Redis) → virtual threads (`Executors.newVirtualThreadPerTaskExecutor()`) or a bounded pool — but the
+real limit is the **host**: each build container consumes CPU/RAM, so cap concurrent jobs per worker
+(a semaphore) regardless of how cheap threads are. More platform threads
 than that just adds context switching and memory (≈1 MB stack reserve each).
 
 **Virtual threads (Java 21):** the JVM schedules many virtual threads onto a few **carrier** platform
@@ -166,6 +169,10 @@ Java and signals:
   SIGTERM → your app is SIGKILLed after 10 s every time. Use **exec form**:
   `ENTRYPOINT ["java", "-jar", "/app/app.jar"]`. See [`11-docker/dockerfiles.md`](../11-docker/dockerfiles.md).
 - Exit codes: 0 success; 1 generic error; 130 = 128 + SIGINT; 137 = 128 + SIGKILL; 143 = 128 + SIGTERM.
+
+ForgeCI tie-in (M4 cancellation/timeouts): `docker stop -t 10 <container>` = SIGTERM to the container's
+PID 1, then SIGKILL after 10 s; `docker kill` = SIGKILL immediately. A build step started via
+`sh -c "…"` may not forward SIGTERM to its children — know which process is PID 1 in your build container.
 
 Thread dump of a hung app (find deadlocks, stuck pool threads): `jcmd <pid> Thread.print` or `kill -3 <pid>`.
 

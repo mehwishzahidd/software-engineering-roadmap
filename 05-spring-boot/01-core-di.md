@@ -1,6 +1,7 @@
 # 01 · Spring Core — IoC, Dependency Injection, Beans, Configuration, Auto-configuration
 
-> **Week 9** (TicketHold M1). Stack assumed throughout this module: **Java 21, Spring Boot 3.x (Spring Framework 6.x),
+> **Week 3** (foundation: first Spring Boot API with 2 endpoints) → **Week 4** (FlowGrid M1: configuration properties,
+> profiles, security config). Stack assumed throughout this module: **Java 21, Spring Boot 3.x (Spring Framework 6.x),
 > Spring Security 6.x, `jakarta.*` packages**. (Spring Boot 4 / Framework 7 exist; everything here carries over, with
 > minor API differences you'd look up.)
 
@@ -76,7 +77,7 @@ public class AppConfig {
 | Who constructs | Spring calls the constructor | your method body |
 | Use for | your own application classes | third-party classes (`Clock`, `RestClient`, `PasswordEncoder`), conditional/complex creation |
 
-`@SpringBootApplication` scans its own package **and sub-packages**. Put the main class in the root package (`com.example.tickethold`), or beans in sibling packages won't be found.
+`@SpringBootApplication` scans its own package **and sub-packages**. Put the main class in the root package (`com.example.flowgrid`), or beans in sibling packages won't be found.
 
 ### `@Configuration` proxying
 
@@ -108,7 +109,7 @@ class AlertService {
 }
 ```
 
-No `@Primary`/`@Qualifier` with two candidates → `NoUniqueBeanDefinitionException` at startup. Injecting a `List<Strategy>` is a clean way to do the Strategy pattern (Ledger's rules engine, in Spring form).
+No `@Primary`/`@Qualifier` with two candidates → `NoUniqueBeanDefinitionException` at startup. Injecting a `List<Strategy>` is a clean way to do the Strategy pattern, e.g. pluggable allocation-scoring factors in FlowGrid M3, or rule matchers in FlagForge M2.
 
 ## 5. Bean scopes
 
@@ -148,13 +149,13 @@ Run code at startup: implement `ApplicationRunner`/`CommandLineRunner`, or `@Eve
 # src/main/resources/application.yml
 spring:
   application:
-    name: tickethold
-tickethold:
-  hold:
-    ttl: 10m
-    max-seats-per-hold: 6
+    name: flowgrid
+flowgrid:
+  reservation:
+    ttl: 15m
+    max-lines-per-order: 50
   jwt:
-    issuer: tickethold
+    issuer: flowgrid
     expiry: 15m
 ---
 spring:
@@ -167,29 +168,29 @@ logging:
 ```
 
 ```java
-@ConfigurationProperties(prefix = "tickethold.hold")
+@ConfigurationProperties(prefix = "flowgrid.reservation")
 @Validated
-public record HoldProperties(
-        @NotNull Duration ttl,                    // "10m" -> Duration.ofMinutes(10)
-        @Min(1) @Max(20) int maxSeatsPerHold) {}  // kebab-case in YAML -> camelCase
+public record ReservationProperties(
+        @NotNull Duration ttl,                     // "15m" -> Duration.ofMinutes(15)
+        @Min(1) @Max(500) int maxLinesPerOrder) {} // kebab-case in YAML -> camelCase
 
 @SpringBootApplication
 @ConfigurationPropertiesScan                      // registers all @ConfigurationProperties records
-public class TicketHoldApplication {
-    public static void main(String[] args) { SpringApplication.run(TicketHoldApplication.class, args); }
+public class FlowGridApplication {
+    public static void main(String[] args) { SpringApplication.run(FlowGridApplication.class, args); }
 }
 
 @Service
-class HoldService {
-    private final HoldProperties props;
-    HoldService(HoldProperties props) { this.props = props; }
+class ReservationService {
+    private final ReservationProperties props;
+    ReservationService(ReservationProperties props) { this.props = props; }
 }
 ```
 
-- Prefer typed `@ConfigurationProperties` (validated, grouped, IDE-completable with `spring-boot-configuration-processor`) over scattered `@Value("${tickethold.hold.ttl}")`.
-- **Property source precedence** (high → low, simplified): command-line args → environment variables (`TICKETHOLD_HOLD_TTL=5m`, relaxed binding) → `application-{profile}.yml` → `application.yml`. That's how Docker/AWS override config without rebuilding.
+- Prefer typed `@ConfigurationProperties` (validated, grouped, IDE-completable with `spring-boot-configuration-processor`) over scattered `@Value("${flowgrid.reservation.ttl}")`.
+- **Property source precedence** (high → low, simplified): command-line args → environment variables (`FLOWGRID_RESERVATION_TTL=5m`, relaxed binding) → `application-{profile}.yml` → `application.yml`. That's how Docker/AWS override config without rebuilding.
 - **Profiles**: `spring.profiles.active=dev` (env `SPRING_PROFILES_ACTIVE=prod`). Beans can be profile-specific: `@Profile("dev")`.
-- **Secrets never in `application.yml` in Git.** Use env vars / a secrets manager (Week 21).
+- **Secrets never in `application.yml` in Git.** Use env vars locally and a secrets store on AWS (Week 8, FlowGrid M5).
 
 ## 8. Auto-configuration — how Boot "just works" ⭐
 
@@ -225,19 +226,20 @@ So: adding `spring-boot-starter-data-jpa` puts Hibernate + HikariCP on the class
 
 **Starters** are dependency bundles (`spring-boot-starter-web` = Spring MVC + Jackson + embedded Tomcat + validation deps…), versions managed by the Boot parent/BOM — which is why you don't write versions for them in `pom.xml`.
 
-## 9. Project layout (TicketHold M1)
+## 9. Project layout (a suggestion for FlowGrid M1; you decide)
 
 ```
-com.example.tickethold
-├── TicketHoldApplication.java
-├── config/            (SecurityConfig, properties records, Clock bean)
-├── event/             (EventController, EventService, EventRepository, Event, dto/)
-├── venue/
-├── booking/
-└── common/            (error handling, logging filter)
+com.example.flowgrid
+├── FlowGridApplication.java
+├── config/            (security config, properties records, Clock bean)
+├── warehouse/         (controller, service, repository, entity, dto/)
+├── catalog/           (products, SKUs)
+├── inventory/
+├── order/
+└── common/            (error handling, request-ID filter)
 ```
 
-Package **by feature** (event/, booking/) scales better than by layer (controllers/, services/). Layers still exist inside each feature: controller → service → repository.
+Package **by feature** (warehouse/, inventory/) scales better than by layer (controllers/, services/). Layers still exist inside each feature: controller → service → repository.
 
 ## 10. 🔨 Break it
 
@@ -246,7 +248,7 @@ Package **by feature** (event/, booking/) scales better than by layer (controlle
 3. Make two services depend on each other via constructors. Read the circular-reference error (Boot forbids circular references by default since 2.6). Fix by redesigning (extract a third class), not by `@Lazy`.
 4. Add `private int requestCount;` to a singleton controller, increment it per request, hit it with `ab`/`hey`/k6 using 50 concurrent requests. Compare count vs requests sent.
 5. Inject a prototype bean into a singleton and print its `hashCode()` per request. Fix with `ObjectProvider`.
-6. Set `tickethold.hold.max-seats-per-hold: 0` with `@Validated` present — startup fails. Why is failing at startup a *good* thing?
+6. Set `flowgrid.reservation.max-lines-per-order: 0` with `@Validated` present — startup fails. Why is failing at startup a *good* thing?
 7. Run with `--debug`, find `DataSourceAutoConfiguration` in the report. Then define your own `DataSource` bean and find it under negative matches.
 
 ## 11. 🐞 Debugging tips
@@ -305,7 +307,7 @@ NoUniqueBeanDefinitionException at startup, unless one is @Primary, the injectio
 
 ## ✅ Mastery checklist
 
-- [ ] TicketHold M1 uses constructor injection everywhere; no field injection
+- [ ] The Week 3 API and FlowGrid M1 use constructor injection everywhere; no field injection
 - [ ] Wrote a `@ConfigurationProperties` record with validation and used it
 - [ ] Ran `--debug` and can explain one positive and one negative auto-config match
 - [ ] Reproduced the singleton-state race and the prototype-in-singleton pitfall

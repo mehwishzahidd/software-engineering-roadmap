@@ -1,19 +1,20 @@
-# Java Exercises — 45 graded exercises (Weeks 1–13)
+# Java Exercises — graded katas (Weeks 1–3, 5, 15)
 
-> Do these **from a blank file**, in a Maven project (from Week 3; before that, single-file
-> `java X.java` is fine). Every exercise has **acceptance criteria**: it's done only when all
-> are met, including tests. Difficulty: 🟢 warm-up · 🟡 core · 🔴 stretch.
-> Log each one in [../trackers/technology-tracker.md](../trackers/technology-tracker.md).
+> These are **throwaway katas**, not portfolio projects — the portfolio is FlowGrid, LedgerX,
+> ForgeCI and FlagForge. Each kata isolates one Java concept so that when a project milestone needs
+> it you already know how it behaves. Do them **from a blank file**, with tests, in a Maven project
+> (`java-katas/`, one package per week). Difficulty: 🟢 warm-up · 🟡 core · 🔴 stretch.
+> Log them in [../trackers/technology-tracker.md](../trackers/technology-tracker.md).
+>
+> DSA problems are **not** here — they are solved in Python ([../03-dsa/README.md](../03-dsa/README.md)).
+> The weekly Java DSA rep uses [03-collections-generics.md](./03-collections-generics.md#java-for-occasional-dsa-reps).
 
-Suggested project layout for all of them: `java-drills/` Maven project, one package per week
-(`com.example.drills.w01`, ...), tests in `src/test/java`. Commit after each exercise with a
-Conventional Commit message (`feat(w03): LRU cache via LinkedHashMap`).
-
-**General acceptance criteria (apply to every exercise from Week 2 on):**
-- [ ] Compiles with `./mvnw -q verify` and zero warnings you can't explain
+**General acceptance criteria (every exercise from Week 2 on):**
+- [ ] `./mvnw -q verify` passes; no compiler warnings you can't explain
 - [ ] JUnit 5 tests cover the happy path, at least one edge case, and at least one invalid input
 - [ ] No `System.out.println` in library code (only in `main`/CLI classes)
-- [ ] You can explain the time/space complexity out loud
+- [ ] You can explain the design choice and its complexity out loud in 60 seconds
+- [ ] Committed with a Conventional Commit message (`feat(w02): stock level invariants`)
 
 ---
 
@@ -21,225 +22,199 @@ Conventional Commit message (`feat(w03): LRU cache via LinkedHashMap`).
 
 Module: [01-syntax-basics.md](./01-syntax-basics.md)
 
-**1.1 🟢 Temperature table.** Print Celsius −20..40 step 5 with Fahrenheit, formatted with `printf("%5d %7.1f%n", ...)`.
-- [ ] Output aligned in columns; uses `double` arithmetic (`9.0 / 5`), not integer division
-- [ ] Run via `javac` + `java` from the terminal, not the IDE
+**1.1 🟢 Temperature table.** Print Celsius −20..40 step 5 with Fahrenheit using `printf("%5d %7.1f%n", ...)`.
+- [ ] Output aligned; uses `double` arithmetic (`9.0 / 5`), not integer division
+- [ ] Compiled and run with `javac` + `java` from the terminal, not the IDE
 
-**1.2 🟢 FizzBuzz with a `switch` expression.** For 1..100, compute the label with a `switch` over `(i % 3 == 0 ? 1 : 0) + (i % 5 == 0 ? 2 : 0)`.
-- [ ] Uses arrow-form `switch` expression with `yield` or single expressions
-- [ ] Output identical to a classic if/else version (write both, diff the output)
+**1.2 🟢 FizzBuzz with a `switch` expression** over `(i % 3 == 0 ? 1 : 0) + (i % 5 == 0 ? 2 : 0)`.
+- [ ] Arrow-form `switch` expression; output identical to an if/else version (diff them)
 
-**1.3 🟢 Array stats.** Method `int[] minMaxSum(int[] a)` returning `{min, max, sum}`; sum in a `long`-safe way (return type `long[]`) when values can be up to `Integer.MAX_VALUE`.
-- [ ] Throws `IllegalArgumentException` for empty or null input
+**1.3 🟢 Array stats.** `long[] minMaxSum(int[] a)` returning `{min, max, sum}`.
+- [ ] Throws `IllegalArgumentException` for null/empty input
 - [ ] Correct for `{Integer.MAX_VALUE, Integer.MAX_VALUE}` (no overflow)
 
-**1.4 🟡 Reverse words.** `String reverseWords(String s)`: `"  the sky  is blue "` → `"blue is sky the"`.
-- [ ] Uses `strip()` + `split("\\s+")` and `StringBuilder`, not `+=` in a loop
-- [ ] Handles empty/blank input → `""`
+**1.4 🟡 Reverse words.** `"  the sky  is blue "` → `"blue is sky the"`.
+- [ ] `strip()` + `split("\\s+")` + `StringBuilder` (no `+=` in a loop); blank input → `""`
 
-**1.5 🟡 Palindrome check.** Ignore non-alphanumerics and case (LeetCode 125 Valid Palindrome) with two indices, O(1) extra space.
-- [ ] Uses `Character.isLetterOrDigit` and `Character.toLowerCase`
-- [ ] `"A man, a plan, a canal: Panama"` → true; `"race a car"` → false
+**1.5 🟡 SKU normalizer.** `normalizeSku(" mug-12oz-blu ")` → `"MUG-12OZ-BLU"`; reject SKUs that aren't 3–32 chars of `[A-Z0-9-]` after normalization.
+- [ ] Uses `strip`, `toUpperCase`, `chars().allMatch(...)` or a loop — no regex for the first version, then a regex version; both pass the same tests
 
-**1.6 🟡 Character frequency.** Given a lowercase string, print letters sorted by frequency desc, then alphabetically, using an `int[26]`.
-- [ ] No `HashMap` — array indexed by `c - 'a'`
-- [ ] Explain why `'b' - 'a'` is an `int`
+**1.6 🟡 Character frequency.** Letters of a lowercase string sorted by frequency desc, then alphabetically, using an `int[26]`.
+- [ ] No `HashMap`; explain why `'b' - 'a'` is an `int`
 
-**1.7 🔴 Fast stdin sum.** Read `n` then `n` numbers (up to 10⁶) from stdin with `BufferedReader` + `StringTokenizer`; print the sum as `long`.
-- [ ] Generates a 10⁶-number test file with a one-line shell/Java command
-- [ ] Completes in < 1 s; compare timing with `Scanner` and record both
+**1.7 🔴 Fast stdin sum.** Read `n` then `n` numbers (up to 10⁶) with `BufferedReader` + `StringTokenizer`, print the `long` sum.
+- [ ] Generate the input file with a one-liner; < 1 s runtime; record `Scanner` timing for comparison
 
 ---
 
-## Week 2 — OOP & exceptions & JUnit
+## Week 2 — OOP, exceptions, collections, Maven & JUnit
 
-Modules: [02-oop.md](./02-oop.md), [05-exceptions-io.md](./05-exceptions-io.md) Part A, [../09-testing/junit5.md](../09-testing/junit5.md)
+Modules: [02-oop.md](./02-oop.md) Part A, [05-exceptions-io.md](./05-exceptions-io.md) Part A, [03-collections-generics.md](./03-collections-generics.md), [08-maven-build.md](./08-maven-build.md), [../09-testing/junit5.md](../09-testing/junit5.md)
 
-**2.1 🟢 BankAccount with invariants.** `deposit`, `withdraw`, `transferTo(BankAccount other, long cents)`; balance never negative.
-- [ ] No public setters; invalid amounts throw `IllegalArgumentException`; overdraft throws a custom `InsufficientFundsException` with the shortfall in the message
+**2.1 🟢 Maven from zero.** Hand-write `pom.xml` for `java-katas` (no archetype): Java 21 via `maven.compiler.release`, JUnit 5 in `test` scope, surefire pinned, Maven Wrapper committed.
+- [ ] `./mvnw -q verify` passes on a fresh clone; `target/` ignored
+- [ ] You can explain every POM element without notes
+
+**2.2 🟢 Stock level with invariants.** `StockLevel` (sku, warehouseId, onHand, reserved) with `receive(n)`, `reserve(n)`, `release(n)`, `available()`.
+- [ ] No public setters; `reserved` never exceeds `onHand`, nothing goes negative; violations throw a custom `InsufficientStockException` carrying requested/available
 - [ ] Tests use `assertThrows` and check the message
 
-**2.2 🟢 `Money` value class.** `final` class with `BigDecimal amount` and `Currency`; `plus`, `minus`, `isNegative`; `equals`/`hashCode`/`toString` by hand.
-- [ ] `new Money("1.5", EUR).equals(new Money("1.50", EUR))` is true (scale normalized)
-- [ ] Adding different currencies throws `IllegalArgumentException`
-- [ ] Test: two equal `Money` in a `HashSet` → size 1
+**2.3 🟢 `Money` value class.** `final` class with `BigDecimal` + `Currency`; `plus`, `minus`, `isNegative`; hand-written `equals`/`hashCode`/`toString`.
+- [ ] `Money.of("1.5", EUR).equals(Money.of("1.50", EUR))` is true (scale normalized)
+- [ ] Adding different currencies throws; two equal `Money` in a `HashSet` → size 1
 
-**2.3 🟡 Break the contract.** Copy `Money`, remove `hashCode`, write a test demonstrating `HashSet` duplicates, then a test showing `HashMap.get` returns `null` for an equal key.
-- [ ] Tests assert the *broken* behavior (they document the bug), in a class named `BrokenHashCodeDemoTest`
-- [ ] A 3-sentence comment explains why
+**2.4 🟡 Break the contract.** Copy `Money`, remove `hashCode`; tests demonstrating `HashSet` duplicates and `HashMap.get` returning `null` for an equal key.
+- [ ] Test class `BrokenHashCodeDemoTest` asserts the *broken* behavior, with a 3-sentence comment explaining why
 
-**2.4 🟡 Shapes & polymorphism.** `sealed interface Shape permits Circle, Rect, Triangle`; records; `double totalArea(List<Shape>)` using a pattern-matching `switch`.
-- [ ] No `instanceof` chains; exhaustive `switch` without `default`
-- [ ] Invalid dimensions (≤ 0) rejected in compact constructors
+**2.5 🟡 Sealed results.** `sealed interface ReserveResult permits Reserved, InsufficientStock, UnknownSku` (records) + `String describe(ReserveResult)` with a pattern-matching `switch`.
+- [ ] No `instanceof` chains; exhaustive `switch` without `default`; adding a fourth record breaks compilation (try it)
 
-**2.5 🟡 Interface vs abstract class.** Model `Notifier` (interface: `send(String to, String msg)`) with `EmailNotifier` and `SmsNotifier`, plus an `abstract class RetryingNotifier` holding a `maxAttempts` field and a template method.
-- [ ] Written justification (in README or Javadoc) of why one is an interface and one is abstract
-- [ ] Test with a fake notifier that fails twice then succeeds
+**2.6 🟡 Interface vs abstract class.** `Notifier` interface (`send(to, msg)`) with two implementations, plus `abstract class RetryingNotifier` holding `maxAttempts` and a template method.
+- [ ] Written justification of which is an interface and which is abstract
+- [ ] Test with a fake that fails twice then succeeds
 
-**2.6 🟡 Parse or report.** `static Optional<Integer> tryParse(String s)` and `static int parseOrThrow(String s, int line)` that throws a custom unchecked `ParseException` with the line number and original cause.
-- [ ] `getCause()` is the `NumberFormatException`
-- [ ] No `catch (Exception e)`
+**2.7 🟡 Parse or report.** `Optional<Integer> tryParse(String)` and `int parseOrThrow(String s, int line)` throwing an unchecked `ParseException` with line number and cause.
+- [ ] `getCause()` is the `NumberFormatException`; no `catch (Exception e)`
 
-**2.7 🔴 Immutable `Transaction` + defensive copies.** A record with `List<String> tags`.
-- [ ] Mutating the list passed into the constructor does not change the record
-- [ ] `tx.tags().add("x")` throws `UnsupportedOperationException`
+**2.8 🟡 Immutable record with a collection.** `record Order(String id, List<OrderLine> lines)`.
+- [ ] Mutating the list passed in does not change the record; `order.lines().add(...)` throws `UnsupportedOperationException`
 
----
+**2.9 🟡 Inventory index.** Given `List<StockLevel>`, build `Map<String, Map<Long, Integer>>` (sku → warehouse → available) and `Map<Long, List<String>>` (warehouse → SKUs below a threshold, sorted).
+- [ ] Uses `computeIfAbsent`, `merge`, `TreeMap` where order matters; no `containsKey` + `put` pairs
 
-## Week 3 — Collections, generics & Maven
+**2.10 🟡 LRU cache twice.** (a) `LinkedHashMap` with `accessOrder=true` + `removeEldestEntry`; (b) by hand: `HashMap<K, Node>` + doubly linked list with sentinels.
+- [ ] Both pass one shared test suite (abstract test class or `@ParameterizedTest`); O(1) `get`/`put`
 
-Modules: [03-collections-generics.md](./03-collections-generics.md), [08-maven-build.md](./08-maven-build.md)
+**2.11 🟡 Comparator chains.** Sort pick tasks (record: zone, priority, createdAt, id) by priority desc, zone asc, createdAt asc, id asc.
+- [ ] One `Comparator` built with `comparing`/`thenComparing`/`reverseOrder`; no `a - b`; test with `Integer.MIN_VALUE` priorities
 
-**3.1 🟢 Maven from zero.** Create `java-drills` by hand-writing `pom.xml` (no archetype): Java 21, JUnit 5 (`test` scope), surefire pinned, Maven Wrapper committed.
-- [ ] `./mvnw -q verify` passes on a fresh clone
-- [ ] `target/` is in `.gitignore`
-- [ ] You can explain each POM element without notes
+**2.12 🟡 Generic utilities.** `static <T extends Comparable<? super T>> T max(Collection<? extends T>)`, `static <K, V> Map<V, List<K>> invert(Map<K, V>)`, `record Pair<A, B>(A first, B second)`.
+- [ ] No raw types or unchecked warnings; `max` works for `List<LocalDate>` (explain why `? super T` is required)
 
-**3.2 🟢 Word counter.** `Map<String, Long> countWords(String text)` case-insensitive; top N via `PriorityQueue`.
-- [ ] Uses `merge` (not `containsKey` + `put`)
-- [ ] `topN` is O(n log k) with a min-heap of size k; test with ties (alphabetical tiebreak)
-
-**3.3 🟡 Group anagrams (LeetCode 49).** Key = sorted chars.
-- [ ] Uses `computeIfAbsent(key, k -> new ArrayList<>())`
-- [ ] Explain why `String` is a safe `HashMap` key and `char[]` is not
-
-**3.4 🟡 LRU cache twice.** (a) `LinkedHashMap` with `accessOrder=true` + `removeEldestEntry`; (b) by hand: `HashMap<K, Node>` + doubly linked list with sentinels (LeetCode 146).
-- [ ] Both pass the same parameterized test suite (`@ParameterizedTest` or abstract test class)
-- [ ] `get`/`put` O(1)
-
-**3.5 🟡 Comparator chains.** Sort `List<Employee>` (record: name, dept, salary, hired) by dept asc, salary desc, hired asc.
-- [ ] Single `Comparator` built with `comparing`/`thenComparing`/`reversed` or `Comparator.reverseOrder()`
-- [ ] No `a - b` anywhere; test includes `Integer.MIN_VALUE` salaries
-
-**3.6 🟡 Generic utilities.** `static <T extends Comparable<? super T>> T max(Collection<? extends T> xs)`, `static <K, V> Map<V, List<K>> invert(Map<K, V> m)`, and a generic `Pair<A, B>` record.
-- [ ] Compiles without raw types or unchecked warnings
-- [ ] `max` works for `List<LocalDate>` (LocalDate implements `Comparable<ChronoLocalDate>` — that's why `? super T` matters)
-
-**3.7 🔴 HashMap from scratch.** `MyHashMap<K, V>` with separate chaining, power-of-two capacity, hash spreading, resize at 0.75.
-- [ ] Supports `put`, `get`, `remove`, `size`, `null` key
-- [ ] Randomized test: 100 000 random ops compared against `java.util.HashMap`
-- [ ] Test with a key class whose `hashCode()` returns a constant still passes (slowly)
+**2.13 🔴 HashMap from scratch.** `MyHashMap<K, V>`: separate chaining, power-of-two capacity, hash spreading, resize at 0.75, `null` key.
+- [ ] 100 000 random ops compared against `java.util.HashMap` in a test
+- [ ] A key class whose `hashCode()` returns a constant still passes (slowly) — explain why Java 8 treeifies
 
 ---
 
-## Week 4 — Modern Java, I/O, debugging
+## Week 3 — Modern Java, I/O, debugging
 
 Modules: [04-modern-java.md](./04-modern-java.md), [05-exceptions-io.md](./05-exceptions-io.md) Part B, [09-debugging-java.md](./09-debugging-java.md)
 
-**4.1 🟢 Stream drills.** Given `List<Transaction>`: total spend, count per category, largest expense per month, merchants seen more than 3 times, average amount per category.
-- [ ] Each is a single stream pipeline using an appropriate collector
-- [ ] At least one uses `groupingBy` with a downstream collector and a `TreeMap::new` supplier
+**3.1 🟢 Stream drills.** Given `List<Movement>` (record: sku, warehouseId, type RECEIVE/SHIP/ADJUST, qty, at): net quantity per SKU, movements per warehouse per day, largest single shipment per SKU, SKUs moved in every warehouse, average adjustment per warehouse.
+- [ ] Each is one pipeline; at least one `groupingBy` with a downstream collector and a `TreeMap::new` supplier; one uses `teeing` or `partitioningBy`
 
-**4.2 🟢 Optional refactor.** Rewrite a method with three nested `null` checks (`user.getAddress().getCity().getName()`) using `Optional.map` chains.
-- [ ] No `Optional.get()`; no `Optional` parameters or fields
+**3.2 🟢 Optional refactor.** Rewrite `order.getCustomer().getAddress().getRegion().getCode()` with three nested null checks as an `Optional.map` chain.
+- [ ] No `Optional.get()`; no `Optional` fields/parameters
 
-**4.3 🟡 Enum with behavior.** `enum Operation { ADD("+"), SUB("-"), MUL("*"), DIV("/") }` each implementing `int apply(int a, int b)`; `fromSymbol(String)`.
-- [ ] `DIV` by zero throws `ArithmeticException` with a clear message
-- [ ] `fromSymbol("%")` throws `IllegalArgumentException` listing valid symbols
+**3.3 🟡 Enum with behavior.** `enum OrderStatus { CREATED, RESERVED, ALLOCATED, PICKED, PACKED, SHIPPED, CANCELLED }` with `boolean canTransitionTo(OrderStatus next)`.
+- [ ] Transition table lives in the enum (`EnumMap`/`EnumSet`); illegal transitions throw `IllegalStateException` naming both states; a test enumerates all 49 pairs
 
-**4.4 🟡 File stats CLI.** `java -jar stats.jar <dir>` prints file count, total bytes, and top 5 largest files under a directory (`Files.walk`).
-- [ ] Streams from `Files.walk` closed via try-with-resources
-- [ ] Unreadable files reported, not fatal; test uses `@TempDir`
+**3.4 🟡 File stats CLI.** `java -jar stats.jar <dir>`: file count, total bytes, 5 largest files under a directory (`Files.walk`).
+- [ ] Streams from `Files.walk` closed via try-with-resources; unreadable files reported, not fatal; tests use `@TempDir`
 
-**4.5 🟡 CSV import with per-row errors.** Implement the `CsvImporter` from [05-exceptions-io.md](./05-exceptions-io.md#8-p1-ledger-csv-import-with-per-row-error-reporting).
-- [ ] Test fixture CSV with 10 rows: 3 invalid (bad date, bad amount, missing column); report has 7 imported + 3 errors with correct line numbers
-- [ ] Empty file and header-only file handled
+**3.5 🟡 CSV import with per-row errors.** Implement the kata `CsvImporter` from [05-exceptions-io.md §8](./05-exceptions-io.md#8-kata-csv-import-with-per-row-error-reporting) for a `date,sku,warehouse,qty` stock file.
+- [ ] Fixture with 10 rows, 3 invalid (bad date, non-numeric qty, missing column) → 7 imported + 3 errors with correct line numbers
+- [ ] Empty and header-only files handled
 
-**4.6 🟡 Suppressed exceptions.** Write an `AutoCloseable` that throws on close; prove with a test that the body's exception is primary and close's is in `getSuppressed()`.
+**3.6 🟡 Suppressed exceptions.** An `AutoCloseable` that throws on close; prove the body's exception is primary and close's is in `getSuppressed()`.
 - [ ] Also show the manual try/finally version losing the primary exception
 
-**4.7 🔴 Debugger kata.** Take a teammate's (or [../21-debugging-code-reading/](../21-debugging-code-reading/README.md) later) buggy method, or plant 3 bugs yourself in 4.1 and swap with a friend.
-- [ ] Each bug found using a conditional breakpoint, exception breakpoint, or Evaluate Expression (note which)
-- [ ] Each fix accompanied by a failing-then-passing regression test
+**3.7 🔴 Debugger kata.** Plant 3 bugs in 3.1 (off-by-one date filter, wrong comparator direction, `null` warehouse) — or swap with a friend.
+- [ ] Each found with a conditional breakpoint, exception breakpoint, or Evaluate Expression (note which)
+- [ ] Each fix comes with a failing-then-passing regression test
 
 ---
 
-## Week 5 — Design (SOLID & patterns)
+## Design patterns (read Week 2, applied in FlowGrid Weeks 4–6)
 
-Module: [02-oop.md](./02-oop.md) Part B
+Module: [02-oop.md](./02-oop.md) Part B. Kata versions only — the project versions are yours to design in the milestones.
 
-**5.1 🟡 Strategy rules engine.** `CategorizationRule` implementations: merchant-contains, regex, amount-range; `Categorizer` applies by priority.
-- [ ] Adding a new rule type requires **no** change to `Categorizer` (show with a `WeekdayRule` added in a separate commit)
-- [ ] Each rule unit-tested in isolation
+**D.1 🟡 Strategy.** `AllocationScorer` implementations (availability, region match, workload) combined with weights, deterministic tie-break by warehouse id.
+- [ ] Adding a fourth scorer requires no change to the combining class (show it in a separate commit)
+- [ ] Same inputs → same winner, every run (test with shuffled input order)
 
-**5.2 🟡 Factory for bank formats.** Detect format from the header line, return the right parser; unknown header → descriptive exception.
-- [ ] Two formats supported; tests for both plus unknown
+**D.2 🟡 Factory.** Detect a supplier CSV format from its header and return the matching parser; unknown header → descriptive exception.
+- [ ] Two formats + unknown case tested
 
-**5.3 🟡 Builder.** `Budget.builder(...)` with validation in `build()` (limit > 0, alertPercent 1–100).
-- [ ] Built object immutable; invalid combos throw at `build()` with a clear message
+**D.3 🟡 Builder.** `ClientConfig.builder(apiKey).pollInterval(Duration).timeout(Duration).build()` — validation in `build()` (positive durations, timeout < poll interval).
+- [ ] Built object immutable; invalid combinations fail at `build()` with a clear message (this is the shape FlagForge's SDK will need)
 
-**5.4 🟡 Observer.** `BudgetTracker` notifies listeners when spend crosses the alert threshold and again when it crosses 100%, but only once per month per category.
-- [ ] Test with a recording listener asserting exact notifications
+**D.4 🟡 Observer.** `LowStockMonitor` notifies listeners when `available` crosses a threshold downward — once per crossing, not on every change.
+- [ ] Recording-listener test asserts exact notifications for a sequence of reserve/receive calls
 
-**5.5 🔴 Composition over inheritance.** Reproduce the `CountingSet extends HashSet` double-count, then fix with a forwarding wrapper implementing `Set<E>`.
-- [ ] Test showing the broken count (6) and fixed count (3) for `addAll(List.of(1,2,3))`
+**D.5 🔴 Composition over inheritance.** Reproduce the `CountingSet extends HashSet` double count; fix with a forwarding wrapper implementing `Set<E>`.
+- [ ] Test shows 6 (broken) vs 3 (fixed) for `addAll(List.of(1, 2, 3))`
 
 ---
 
-## Week 6 — Memory & JVM
+## Week 5 — Memory, JVM & thread basics
 
-Module: [06-memory-jvm.md](./06-memory-jvm.md)
+Modules: [06-memory-jvm.md](./06-memory-jvm.md), [07-concurrency.md](./07-concurrency.md) §1–3, §10
 
-**6.1 🟢 Pass-by-value proof.** Tests for `reassign` vs `mutate` for an array, a `StringBuilder`, and an `Integer`.
+**5.1 🟢 Pass-by-value proof.** Tests for `reassign` vs `mutate` with an array, a `StringBuilder`, and an `Integer`.
 - [ ] Each test has a comment drawing the stack/heap state
 
-**6.2 🟢 Identity quiz.** A test class asserting the results of 10 `==`/`equals` comparisons on pooled/new strings and cached/uncached Integers.
-- [ ] All predictions written *before* running; mismatches noted and explained
+**5.2 🟢 Identity quiz.** 10 `==`/`equals` assertions on pooled/new strings and cached/uncached `Integer`s.
+- [ ] Predictions written before running; mismatches explained
 
-**6.3 🟡 Stack depth.** Measure max recursion depth of a trivial recursive method with default stack and with `-Xss4m`; convert a recursive DFS to an iterative one with `ArrayDeque`.
-- [ ] Iterative version handles a 1 000 000-node linked chain without `StackOverflowError`
+**5.3 🟡 Stack depth.** Measure max recursion depth with default stack and `-Xss4m`; convert a recursive DFS over a 1 000 000-node chain to an iterative `ArrayDeque` version.
+- [ ] Iterative version completes without `StackOverflowError`
 
-**6.4 🟡 GC observation.** Allocation-heavy program run with `-Xlog:gc`; then with `-Xmx32m`.
-- [ ] Write 5 lines interpreting the log (young vs old collections, pause times)
+**5.4 🟡 GC and container memory.** Run an allocation-heavy program with `-Xlog:gc`, then inside `docker run --memory=256m` with and without `-XX:MaxRAMPercentage=75`.
+- [ ] 5 lines interpreting the log; one sentence on what happens when heap max ≈ container limit
 
-**6.5 🔴 Leak hunt.** Program with a static cache that grows per "request"; run with `-Xmx64m -XX:+HeapDumpOnOutOfMemoryError`.
-- [ ] Heap dump opened in VisualVM or Eclipse MAT; screenshot of dominator tree / GC-root path in your notes
-- [ ] Fix with a bounded LRU (reuse 3.4) and show heap stays flat
+**5.5 🔴 Leak hunt.** A static cache growing per "request"; run with `-Xmx64m -XX:+HeapDumpOnOutOfMemoryError`.
+- [ ] Heap dump opened in VisualVM or Eclipse MAT; GC-root path noted
+- [ ] Fixed with the bounded LRU from 2.10; heap stays flat
+
+**5.6 🟡 RaceDemo from memory.** Type [07-concurrency.md §2](./07-concurrency.md#2-race-condition--runnable-demo-and-three-fixes) without looking; run 5 times.
+- [ ] Unsafe count < expected on a multi-core machine; the three fixes are exact
+- [ ] Add a check-then-act version (`if (available >= 1) available--`) and show oversell; fix it — this is FlowGrid M2's bug in miniature
+
+**5.7 🟡 Deadlock and cure.** Reproduce `DeadlockDemo`; capture `jcmd <pid> Thread.print`; fix with lock ordering by id.
+- [ ] Dump excerpt with the cycle saved in notes
+- [ ] Stress test (1 000 random transfers, 10 accounts, 8 threads) finishes and total balance is conserved — LedgerX M2's rule in miniature
 
 ---
 
-## Week 13 — Concurrency
+## Week 15 — Concurrency deep dive
 
-Module: [07-concurrency.md](./07-concurrency.md)
+Module: [07-concurrency.md](./07-concurrency.md) §4–9. These katas rehearse the mechanics ForgeCI's worker needs; the worker itself is built in the milestone.
 
-**13.1 🟢 RaceDemo from memory.** Type it without looking; run 5 times; record results.
-- [ ] Unsafe count < expected on a multi-core machine; three fixes all exact
-
-**13.2 🟡 Volatile stop flag.** A worker loop stopped by another thread; demonstrate (or explain, if your JVM doesn't reproduce) the hang without `volatile`.
+**15.1 🟡 Volatile stop flag.** Worker loop stopped from another thread; demonstrate (or explain) the hang without `volatile`.
 - [ ] Final version stops within 100 ms of `stop()`; test uses `assertTimeoutPreemptively`
 
-**13.3 🟡 Thread-safe counter map.** `hit(String key)` from 16 threads × 10 000 hits with `ConcurrentHashMap<String, LongAdder>`.
-- [ ] Exact totals; a second version using `HashMap` + `containsKey`/`put` demonstrates lost updates
+**15.2 🟡 Per-key counters.** `hit(String key)` from 16 threads × 10 000 calls with `ConcurrentHashMap<String, LongAdder>`.
+- [ ] Exact totals; a `HashMap` + `containsKey`/`put` version demonstrates lost updates
 
-**13.4 🟡 Bounded producer/consumer.** `ArrayBlockingQueue` of capacity 10, 2 producers, 3 consumers, poison-pill shutdown.
-- [ ] All N items consumed exactly once (assert via a concurrent set); program exits cleanly
+**15.3 🟡 Bounded producer/consumer.** `ArrayBlockingQueue` (capacity 10), 2 producers, 3 consumers, poison-pill shutdown.
+- [ ] Every item consumed exactly once (assert via a concurrent set); program exits cleanly; explain what happens to producers when the queue is full (backpressure)
 
-**13.5 🟡 Parallel HTTP checks.** Given 20 URLs, fetch each with `java.net.http.HttpClient` using a virtual-thread executor; each call has a 2 s timeout; print status/latency (prototype for P4's checker).
-- [ ] Total wall time ≈ slowest call, not the sum
-- [ ] Timeouts and connection errors reported per URL, not thrown
+**15.4 🟡 Parallel HTTP calls with timeouts.** 20 URLs fetched with `java.net.http.HttpClient` on a virtual-thread executor, 2 s timeout each; print status + latency.
+- [ ] Wall time ≈ slowest call, not the sum; timeouts/connection errors reported per URL, not thrown
+- [ ] Concurrency capped at 5 with a `Semaphore` in a second version
 
-**13.6 🟡 CompletableFuture composition.** Combine two async lookups (user + orders) with `thenCombine`, add `orTimeout` and a fallback via `exceptionally`.
-- [ ] Tests for success, one side failing, and timeout (use a fake that sleeps)
+**15.5 🟡 CompletableFuture composition.** Combine two async lookups with `thenCombine`, `orTimeout`, fallback via `exceptionally`.
+- [ ] Tests for success, one side failing, and timeout (fake that sleeps)
 
-**13.7 🔴 Deadlock and cure.** Reproduce `DeadlockDemo`; capture `jcmd Thread.print`; fix with lock ordering; then a second fix with `tryLock(timeout)` + retry.
-- [ ] Thread dump excerpt saved in notes with the cycle highlighted
-- [ ] Stress test (1 000 random transfers across 10 accounts, 8 threads) finishes and total balance is conserved
+**15.6 🟡 Cancellable job runner.** Submit a long "job" (loop that checks `Thread.currentThread().isInterrupted()` and sleeps); cancel it via `Future.cancel(true)`; then implement a per-job timeout.
+- [ ] Job observes interruption within 200 ms, cleans up in `finally`, and records CANCELLED vs TIMED_OUT distinctly
 
-**13.8 🔴 P2 seat-hold race.** Write the TicketHold concurrent hold test (see [07-concurrency.md §11](./07-concurrency.md#11-applying-it-tickethold-concurrent-seat-hold-test-p2-m5)) *before* adding the fix; watch it fail; add the DB constraint / `@Version`; watch it pass.
-- [ ] Commit history shows red → green
-- [ ] You can explain why a `synchronized` service method would be insufficient with two app instances
+**15.7 🔴 Graceful shutdown + heartbeat.** A worker with a `ScheduledExecutorService` heartbeat every second and a job pool; on shutdown: stop taking jobs, wait up to N seconds for running ones, then interrupt, then stop the heartbeat.
+- [ ] Test proves: in-flight job completes if it finishes within the grace period; otherwise it's interrupted; no thread leaks (`Thread.getAllStackTraces()` check)
+- [ ] Explain how a lease + heartbeat lets *another* worker recover a job if this JVM is `kill -9`'d
 
 ---
 
 ## Progress summary
 
-| Week | Exercises | Done |
+| Section | Exercises | Done |
 |---|---:|---:|
-| 1 | 7 | |
-| 2 | 7 | |
-| 3 | 7 | |
-| 4 | 7 | |
-| 5 | 5 | |
-| 6 | 5 | |
-| 13 | 8 | |
+| Week 1 | 7 | |
+| Week 2 | 13 | |
+| Week 3 | 7 | |
+| Design patterns | 5 | |
+| Week 5 | 7 | |
+| Week 15 | 7 | |
 | **Total** | **46** | |

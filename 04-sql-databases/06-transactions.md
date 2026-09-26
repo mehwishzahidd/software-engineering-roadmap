@@ -191,7 +191,7 @@ CREATE TABLE IF NOT EXISTS job_queue (
 );
 CREATE INDEX IF NOT EXISTS job_queue_ready_idx ON job_queue (run_after) WHERE status = 'READY';
 
-INSERT INTO job_queue (payload) SELECT jsonb_build_object('monitor', g) FROM generate_series(1, 5) g;
+INSERT INTO job_queue (payload) SELECT jsonb_build_object('event', 'order.created', 'order_id', g) FROM generate_series(1, 5) g;
 
 -- each worker, in its own transaction:
 BEGIN;

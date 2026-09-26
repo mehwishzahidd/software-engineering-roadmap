@@ -1,21 +1,23 @@
-# ⚙️ 20 — C++ Basics (capped: ≈3–6 hours, Week 19)
+# ⚙️ 20 — C++ Basics (≈4 hours, hard cap 6 · Week 21)
 
 > **Why this exists:** CS interviews and fundamentals questions assume you understand
 > pointers, references, manual memory, the stack vs the heap, and undefined behavior. Java
 > hides all of that behind references and a garbage collector. A few hours of C++ makes
 > those Java answers ([../01-java/06-memory-jvm.md](../01-java/06-memory-jvm.md)) concrete.
 >
-> **Why it's capped:** Java is your interview language ([ROADMAP §2.5](../ROADMAP.md#25-weighting-problems-fixed)).
-> C++ is **not** a second DSA language here. Stop when the checklist is done.
+> **Why it's capped:** C++ priority is LOW ([ROADMAP §2.4](../ROADMAP.md#24-weighting-fixed)). Coding
+> interviews and OAs are in **Python**; backend/project/résumé interviews are in **Java**. C++ is
+> neither a DSA language nor a project language here. It sits in Week 21 (FlagForge M2, a lighter
+> learning week). Stop when the checklist is done.
 
 | Block | Time | Content |
 |---|---|---|
-| 1 | 45 min | §1–3: compile/run, types, pointers vs references, pass by value/ref/const ref |
-| 2 | 60 min | §4–5: stack vs heap, `new`/`delete`, RAII, `unique_ptr`, `shared_ptr` |
-| 3 | 45 min | §6–7: arrays vs `std::vector`, `std::string`, `std::unordered_map` |
+| 1 | 40 min | §1–3: compile/run, types, pointers vs references, pass by value/ref/const ref |
+| 2 | 50 min | §4–5: stack vs heap, `new`/`delete`, RAII, `unique_ptr`, `shared_ptr` |
+| 3 | 30 min | §6–7: arrays vs `std::vector`, `std::string`, `std::unordered_map` |
 | 4 | 30 min | §8: undefined behavior; run examples with sanitizers |
-| 5 | 60–120 min | §10: the 6 exercises |
-| (opt) | ≤ 60 min | Re-read §9 mapping to Java and answer the interview questions out loud |
+| 5 | 90 min | §10: the 6 exercises |
+| (opt, ≤ 2 h more) | — | Re-read §9 mapping to Java/Python and answer the interview questions out loud |
 
 ---
 
@@ -194,9 +196,9 @@ std::sort(v.begin(), v.end());
 for (int x : v) std::cout << x << ' ';
 v.size();                             // unsigned! `for (int i = 0; i < v.size() - 1; ...)` breaks when empty
 
-std::string s = "ledger";             // MUTABLE, value semantics (unlike Java's immutable String)
-s += "-cli";                          // modifies s in place
-s[0] = 'L';
+std::string s = "pallet";             // MUTABLE, value semantics (unlike Java's immutable String)
+s += "-01";                           // modifies s in place
+s[0] = 'P';
 std::string t = s;                    // copy
 bool same = (s == t);                 // == compares CONTENT in C++ (in Java it compares references)
 s.substr(1, 3);                       // (pos, length) — Java's substring is (begin, end)!
@@ -256,7 +258,11 @@ int main(int argc, char* argv[]) {
 }
 ```
 Run each case with and **without** `-fsanitize`. Without sanitizers several "work" and print
-something plausible — that's the danger. This is also the root of many security vulnerabilities
+something plausible (case 1 printed `0`, case 3 a random number, case 6 garbage on the author's
+machine) — that's the danger. Notes: ASan/UBSan do **not** catch uninitialized reads (case 6) —
+`-Wall` warns at compile time, and clang's MemorySanitizer or Valgrind catch it at runtime; GCC
+may compile case 5's dangling address into a null pointer, so it crashes instead of printing 42 —
+UB means the compiler is allowed to do that. This is also the root of many security vulnerabilities
 (buffer overflows), and the reason memory-safe languages (Java, Python, Rust) are preferred for most services.
 
 ---
@@ -277,6 +283,11 @@ something plausible — that's the danger. This is also the root of many securit
 | "What's a destructor / finalizer?" | Deterministic at scope end | No destructors; `finalize` deprecated; use try-with-resources |
 | "How does a vector/ArrayList grow?" | Geometric reallocation invalidates pointers/iterators | Geometric growth; you hold element refs, not addresses |
 
+**Python angle (your coding-interview language):** Python names are references to objects, like
+Java's; `==` compares values and `is` compares identity; `int` never overflows; `list` grows
+geometrically like `std::vector`; and CPython frees memory by **reference counting plus a cycle
+collector** — exactly because pure reference counting (the `shared_ptr` model) leaks cycles.
+
 ---
 
 ## 10. Six small exercises (compile with `-Wall -Wextra -fsanitize=address,undefined`)
@@ -290,7 +301,7 @@ something plausible — that's the danger. This is also the root of many securit
 4. **Word count.** Read words from `std::cin` into `std::unordered_map<std::string,int>`, print the top 5 by count (copy into a `std::vector<std::pair<...>>` and `std::sort` with a lambda comparator).
    - [ ] Uses `const std::string&` in loops; no raw `new`.
 5. **Two Sum in C++.** LeetCode 1 with `std::unordered_map<int,int>` and `std::vector<int>`.
-   - [ ] Compare line-by-line with your Java solution; list 3 differences.
+   - [ ] Compare line-by-line with your Python solution (and your Java rep, if you did one); list 3 differences (explicit types, `find` vs `in`, no `None`/`null` — `end()` sentinel).
 6. **UB tour.** Run all six cases of `ub.cpp` (§8) with and without sanitizers.
    - [ ] Table: case → what happened without sanitizer → sanitizer message → Java equivalent behavior.
 
@@ -304,7 +315,7 @@ something plausible — that's the danger. This is also the root of many securit
 - Move semantics beyond "`std::move` transfers ownership of a `unique_ptr`".
 - Iterators/algorithms beyond `begin()`/`end()` + `std::sort`.
 - Concurrency in C++, the preprocessor, macros, `const_cast`/`reinterpret_cast`.
-- Competitive-programming C++ (`bits/stdc++.h`, macros) — your DSA language is Java.
+- Competitive-programming C++ (`bits/stdc++.h`, macros) — your DSA language is Python.
 - Any C++ project. If you feel like building something in C++, build it in Java instead.
 
 ---
@@ -356,4 +367,4 @@ use-after-free/double free; leaks only via lingering references; GC costs CPU/me
 - [ ] Use `std::vector`, `std::string`, `std::unordered_map` for a small program
 - [ ] Demonstrate 3 kinds of UB and what the sanitizer reports
 - [ ] Answer every row of the §9 table from the Java side
-- [ ] Six exercises done — total time ≤ 6 hours
+- [ ] Six exercises done — total time ≈ 4 hours, never more than 6

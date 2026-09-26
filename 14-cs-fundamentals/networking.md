@@ -1,7 +1,8 @@
-# Networking (Week 9)
+# Networking (Week 15; HTTP basics already in Week 3)
 
-> **Practical use:** understand every hop between a button click in TeamBoard and a row in Postgres;
-> debug "connection refused" vs "timeout" vs "CORS error"; configure security groups, DNS and TLS for P4.
+> **Practical use:** understand every hop between a button click in FlowGrid's dashboard and a row in
+> Postgres; debug "connection refused" vs "timeout" vs "CORS error"; configure security groups, DNS and
+> TLS for each AWS deploy; choose SSE for ForgeCI's live logs and FlagForge's propagation.
 > **Interview use:** "What happens when you type a URL?", TCP vs UDP, DNS, HTTPS, L4 vs L7 load balancers, CORS.
 
 This file owns TCP/IP/DNS/TLS. HTTP **semantics for API design** (methods, status codes, headers,
@@ -122,7 +123,7 @@ head-of-line blocking; UDP gives raw datagrams and leaves reliability to the app
 
 ## 6. DNS resolution, step by step
 
-Resolving `status.pulsewatch.example`:
+Resolving `ops.flowgrid.example`:
 
 ```
 Browser cache ─miss─► OS cache (/etc/hosts too) ─miss─► Recursive resolver (ISP, 1.1.1.1, 8.8.8.8, VPC resolver)
@@ -130,8 +131,8 @@ Browser cache ─miss─► OS cache (/etc/hosts too) ─miss─► Recursive re
                   ┌───────────────────────────────────────────┤
                   ▼                                           │
         1. Root server: "ask the .example TLD servers" ◄──────┤
-        2. TLD server: "ask ns1.dnsprovider.com for pulsewatch.example"
-        3. Authoritative server: "status.pulsewatch.example A 203.0.113.10, TTL 300"
+        2. TLD server: "ask ns1.dnsprovider.com for flowgrid.example"
+        3. Authoritative server: "ops.flowgrid.example A 203.0.113.10, TTL 300"
                   │
                   ▼
    resolver caches for TTL → returns to OS → browser connects to 203.0.113.10
@@ -148,7 +149,7 @@ Browser cache ─miss─► OS cache (/etc/hosts too) ─miss─► Recursive re
 - **TTL** controls caching: low TTL = faster changes, more queries. Lower it *before* a migration.
 - DNS uses UDP 53 (TCP for large responses).
 - Java caches DNS too (`networkaddress.cache.ttl`) — relevant when an RDS failover changes the IP behind the endpoint.
-- Debug: `dig status.pulsewatch.example +trace`, `nslookup`, `getent hosts name`.
+- Debug: `dig ops.flowgrid.example +trace`, `nslookup`, `getent hosts name`.
 
 ---
 
@@ -167,6 +168,22 @@ Browser cache ─miss─► OS cache (/etc/hosts too) ─miss─► Recursive re
 Your Spring Boot APIs speak HTTP/1.1 behind nginx/ALB in most setups; the proxy can speak HTTP/2 to
 browsers. Server push (HTTP/2) is effectively dead — don't bring it up as a feature.
 
+### Long-lived connections: polling vs SSE vs WebSockets
+
+ForgeCI's live build logs (M3) and FlagForge's flag propagation (M4) both push data from server to
+client. Know the options and why those projects choose **SSE**:
+
+| | Short polling | Long polling | **Server-Sent Events (SSE)** | WebSockets |
+|---|---|---|---|---|
+| Direction | Client asks repeatedly | Client asks; server holds until data | **Server → client** stream over one HTTP response | Full duplex |
+| Protocol | Plain HTTP | Plain HTTP | HTTP, `Content-Type: text/event-stream` | Upgrade from HTTP to the WS protocol |
+| Reconnect / resume | N/A | Manual | **Built into the browser `EventSource`**, sends `Last-Event-ID` → server replays from that sequence | Manual |
+| Proxies / LBs | Trivial | Easy | Works through HTTP infrastructure; disable proxy buffering, raise read timeouts, send heartbeats | Needs upgrade support; sticky connections |
+| Fit | Rare updates | Moderate | Logs, notifications, config pushes | Chat, collaborative editing, games |
+
+Spring: `SseEmitter` (servlet) or `Flux<ServerSentEvent<?>>` (WebFlux). Each open SSE connection holds
+a connection (and, on the servlet stack, careful thread usage) — count them like any other resource.
+
 ---
 
 ## 8. TLS (HTTPS) handshake overview — TLS 1.3
@@ -177,7 +194,7 @@ talking to the real server).
 ```
 Client                                                   Server
   │ ClientHello: TLS versions, cipher suites, key share,  │
-  │              SNI = status.pulsewatch.example ───────► │
+  │              SNI = ops.flowgrid.example ───────► │
   │ ◄─ ServerHello: chosen cipher, key share              │
   │ ◄─ {Certificate chain, CertificateVerify, Finished}   │  (already encrypted)
   │   client verifies cert: chain to trusted CA,          │
@@ -196,15 +213,15 @@ Client                                                   Server
 
 ---
 
-## 9. What happens when you type `https://status.pulsewatch.example/monitors` and press Enter
+## 9. What happens when you type `https://ops.flowgrid.example/orders` and press Enter
 
-1. **URL parsing** — scheme `https`, host, default port 443, path `/monitors`. Browser checks HSTS list (force HTTPS).
+1. **URL parsing** — scheme `https`, host, default port 443, path `/orders`. Browser checks HSTS list (force HTTPS).
 2. **Cache checks** — browser HTTP cache (maybe served without network), service worker.
 3. **DNS** — browser → OS → recursive resolver → root → TLD → authoritative; get the IP (§6).
 4. **TCP handshake** with the IP on 443 (§4), unless an existing keep-alive connection is reused. (HTTP/3: QUIC handshake over UDP instead.)
 5. **TLS handshake** (§8): certificate validated against trusted CAs and hostname.
-6. **HTTP request** sent: `GET /monitors HTTP/2`, headers `Host`, `Accept`, `Cookie`/`Authorization`, `User-Agent`.
-7. **Load balancer / reverse proxy** (nginx in P4) receives it, maybe terminates TLS, picks a backend (§10), forwards with `X-Forwarded-For`/`X-Forwarded-Proto`.
+6. **HTTP request** sent: `GET /orders HTTP/2`, headers `Host`, `Accept`, `Cookie`/`Authorization`, `User-Agent`.
+7. **Load balancer / reverse proxy** (nginx in your deploys) receives it, maybe terminates TLS, picks a backend (§10), forwards with `X-Forwarded-For`/`X-Forwarded-Proto`.
 8. **Application server** — Tomcat thread takes the request → Spring Security filter chain (JWT validation) → `DispatcherServlet` → controller → service → Redis cache check → on miss, JDBC over a pooled TCP connection to Postgres → query plan → B-tree index lookup → rows back → JSON serialization.
 9. **Response**: status line `200 OK`, headers (`Content-Type`, `Cache-Control`, `ETag`), body.
 10. **Browser renders**: parse HTML → build DOM; fetch CSS/JS/images (more requests, parallel over HTTP/2); CSSOM; run JS (React mounts, calls the API with `fetch`, which may trigger **CORS**); layout; paint.
@@ -227,7 +244,7 @@ DNS, TLS, the LB, or the backend. You own the backend part through your projects
 | Software | HAProxy (TCP mode), nginx `stream` | nginx `http`, HAProxy, Envoy, Traefik |
 
 Algorithms: round robin, least connections, weighted, IP/consistent hash. LBs run **health checks**
-and stop sending traffic to failing targets (P4's `/actuator/health`). P4 uses nginx as a
+and stop sending traffic to failing targets (`/actuator/health` in every project). Your deploys use nginx as a
 **reverse proxy** (same idea, one backend) — the step before a real load balancer.
 
 Reverse proxy vs forward proxy: reverse sits in front of *servers* (nginx for your API); forward sits
@@ -259,7 +276,7 @@ Browser (origin http://localhost:5173)                      API http://localhost
 
 - CORS **does not protect your server** — it protects *users' browsers* from malicious sites reading responses using their credentials. Server-side authorization is still required.
 - With cookies (`credentials: 'include'`), `Allow-Origin` can't be `*` and needs `Access-Control-Allow-Credentials: true`.
-- Fix in Spring Security with a `CorsConfigurationSource` bean (see [`05-spring-boot/05-security-jwt.md`](../05-spring-boot/05-security-jwt.md)), or avoid CORS altogether by serving frontend and API from the **same origin** behind nginx (P3/P4 production setup) — or the Vite dev proxy locally.
+- Fix in Spring Security with a `CorsConfigurationSource` bean (see [`05-spring-boot/05-security-jwt.md`](../05-spring-boot/05-security-jwt.md)), or avoid CORS altogether by serving frontend and API from the **same origin** behind nginx (FlowGrid's production setup) — or the Vite dev proxy locally.
 
 ---
 
@@ -275,7 +292,7 @@ Browser (origin http://localhost:5173)                      API http://localhost
 | Certificate details | `openssl s_client -connect host:443 -servername host </dev/null` |
 | Route to host | `traceroute host` / `mtr host` |
 
-The curl timing line is also how PulseWatch's checker could report DNS/connect/TLS/TTFB per check.
+Use the curl timing line whenever "the API is slow" — it tells you whether the time is DNS, connect, TLS or the server.
 
 ---
 

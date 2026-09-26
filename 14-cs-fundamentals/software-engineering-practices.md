@@ -1,7 +1,8 @@
-# Software Engineering Practices (Week 5, revisited Weeks 12 and 18)
+# Software Engineering Practices (Weeks 4–5, revisited in every project)
 
-> **Practical use:** design P1's rules engine and CSV importers so they're easy to extend, review
-> your own PRs like a teammate would, log and handle errors consistently across P2–P4.
+> **Practical use:** keep FlowGrid's allocation logic, FlagForge's rule types and ForgeCI's executors
+> easy to extend and test; review your own PRs like a teammate would (PR workflow from Week 5); log and
+> handle errors consistently across all four projects.
 > **Interview use:** "Explain SOLID with an example", "Which design patterns have you used?", "How do you handle errors?",
 > "What do you look for in a code review?", "Tell me about technical debt you took on."
 
@@ -9,91 +10,77 @@ Java OOP mechanics are in [`01-java/02-oop.md`](../01-java/02-oop.md); Spring-sp
 error handling in [`05-spring-boot/06-logging-actuator.md`](../05-spring-boot/06-logging-actuator.md) and
 [`05-spring-boot/04-validation-errors.md`](../05-spring-boot/04-validation-errors.md).
 
+> **How to use the code on this page.** Snippets show the *shape* of each idea — an interface and a
+> line or two — using names from your projects so you recognise where it applies. They are not the
+> projects' implementations: you design and write those yourself in each milestone.
+
 ---
 
-## 1. SOLID — with examples from your projects
+## 1. SOLID — mapped to your projects
 
 ### S — Single Responsibility Principle
 
 *A class should have one reason to change* (one actor/stakeholder whose requirements drive it).
 
 ```java
-// Before: parsing, categorizing and persisting all in one — three reasons to change
-class CsvImporter {
-    void importFile(Path file) { /* parse lines, apply rules, INSERT rows */ }
+// Smell: one class changes when the API contract, the allocation rules or the persistence change
+class OrderService {
+    OrderResponse create(CreateOrderRequest req) { /* validate, score warehouses, lock rows, save, map DTO */ }
 }
 
-// After (P1): each class changes for one reason
-class CsvTransactionParser { List<ParsedRow> parse(Reader in) { … } }        // bank format changes
-class Categorizer          { Category categorize(Transaction t) { … } }       // rule changes
-class ImportService {                                                         // orchestration changes
-    ImportResult importFile(Path file) { /* parse → categorize → repository.saveAll */ }
-}
+// Shape after splitting (FlowGrid M2–M3): each collaborator changes for one reason
+class OrderService       { /* orchestration + transaction boundary */ }
+class AllocationPlanner  { /* which warehouse(s) — pure logic, unit-testable without a DB */ }
+class ReservationStore   { /* row locking + persistence */ }
+class OrderMapper        { /* entity ↔ DTO */ }
 ```
 
-Smell: class names with "And"/"Manager"/"Util", 1,000-line services, tests needing ten mocks.
+Smells: class names with "And"/"Manager"/"Util", 1,000-line services, tests needing ten mocks.
+A pure `AllocationPlanner` (inputs → decision, no I/O) is also what makes "deterministic allocation"
+testable with plain JUnit tables of cases.
 
 ### O — Open/Closed Principle
 
 *Open for extension, closed for modification.* Add behaviour by adding code, not editing working code.
 
 ```java
-public interface CategorizationRule {
-    Optional<Category> apply(Transaction t);
-    int priority();
+// FlagForge-shaped: each targeting rule type is a new class; the evaluator loop never changes
+public interface TargetingRule {
+    boolean matches(EvaluationContext ctx);
 }
-
-record MerchantContainsRule(String fragment, Category category, int priority) implements CategorizationRule {
-    public Optional<Category> apply(Transaction t) {
-        return t.merchant().toLowerCase().contains(fragment.toLowerCase())
-                ? Optional.of(category) : Optional.empty();
-    }
+record AttributeEqualsRule(String attribute, String value) implements TargetingRule {
+    public boolean matches(EvaluationContext ctx) { return value.equals(ctx.attribute(attribute)); }
 }
-
-record AmountRangeRule(BigDecimal min, BigDecimal max, Category category, int priority) implements CategorizationRule {
-    public Optional<Category> apply(Transaction t) {
-        BigDecimal a = t.amount().abs();
-        return a.compareTo(min) >= 0 && a.compareTo(max) <= 0 ? Optional.of(category) : Optional.empty();
-    }
-}
-
-final class Categorizer {
-    private final List<CategorizationRule> rules;
-    Categorizer(List<CategorizationRule> rules) {
-        this.rules = rules.stream().sorted(Comparator.comparingInt(CategorizationRule::priority)).toList();
-    }
-    Category categorize(Transaction t) {
-        return rules.stream().map(r -> r.apply(t)).flatMap(Optional::stream)
-                .findFirst().orElse(Category.UNCATEGORIZED);
-    }
-}
+// UserListRule, PercentageRule, ... → added without editing the evaluator
 ```
 
-A new `RegexRule` requires **zero** changes to `Categorizer`. (This is also the Strategy pattern.)
+Counter-point worth saying in interviews: a `switch` over a **sealed interface** of records is also
+fine in modern Java — the compiler forces you to handle every case. OCP is about where change is
+cheap, not about banning `switch`.
 
 ### L — Liskov Substitution Principle
 
 *Subtypes must be usable wherever the base type is expected without breaking expectations.*
 
 ```java
-// Violation: a "read-only" repository that throws on save
-class ArchivedTransactionRepository implements TransactionRepository {
-    public void save(Transaction t) { throw new UnsupportedOperationException(); } // surprises callers
+// Violation: a "read-only" repository that throws on append
+class ArchivedLedgerRepository implements LedgerEntryRepository {
+    public void append(LedgerEntry e) { throw new UnsupportedOperationException(); } // surprises callers
 }
 ```
 
-Fix: split the interface (`TransactionReader` vs `TransactionRepository extends TransactionReader`).
-Classic example: `Square extends Rectangle` breaks `setWidth` expectations. Java's own
-`List.of(...)` throwing on `add` is a pragmatic LSP compromise worth knowing.
+Fix: split the interface (`LedgerEntryReader` vs `LedgerEntryWriter`). Classic example: `Square extends
+Rectangle` breaks `setWidth` expectations. Java's own `List.of(...)` throwing on `add` is a pragmatic
+LSP compromise worth knowing.
 
 ### I — Interface Segregation Principle
 
 *Clients shouldn't depend on methods they don't use.* Prefer several small interfaces.
 
 ```java
-interface ReportExporter { byte[] export(Report r); }
-interface ReportStorage  { String store(byte[] data); URL link(String key); }
-// A CSV exporter doesn't need to know about S3; a test fake of ReportStorage is two methods.
+interface ReportExporter { byte[] export(ReportQuery q); }
+interface ReportStorage  { String store(byte[] data); URL link(String key, Duration ttl); }
+// The CSV exporter knows nothing about S3; a test fake of ReportStorage is two methods.
 ```
 
 ### D — Dependency Inversion Principle
@@ -101,130 +88,97 @@ interface ReportStorage  { String store(byte[] data); URL link(String key); }
 *High-level modules depend on abstractions, not on low-level details.*
 
 ```java
-// P1 M4: the service depends on an interface; JDBC is a detail plugged in from outside
-final class ReportService {
-    private final TransactionRepository repository;          // abstraction
-    ReportService(TransactionRepository repository) { this.repository = repository; } // constructor injection
+// ForgeCI-shaped: the job runner depends on an abstraction of "run a step in isolation"
+public interface StepExecutor {
+    StepResult run(StepSpec step, Workspace ws, Duration timeout);
 }
-// Implementations: InMemoryTransactionRepository (tests, M1–M3), JdbcTransactionRepository (M4)
+// DockerStepExecutor (Engine API) in production; FakeStepExecutor in unit tests
+// → retry/timeout/cancellation logic is testable without a Docker daemon.
 ```
 
-DIP (a principle) enables DI (a technique — Spring's container does it). Interview line: *"Swapping
-in-memory storage for Postgres in P1 touched zero lines of ReportService because it depended on the
-`TransactionRepository` interface."*
+DIP (a principle) enables DI (a technique — Spring's container does it). Interview line: *"Because the
+job-lifecycle logic depended on a `StepExecutor` interface, I could unit-test timeouts and retries with a
+fake executor and keep the Docker integration tests separate."* — say it only once it's true of your code.
 
 ---
 
 ## 2. Design patterns — the eight worth knowing cold
 
-| Pattern | Category | One-line intent | Your project |
+| Pattern | Category | One-line intent | Where it naturally appears in your projects |
 |---|---|---|---|
-| Strategy | Behavioral | Swap an algorithm at runtime behind an interface | P1 categorization rules; P4 check types (HTTP, TCP) |
-| Factory | Creational | Centralize "which implementation do I create?" | P1 bank CSV parsers |
-| Builder | Creational | Construct complex/immutable objects readably | P1 `Transaction`, test data builders |
-| Observer | Behavioral | Notify subscribers of events without coupling | P1 over-budget alerts; P4 incident → notifiers |
-| Singleton | Creational | Exactly one instance | Spring beans (container-managed) |
-| Adapter | Structural | Make an incompatible interface fit the one you need | P4 wrapping email/webhook providers |
-| Decorator | Structural | Add behaviour by wrapping, same interface | Caching/retrying/logging wrappers |
-| Template Method | Behavioral | Fixed algorithm skeleton, subclasses fill steps | Abstract CSV parser base class |
+| Strategy | Behavioral | Swap an algorithm behind an interface | FlowGrid allocation scoring factors; FlagForge rule types |
+| Factory | Creational | Centralize "which implementation do I create?" | ForgeCI: executor per step type; LedgerX: journal-transaction builders per operation type |
+| Builder | Creational | Construct complex/immutable objects readably | FlagForge `FlagClient.builder()` (M3); test-data builders everywhere |
+| Observer | Behavioral | Notify subscribers of events without coupling | FlowGrid low-stock alerts; LedgerX outbox events; FlagForge publish → SSE |
+| Singleton | Creational | Exactly one instance | Spring beans (container-managed); an SDK client per app |
+| Adapter | Structural | Make an incompatible interface fit the one you need | ForgeCI wrapping the GitHub API / docker-java client behind your own interfaces |
+| Decorator | Structural | Add behaviour by wrapping, same interface | Caching, retry, metrics wrappers (FlagForge SDK fetcher) |
+| Template Method | Behavioral | Fixed algorithm skeleton, subclasses fill steps | ForgeCI job lifecycle: prepare → run steps → collect → **always** clean up |
 
 ### 2.1 Strategy
 
-**When:** several interchangeable algorithms, chosen by config/data; replacing `switch` on a type.
+**When:** several interchangeable algorithms chosen by config/data; replacing a growing `switch`.
 
 ```java
-public interface CheckStrategy { CheckResult check(Monitor m); }
-
-@Component("HTTP") class HttpCheck implements CheckStrategy { public CheckResult check(Monitor m) { … } }
-@Component("TCP")  class TcpCheck  implements CheckStrategy { public CheckResult check(Monitor m) { … } }
-
-@Service
-class Checker {
-    private final Map<String, CheckStrategy> strategies;   // Spring injects bean-name → bean
-    Checker(Map<String, CheckStrategy> strategies) { this.strategies = strategies; }
-    CheckResult run(Monitor m) { return strategies.get(m.type().name()).check(m); }
-}
+public interface WarehouseScorer { double score(Warehouse w, OrderContext ctx); }
+// AvailabilityScorer, RegionMatchScorer, WorkloadScorer ... combined with weights;
+// ties broken by warehouse id so the result is deterministic.
 ```
 
-With lambdas, a strategy can simply be a `Function<Transaction, Optional<Category>>`. **Don't** use
-it for one algorithm that will never vary.
+With lambdas, a strategy can simply be a `Function<Order, Double>` or `ToDoubleBiFunction`.
+Spring can inject all implementations as `List<WarehouseScorer>` or `Map<String, WarehouseScorer>`.
+**Don't** use it for one algorithm that will never vary.
 
 ### 2.2 Factory (simple factory / factory method)
 
-**When:** creation logic depends on input and you don't want callers to know concrete classes.
+**When:** creation logic depends on input and callers shouldn't know concrete classes.
 
 ```java
-public final class ParserFactory {
-    public static TransactionParser forBank(String bankCode) {
-        return switch (bankCode.toUpperCase()) {
-            case "CHASE" -> new ChaseCsvParser();
-            case "REVOLUT" -> new RevolutCsvParser();
-            case "GENERIC" -> new GenericCsvParser();
-            default -> throw new IllegalArgumentException("Unsupported bank: " + bankCode);
-        };
-    }
+static StepExecutor forStep(StepSpec spec) {
+    return switch (spec.kind()) {
+        case SHELL  -> new DockerShellExecutor(docker);
+        case SCRIPT -> new DockerScriptExecutor(docker);
+    };
 }
 ```
 
-The *Factory Method* pattern proper uses an overridable creation method in a base class; *Abstract
-Factory* creates families of related objects. For interviews: know the difference exists, use the
-simple version. JDK examples: `List.of`, `Executors.newFixedThreadPool`, `Calendar.getInstance`.
+*Factory Method* proper uses an overridable creation method in a base class; *Abstract Factory*
+creates families of related objects. Know the difference exists; use the simple version. JDK
+examples: `List.of`, `Executors.newFixedThreadPool`, `HttpClient.newHttpClient()`.
 
 ### 2.3 Builder
 
-**When:** many parameters (especially optional), immutability, readability over telescoping constructors.
+**When:** many (especially optional) parameters, validation at construction, immutability, readability.
 
 ```java
-public final class Transaction {
-    private final LocalDate date; private final String merchant;
-    private final Money amount; private final Category category; private final String note;
-
-    private Transaction(Builder b) {
-        this.date = Objects.requireNonNull(b.date, "date");
-        this.merchant = Objects.requireNonNull(b.merchant, "merchant");
-        this.amount = Objects.requireNonNull(b.amount, "amount");
-        this.category = b.category == null ? Category.UNCATEGORIZED : b.category;
-        this.note = b.note;
-    }
-    public static Builder builder() { return new Builder(); }
-
-    public static final class Builder {
-        private LocalDate date; private String merchant; private Money amount;
-        private Category category; private String note;
-        public Builder date(LocalDate d) { this.date = d; return this; }
-        public Builder merchant(String m) { this.merchant = m; return this; }
-        public Builder amount(Money a) { this.amount = a; return this; }
-        public Builder category(Category c) { this.category = c; return this; }
-        public Builder note(String n) { this.note = n; return this; }
-        public Transaction build() { return new Transaction(this); }   // validate here
-    }
-}
+// Shape of an SDK entry point (you'll design FlagForge's in Week 22)
+FlagClient client = FlagClient.builder()
+        .sdkKey(System.getenv("FLAG_SDK_KEY"))     // required → validated in build()
+        .pollInterval(Duration.ofSeconds(30))      // optional with sensible default
+        .requestTimeout(Duration.ofSeconds(2))
+        .build();
 ```
 
-For simple immutable data, a **record** is often enough. Builders shine in **test data**:
-`aTransaction().withAmount("12.50").build()`. JDK: `StringBuilder`, `HttpRequest.newBuilder()`, `Thread.ofVirtual()`.
+Rules: required parameters validated in `build()` (fail fast with a clear message), sensible defaults,
+the built object immutable and thread-safe. For simple data, a **record** is enough. Builders also shine
+for **test data**: `anOrder().withLine(sku, 2).build()`. JDK: `HttpRequest.newBuilder()`, `Thread.ofVirtual()`.
 
 ### 2.4 Observer
 
 **When:** one event, many independent reactions; publishers shouldn't know subscribers.
 
 ```java
-public interface BudgetListener { void onOverBudget(Budget budget, Money spent); }
+// Spring's built-in observer: publish a domain event, react after the DB commit
+publisher.publishEvent(new StockBelowThreshold(skuId, warehouseId, available));
 
-final class BudgetTracker {
-    private final List<BudgetListener> listeners = new CopyOnWriteArrayList<>();
-    void subscribe(BudgetListener l) { listeners.add(l); }
-    void record(Transaction t) {
-        // … update totals …
-        if (spent.isGreaterThan(budget.limit())) listeners.forEach(l -> l.onOverBudget(budget, spent));
-    }
-}
+@TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+void onLowStock(StockBelowThreshold e) { /* notify ops */ }
 ```
 
-Spring version: `ApplicationEventPublisher.publishEvent(new IncidentOpened(...))` +
-`@EventListener` / `@TransactionalEventListener(phase = AFTER_COMMIT)` (don't email before the DB commit!).
-At system scale, Observer becomes **pub/sub** with a message broker. Pitfalls: listener exceptions,
-ordering, memory leaks from never-unsubscribed listeners.
+`AFTER_COMMIT` matters: don't notify about something that might still roll back. In-process events
+are lost if the process dies after commit — that's the problem the **transactional outbox** (LedgerX M3)
+solves. At system scale, Observer becomes **pub/sub** (Redis pub/sub in ForgeCI logs and FlagForge
+propagation). Pitfalls: listener exceptions, ordering, never-unsubscribed listeners (memory leaks).
 
 ### 2.5 Singleton
 
@@ -232,11 +186,7 @@ ordering, memory leaks from never-unsubscribed listeners.
 container do it** — beans are singletons by default; hand-rolled singletons hurt testability (global state).
 
 ```java
-public enum IdGenerator {            // simplest thread-safe singleton; serialization-safe
-    INSTANCE;
-    private final AtomicLong next = new AtomicLong();
-    public long nextId() { return next.incrementAndGet(); }
-}
+public enum Clocks { INSTANCE; /* simplest thread-safe, serialization-safe singleton */ }
 
 public final class Config {          // lazy holder idiom — thread-safe via class-init guarantees
     private Config() {}
@@ -245,90 +195,67 @@ public final class Config {          // lazy holder idiom — thread-safe via cl
 }
 ```
 
-Interview traps: double-checked locking needs `volatile`; singletons with mutable state are shared
-across all request threads.
+Interview traps: double-checked locking needs `volatile`; a singleton with mutable state is shared by
+every request thread. For an SDK: document that the client should be created **once per application**
+(it owns threads and caches) — a "singleton by convention", not by enforcement.
 
 ### 2.6 Adapter
 
-**When:** you must use a class/library whose interface doesn't match what your code expects.
+**When:** a library or external API's interface doesn't match what your code wants.
 
 ```java
-public interface Notifier { void send(Alert alert); }            // what PulseWatch wants
-
-final class SmtpNotifierAdapter implements Notifier {             // wraps a third-party mail API
-    private final ThirdPartyMailClient client;
-    SmtpNotifierAdapter(ThirdPartyMailClient client) { this.client = client; }
-    public void send(Alert alert) {
-        client.sendMail(new MailMessage(alert.recipient(), alert.subject(), alert.body()));
-    }
-}
+public interface CommitStatusPublisher { void publish(RepoRef repo, String sha, BuildStatus status); }
+// GitHubStatusAdapter implements it by calling GitHub's REST API (DTOs, auth, rate limits hidden inside)
 ```
 
-Also your "anti-corruption layer" around external APIs: keep vendor types out of your domain.
+This is your *anti-corruption layer*: vendor types never leak into the domain, and tests use a fake.
 JDK: `Arrays.asList`, `InputStreamReader` (bytes → chars).
 
 ### 2.7 Decorator
 
-**When:** add cross-cutting behaviour (caching, retries, logging, metrics) without changing the class
-and while keeping the same interface. Composable.
+**When:** add cross-cutting behaviour (caching, retries, logging, metrics) without changing the class,
+keeping the same interface. Composable.
 
 ```java
-final class RetryingNotifier implements Notifier {
-    private final Notifier delegate; private final int maxAttempts;
-    RetryingNotifier(Notifier delegate, int maxAttempts) { this.delegate = delegate; this.maxAttempts = maxAttempts; }
-
-    public void send(Alert alert) {
-        for (int attempt = 1; ; attempt++) {
-            try { delegate.send(alert); return; }
-            catch (RuntimeException e) {
-                if (attempt >= maxAttempts) throw e;
-                sleep(Duration.ofMillis(200L * (1L << attempt)));   // exponential backoff
-            }
-        }
-    }
-    private static void sleep(Duration d) {
-        try { Thread.sleep(d); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); throw new IllegalStateException(ie); }
-    }
-}
-
-Notifier notifier = new RetryingNotifier(new LoggingNotifier(new WebhookNotifier(http)), 3);
+ConfigFetcher fetcher = new MetricsFetcher(
+                            new RetryingFetcher(
+                                new HttpConfigFetcher(http), 3), registry);
 ```
 
-JDK: `BufferedInputStream(new FileInputStream(...))`, `Collections.unmodifiableList`. Spring AOP
-(`@Transactional`, `@Cacheable`, `@Retryable`) is decorator via proxies. Decorator vs Adapter: decorator
-keeps the **same** interface and adds behaviour; adapter **converts** interfaces.
+Each wrapper implements `ConfigFetcher` and delegates to the next. JDK: `BufferedInputStream(new
+FileInputStream(...))`, `Collections.unmodifiableList`. Spring AOP (`@Transactional`, `@Cacheable`) is
+decorator-via-proxy. Decorator vs Adapter: decorator keeps the **same** interface and adds behaviour;
+adapter **converts** interfaces.
 
 ### 2.8 Template Method
 
 **When:** an algorithm's skeleton is fixed but some steps vary by subtype.
 
 ```java
-public abstract class AbstractCsvParser implements TransactionParser {
-    @Override
-    public final ImportResult parse(Reader in) {                 // final: skeleton can't change
-        List<Transaction> ok = new ArrayList<>(); List<RowError> errors = new ArrayList<>();
-        List<String[]> rows = readRows(in);
-        for (int i = headerRows(); i < rows.size(); i++) {
-            try { ok.add(mapRow(rows.get(i))); }
-            catch (IllegalArgumentException e) { errors.add(new RowError(i + 1, e.getMessage())); }
+public abstract class JobLifecycle {
+    public final JobResult execute(Job job) {           // final: skeleton can't change
+        Workspace ws = prepare(job);
+        try {
+            return runSteps(job, ws);                    // varies by executor type
+        } finally {
+            cleanup(ws);                                 // ALWAYS runs — containers never leak
         }
-        return new ImportResult(ok, errors);
     }
-    protected int headerRows() { return 1; }                        // hook with default
-    protected abstract Transaction mapRow(String[] columns);        // step subclasses supply
-    private List<String[]> readRows(Reader in) { … }
+    protected abstract Workspace prepare(Job job);
+    protected abstract JobResult runSteps(Job job, Workspace ws);
+    protected abstract void cleanup(Workspace ws);
 }
 ```
 
-Modern alternative: composition — pass the varying step as a lambda/Strategy. Prefer composition when
-subclasses start overriding many hooks. Spring's `JdbcTemplate`/`RestTemplate` are callback-based
+Modern alternative: composition — pass the varying steps as strategies/lambdas. Prefer composition
+when subclasses start overriding many hooks. `JdbcTemplate` and `TransactionTemplate` are callback-based
 cousins of this idea.
 
 ### Pattern anti-patterns
 
-Patterns are vocabulary, not goals. Don't add a Factory for one class or a Strategy for one
-algorithm. "I introduced the Factory when the second bank format arrived" is a better answer than
-"I used five patterns".
+Patterns are vocabulary, not goals. Don't add a Factory for one class or a Strategy for one algorithm.
+*"I introduced the interface when the second implementation arrived"* is a better answer than
+*"I used five patterns"*.
 
 ---
 
@@ -355,7 +282,7 @@ some; *Refactoring* (Fowler) and *Effective Java* have aged better.
 
 ## 4. Code review
 
-Your P1+ PR workflow (from Week 5) makes you both author and reviewer.
+Your PR workflow (from Week 5, FlowGrid M2 onward) makes you both author and reviewer.
 
 **As author:**
 - [ ] Small PR (< ~400 lines changed), one purpose, descriptive title
@@ -380,19 +307,19 @@ disagree-and-commit.
 
 ## 5. Logging practices
 
-| Level | Use for | P4 example |
+| Level | Use for | Project example |
 |---|---|---|
-| ERROR | Action failed and needs attention | Alert delivery failed after all retries |
-| WARN | Unexpected but handled; may need attention if frequent | Check timed out; retrying |
-| INFO | Significant business/lifecycle events | Monitor created; incident opened/resolved; app started |
-| DEBUG | Diagnostic detail, off in prod | Request/response details of a check |
+| ERROR | Action failed and needs attention | Outbox event failed to publish after all retries |
+| WARN | Unexpected but handled; may need attention if frequent | Redis unavailable, serving from DB; job retried after infra failure |
+| INFO | Significant business/lifecycle events | Order created; reservation released; build finished; flag version published |
+| DEBUG | Diagnostic detail, off in prod | Allocation scores per warehouse for one order |
 | TRACE | Very fine detail | Rarely used |
 
 Rules:
-- **Structured logs** (JSON) with consistent fields: `timestamp, level, logger, message, requestId, userId, monitorId`.
+- **Structured logs** (JSON) with consistent fields: `timestamp, level, logger, message, requestId, userId, orderId / jobId`.
 - **Correlation IDs**: put a request ID in MDC at the edge (filter), include it in every line and in error responses. Clear MDC after the request (thread reuse!).
 - Use **parameterized logging**: `log.info("Monitor {} failed {} times", id, count)` — no string concatenation, cheap when disabled.
-- Log exceptions **once**, with the stack trace, at the boundary where you handle them: `log.error("Export failed for monitor {}", id, e)`. Don't log-and-rethrow at every layer.
+- Log exceptions **once**, with the stack trace, at the boundary where you handle them: `log.error("Report export failed for warehouse {}", warehouseId, e)`. Don't log-and-rethrow at every layer.
 - **Never log** secrets, passwords, tokens, full card numbers, presigned URLs; be careful with emails/PII.
 - Logs are not metrics: count things with metrics (Micrometer), use logs for detail.
 - Log to stdout in containers; let the platform ship logs ([`12-aws/cloudwatch.md`](../12-aws/cloudwatch.md)).
@@ -406,15 +333,15 @@ Rules:
 | Kind | Example | Handling | HTTP |
 |---|---|---|---|
 | Client/validation | Bad email, negative amount | Validate early (Bean Validation), clear message | 400 / 422 |
-| Not found | Unknown monitor ID | Domain exception → mapped | 404 |
+| Not found | Unknown SKU or order ID | Domain exception → mapped | 404 |
 | Auth | Missing/invalid token; wrong role | Security layer | 401 / 403 |
-| Conflict / business rule | Seat already held; version mismatch | Domain exception | 409 |
-| Transient infrastructure | DB failover, timeout calling webhook | **Retry with backoff + jitter** (idempotent ops only), circuit breaker awareness | 503 |
+| Conflict / business rule | Insufficient stock; version mismatch; idempotency key reused with a different body | Domain exception | 409 / 422 |
+| Transient infrastructure | DB failover, Docker daemon hiccup, timeout calling GitHub | **Retry with backoff + jitter** (idempotent ops only), circuit breaker awareness | 503 |
 | Bug | NPE, unexpected state | Don't catch-and-hide; log with stack trace; generic message | 500 |
 
 2. **Fail fast** on invalid input and invalid config (startup validation with `@ConfigurationProperties` + `@Validated`).
-3. **Use exceptions for exceptional paths**, return types (`Optional`, result objects like P1's `ImportResult` with per-row errors) for expected outcomes.
-4. **Domain exceptions** (`SeatUnavailableException`) thrown in services; **one global handler** (`@RestControllerAdvice`) maps them to **RFC 7807 `ProblemDetail`** responses. Controllers stay clean.
+3. **Use exceptions for exceptional paths**, return types (`Optional`, result objects such as an allocation result with unfilled lines) for expected outcomes.
+4. **Domain exceptions** (`InsufficientStockException`) thrown in services; **one global handler** (`@RestControllerAdvice`) maps them to **RFC 7807 `ProblemDetail`** responses. Controllers stay clean.
 5. **Don't swallow exceptions** (`catch (Exception e) {}`); don't catch `Throwable`; preserve the cause when wrapping (`new ExportException("…", e)`).
 6. **Checked vs unchecked:** Java libraries use checked for recoverable I/O; Spring apps mostly use unchecked domain exceptions. Be consistent.
 7. **Clean up** with try-with-resources; restore interrupt status on `InterruptedException`.
@@ -423,10 +350,10 @@ Rules:
 ```java
 @RestControllerAdvice
 class ApiErrors {
-    @ExceptionHandler(SeatUnavailableException.class)
-    ProblemDetail seatTaken(SeatUnavailableException e) {
+    @ExceptionHandler(InsufficientStockException.class)
+    ProblemDetail insufficientStock(InsufficientStockException e) {
         ProblemDetail pd = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
-        pd.setTitle("Seat unavailable");
+        pd.setTitle("Insufficient stock");
         pd.setProperty("requestId", MDC.get("requestId"));
         return pd;
     }
@@ -438,7 +365,7 @@ class ApiErrors {
 ## 7. Technical debt
 
 **Definition:** the implied cost of future rework caused by choosing an expedient solution now.
-Not all debt is bad — *deliberate, prudent* debt ("ship with in-memory storage, add Postgres in M4")
+Not all debt is bad — *deliberate, prudent* debt ("single-warehouse allocation first; split fulfillment is an Advanced-tier feature")
 is a valid trade-off; *reckless, inadvertent* debt (no tests, copy-paste) is not.
 
 | Quadrant (Fowler) | Deliberate | Inadvertent |
@@ -453,10 +380,12 @@ Managing it:
 - Prioritize by **interest paid**: debt in code you touch weekly costs more than in code nobody touches.
 - Explain to non-engineers in terms of delivery speed and risk.
 
-Good interview story from this roadmap (true, because you'll do it): *"In P1 I started with CSV
-parsing inside the command class. When the second bank format arrived in M3, that became painful, so
-I extracted a parser interface with a factory and a template-method base class; adding the third
-format was then a 40-line class plus tests."*
+Good interview stories come from decisions you actually made and wrote down. The scope tiers in
+[`18-projects/`](../18-projects/README.md) generate them naturally: every feature you consciously pushed
+from Strong Résumé Version to Advanced is deliberate, prudent debt — with an ADR explaining why. Example
+shape (only tell it if it's true): *"In FlowGrid I kept Redis on the EC2 instance instead of ElastiCache
+to control cost, wrote an ADR noting that a restart empties the cache, and made sure the app degrades
+to Postgres reads — so the debt was visible and its failure mode was tested."*
 
 ---
 
@@ -464,10 +393,10 @@ format was then a 40-line class plus tests."*
 
 <details><summary>Explain SOLID with examples.</summary>
 
-SRP: parser, categorizer and import service separated. OCP: new categorization rules are new
-classes, `Categorizer` untouched. LSP: don't implement an interface by throwing on its methods —
-split it. ISP: small `ReportExporter` / `ReportStorage` interfaces. DIP: services depend on
-`TransactionRepository`, so JDBC replaced in-memory storage without touching them.
+SRP: order orchestration, allocation decision and persistence in separate classes. OCP: new flag
+targeting rule types are new classes; the evaluator loop is untouched. LSP: don't implement an
+interface by throwing on its methods — split it. ISP: small `ReportExporter` / `ReportStorage`
+interfaces. DIP: the job runner depends on a `StepExecutor` abstraction, so Docker can be faked in tests.
 </details>
 
 <details><summary>Strategy vs Template Method?</summary>

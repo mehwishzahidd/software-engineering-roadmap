@@ -8,8 +8,11 @@
 |---|---|
 | **W1** | Mental model, `init`, `clone`, `add`, `commit`, `push`, `pull`, `fetch`, `.gitignore`, `log`, `diff`, `status` |
 | **W2** | Branches, `switch`, `merge` (fast-forward vs merge commit), simple conflicts |
-| **W5** | `rebase`, PRs, conflict resolution, `revert`, `reset`, `reflog`, `stash`, `cherry-pick`, tags; PR-based workflow on P1 begins — see [workflows.md](./workflows.md) |
-| W8 → | Tag releases (`v1.0` of each project); résumé defense [../17-resume-tech-defense/git.md](../17-resume-tech-defense/git.md), [../17-resume-tech-defense/github.md](../17-resume-tech-defense/github.md) |
+| **W4** | FlowGrid gets its own GitHub repo, protected `main`, CI on every PR (`./mvnw -B verify`) |
+| **W5** | `rebase`, PR review workflow, conflict resolution, `revert`, `reset`, `reflog`, `stash`, `cherry-pick`, tags — see [workflows.md](./workflows.md) |
+| W7 → | Résumé-defense drills: [../17-resume-tech-defense/git.md](../17-resume-tech-defense/git.md), [../17-resume-tech-defense/github.md](../17-resume-tech-defense/github.md) |
+| W8 · W13 · W18 · W23 | Annotated `v1.0` tag + GitHub Release for FlowGrid, LedgerX, ForgeCI, FlagForge |
+| **W14** | Git from the platform side: webhooks, delivery IDs, cloning a specific commit (ForgeCI M1) — §10 below |
 
 Files: this README (concepts + commands) · [workflows.md](./workflows.md) (team workflows, PRs, commits) · [exercises.md](./exercises.md) (16 broken-repo scenarios with setup scripts).
 
@@ -79,7 +82,7 @@ ssh -T git@github.com
 
 ```bash
 git init                             # new repo in the current dir
-git clone git@github.com:you/ledger.git          # copy a remote repo (+ sets up origin)
+git clone git@github.com:you/flowgrid.git        # copy a remote repo (+ sets up origin)
 git clone --depth 1 <url>                        # shallow clone (CI)
 ```
 
@@ -263,7 +266,7 @@ Creates a new commit with a different hash; if later merged, Git usually recogni
 ## 6. Tags
 
 ```bash
-git tag -a v1.0 -m "Ledger v1.0: Postgres persistence, atomic import"   # annotated (use these for releases)
+git tag -a v1.0 -m "FlowGrid v1.0: reservations, allocation, AWS deploy"   # annotated (use these for releases)
 git tag v1.0-lw                              # lightweight (just a ref)
 git tag --list 'v*'
 git show v1.0
@@ -272,7 +275,7 @@ git push origin --tags
 git switch --detach v1.0                     # inspect the release (detached HEAD)
 git tag -d v1.0 && git push origin :refs/tags/v1.0   # delete locally and remotely (avoid for published releases)
 ```
-Every project in this roadmap ends with an annotated `v1.0` tag and a GitHub Release.
+Every project in this roadmap reaches its Strong Résumé Version as an annotated `v1.0` tag and a GitHub Release (FlowGrid W8, LedgerX W13, ForgeCI W18, FlagForge W23).
 
 ---
 
@@ -295,7 +298,7 @@ hs_err_pid*
 .DS_Store
 Thumbs.db
 
-# Node (P3/P4 frontends)
+# Node (React/TS dashboards from FlowGrid M4 onward)
 node_modules/
 dist/
 
@@ -340,8 +343,35 @@ git bisect good   # or: git bisect bad
 # ...repeat (log2(n) steps)...
 git bisect reset
 # Automated:
-git bisect run ./mvnw -q -Dtest=ReportServiceTest test
+git bisect run ./mvnw -q -Dtest=AllocationServiceTest test
 ```
+
+---
+
+## 10. Git from the platform side (Week 14, ForgeCI M1)
+
+ForgeCI receives GitHub events and must build **exactly the commit that was pushed**. Concepts you
+need (details in [../18-projects/forgeci/README.md](../18-projects/forgeci/README.md)):
+
+| Concept | What it means for a CI system |
+|---|---|
+| **Push event payload** | Contains `ref` (e.g. `refs/heads/main`), `before` and `after` SHAs, repository clone URL. Build `after`, never "whatever `main` is now" — the branch may have moved since. |
+| **`X-GitHub-Delivery` header** | Unique ID per delivery; GitHub may redeliver, so dedupe on it (unique constraint). |
+| **`X-Hub-Signature-256`** | HMAC-SHA256 of the raw body with your webhook secret; verify before trusting anything in the payload. |
+| **Force pushes** | `before` may no longer be an ancestor of `after`; don't assume linear history. |
+| **Detached HEAD** | A CI checkout of a SHA is detached by design — there is no branch to commit to. |
+
+Clone one specific commit cheaply (shallow, no full history):
+
+```bash
+git init workspace && cd workspace
+git remote add origin https://github.com/owner/repo.git     # private repos: token-based auth, never logged
+git fetch --depth 1 origin <sha>                             # GitHub allows fetching a reachable commit by SHA
+git checkout --detach FETCH_HEAD
+git rev-parse HEAD                                           # assert it equals the SHA you were asked to build
+```
+Also know: `git clone --depth 1 --branch <tag-or-branch> <url>` (branch tip only), `git ls-remote <url>`
+(list refs without cloning), and why shallow clones break `git describe`/`git log` over history.
 
 ---
 
@@ -450,4 +480,5 @@ metadata), annotated tags. Branches and tags are refs pointing to commits. Snaps
 - [ ] Recover a deleted branch and undo a bad `reset --hard` with `reflog`
 - [ ] Use `stash`, `cherry-pick`, annotated tags, `bisect`
 - [ ] Write a `.gitignore` for Java + Node + secrets; untrack a committed file
+- [ ] Fetch and check out a specific commit SHA shallowly (the ForgeCI worker's first step)
 - [ ] Complete ≥ 12 scenarios in [exercises.md](./exercises.md)

@@ -1,7 +1,8 @@
-# Concurrency Theory (Week 13)
+# Concurrency Theory (Week 5 basics, Week 15 deep)
 
-> **Practical use:** reason about the P2 "N threads hold the same seat → exactly one wins" test,
-> size P4's checker pool, and recognise a deadlock from a thread dump.
+> **Practical use:** reason about FlowGrid's "N threads reserve the last unit → exactly one wins" test
+> (Week 5), LedgerX's "$500 balance, two concurrent $400 transfers" test (Week 10), size ForgeCI's
+> worker pool (Week 15), and recognise a deadlock from a thread dump.
 > **Interview use:** race condition, mutex vs semaphore, deadlock conditions, producer-consumer, thread pools.
 
 The Java API side (`synchronized`, `ReentrantLock`, atomics, `ConcurrentHashMap`, `CompletableFuture`,
@@ -44,12 +45,12 @@ Thread B:        read 5            add → 6      write 6     → one increment 
 ### Check-then-act
 
 ```java
-if (!seatHeld(seatId)) {        // check
-    holdSeat(seatId, userId);   // act — another thread may have acted in between
+if (inventory.available(skuId, warehouseId) >= qty) {   // check
+    inventory.reserve(skuId, warehouseId, qty);          // act — another thread may have acted in between
 }
 ```
 
-This is exactly P2's double-booking bug. In-memory fixes: make check+act **atomic** (lock, `ConcurrentHashMap.putIfAbsent`,
+This is exactly the over-reservation bug FlowGrid M2 must prevent (and LedgerX's overdraft bug). In-memory fixes: make check+act **atomic** (lock, `ConcurrentHashMap.putIfAbsent`,
 `AtomicInteger.incrementAndGet`, `compareAndSet`). With multiple app instances, in-JVM locks don't
 help → the database must enforce it: unique constraint, `SELECT … FOR UPDATE`, or **optimistic
 locking** with `@Version` (`UPDATE … WHERE id = ? AND version = ?` → 0 rows = someone else won).
@@ -104,19 +105,21 @@ at a time. Requirements: mutual exclusion, progress, bounded waiting.
 | **Latch / barrier** | Wait for N events / N threads | `CountDownLatch`, `CyclicBarrier` |
 
 **Mutex vs semaphore** (classic question): a mutex protects a *resource* — exclusive, owned. A
-semaphore *counts* — limits concurrency to N (e.g. max 10 concurrent outbound HTTP checks per
-host in P4) or signals between threads.
+semaphore *counts* — limits concurrency to N (e.g. max 4 concurrently running containers on one
+ForgeCI worker) or signals between threads. ForgeCI's *per-project* limit spans several worker
+processes, so it lives in Redis (a distributed counter/semaphore, M4) — a JVM `Semaphore` only
+protects one process.
 
 ```java
-// Limit concurrent checks against the same host to 5
-private final Semaphore perHost = new Semaphore(5);
+// At most 4 build containers at once on this worker
+private final Semaphore slots = new Semaphore(4);
 
-void check(Monitor m) throws InterruptedException {
-    perHost.acquire();
+void runJob(Job job) throws InterruptedException {
+    slots.acquire();
     try {
-        http.send(request(m), BodyHandlers.discarding());
+        executor.run(job);
     } finally {
-        perHost.release();   // always in finally
+        slots.release();     // always in finally
     }
 }
 ```
@@ -175,27 +178,26 @@ Detection in Java: `jcmd <pid> Thread.print` prints "Found one Java-level deadlo
 ## 6. Producer-consumer
 
 Producers put work into a bounded buffer; consumers take it. The buffer decouples rates and applies
-**backpressure** when full. It's the in-process version of a message queue — P4's scheduler producing
-"check due" tasks for checker workers.
+**backpressure** when full. It's the in-process version of a message queue — and ForgeCI's
+architecture is the same pattern *across processes*: the API (producer) pushes jobs into a Redis
+queue, worker processes (consumers) pull them.
 
 With `BlockingQueue` (what you'd write in practice):
 
 ```java
-BlockingQueue<Monitor> queue = new ArrayBlockingQueue<>(1_000);
+BlockingQueue<Job> queue = new ArrayBlockingQueue<>(1_000);
 
-// Producer (scheduler): every second, enqueue monitors whose next check is due
-void schedule() throws InterruptedException {
-    for (Monitor m : repo.findDue(Instant.now())) {
-        queue.put(m);                     // blocks if full → natural backpressure
-    }
+// Producer
+void submit(Job job) throws InterruptedException {
+    queue.put(job);                       // blocks if full → natural backpressure
 }
 
-// Consumers (checkers)
+// Consumers
 Runnable consumer = () -> {
     try {
         while (!Thread.currentThread().isInterrupted()) {
-            Monitor m = queue.take();     // blocks if empty
-            checker.check(m);
+            Job job = queue.take();       // blocks if empty
+            executor.run(job);
         }
     } catch (InterruptedException e) {
         Thread.currentThread().interrupt(); // restore flag, exit
@@ -241,7 +243,7 @@ ExecutorService pool = new ThreadPoolExecutor(
         8, 8,                                   // core, max
         0L, TimeUnit.MILLISECONDS,
         new ArrayBlockingQueue<>(500),          // bounded queue!
-        Thread.ofPlatform().name("checker-", 0).factory(),
+        Thread.ofPlatform().name("job-runner-", 0).factory(),
         new ThreadPoolExecutor.CallerRunsPolicy()); // backpressure when full
 ```
 
@@ -266,26 +268,25 @@ ExecutorService pool = new ThreadPoolExecutor(
 - **Spring singletons are shared:** a `@Service` with a mutable field is shared by every request thread. Keep beans stateless.
 - **Compound operations on concurrent collections:** `if (!map.containsKey(k)) map.put(k, v)` is still a race → `computeIfAbsent`/`putIfAbsent`.
 - **Double-checked locking** without `volatile` is broken. Prefer the holder-class idiom or an `enum` singleton.
-- **Timeouts everywhere:** a thread blocked forever on a socket without a timeout is a leaked thread. P4 sets connect + request timeouts on every check.
+- **Timeouts everywhere:** a thread blocked forever on a socket without a timeout is a leaked thread. ForgeCI M4 adds a per-job timeout that kills the container; every HTTP/DB client needs connect + read timeouts.
 
 ---
 
-## 9. Testing concurrent code (P2 M5)
+## 9. Testing concurrent code
 
 ```java
 @Test
-void onlyOneHoldWinsUnderContention() throws Exception {
+void exactlyOneReservationWinsForTheLastUnit() throws Exception {
+    // given: SKU with available = 1 in one warehouse (set up via your repository/Testcontainers)
     int threads = 20;
     ExecutorService pool = Executors.newFixedThreadPool(threads);
     CountDownLatch start = new CountDownLatch(1);
     List<Future<Boolean>> results = new ArrayList<>();
 
     for (int i = 0; i < threads; i++) {
-        long userId = i;
         results.add(pool.submit(() -> {
             start.await();                              // release all threads together
-            try { holdService.hold(SEAT_ID, userId); return true; }
-            catch (SeatUnavailableException | OptimisticLockingFailureException e) { return false; }
+            return tryReserveOneUnit();                 // your service call: true = reserved, false = rejected
         }));
     }
     start.countDown();
@@ -294,11 +295,14 @@ void onlyOneHoldWinsUnderContention() throws Exception {
     for (Future<Boolean> f : results) if (f.get(10, TimeUnit.SECONDS)) winners++;
     pool.shutdown();
     assertThat(winners).isEqualTo(1);
+    // and: available == 0, reserved == 1 in the DB — assert the stored state, not just the return values
 }
 ```
 
-A passing concurrency test is evidence, not proof — run it many times (`@RepeatedTest(50)`), and
-rely on design (DB constraints/versions) for correctness.
+This is a harness skeleton — the milestone spec ([`18-projects/flowgrid/milestones.md`](../18-projects/flowgrid/milestones.md))
+tells you what to assert. The same harness, with two transfers instead of N reservations, is LedgerX's
+M2 test. A passing concurrency test is evidence, not proof — run it many times (`@RepeatedTest(50)`),
+and rely on design (row locks, constraints, versions) for correctness.
 
 ---
 
@@ -306,9 +310,11 @@ rely on design (DB constraints/versions) for correctness.
 
 <details><summary>What's a race condition? Give an example from your code.</summary>
 
-Correctness depending on interleaving. In TicketHold, two customers checking "is seat free?" then
-inserting a hold could both succeed. I fixed it at the database level with optimistic locking on the
-seat's `@Version` column plus a unique constraint on active holds, and proved it with a 20-thread test.
+Correctness depending on interleaving. In FlowGrid, two orders checking "is a unit available?" and
+then reserving it could both succeed. The fix belongs in the database (a row lock with
+`SELECT … FOR UPDATE`, or a version check with `@Version`, plus a `CHECK (available >= 0)` safety net),
+proven by a test where N threads race for one unit and exactly one wins. (Answer with what your code
+actually does and what your test actually showed.)
 </details>
 
 <details><summary>Mutex vs semaphore?</summary>

@@ -1,6 +1,6 @@
-# Memory & Computer Architecture (Week 6)
+# Memory & Computer Architecture (Week 5)
 
-> **Practical use:** understand why `ArrayList` beats `LinkedList` in practice, why money in P1 is
+> **Practical use:** understand why `ArrayList` beats `LinkedList` in practice, why money in LedgerX is
 > `BigDecimal`, why `Integer.MAX_VALUE + 1` is negative, why a DB query that touches disk is 1000×
 > slower than one served from memory, and what a Java object actually costs.
 > **Interview use:** stack vs heap, integer overflow, two's complement, cache locality, latency numbers.
@@ -167,7 +167,9 @@ Math.toIntExact(someLong);
 ```
 
 DSA relevance: sums of large arrays (use `long`), products in DP, `Integer.compare(a, b)` instead
-of `a - b` in comparators (subtraction overflows for large magnitudes).
+of `a - b` in comparators (subtraction overflows for large magnitudes). Your NeetCode solutions are
+in Python, whose `int` is arbitrary-precision and never overflows — so this is a classic trap when
+you re-implement a solution in Java (the weekly Java rep) or discuss Java in an interview.
 
 ### 4.4 Bit operations (enough for [`03-dsa/23-bit-manipulation.md`](../03-dsa/23-bit-manipulation.md))
 
@@ -183,7 +185,7 @@ of `a - b` in comparators (subtraction overflows for large magnitudes).
 
 `x & (x - 1)` clears the lowest set bit (count bits; power-of-two check `x > 0 && (x & (x-1)) == 0`).
 
-### 4.5 Floating point — why P1 uses `BigDecimal`
+### 4.5 Floating point — why LedgerX uses `BigDecimal`
 
 `double` is IEEE-754 binary: 0.1 has no exact binary representation.
 
@@ -281,7 +283,7 @@ Takeaways:
 - [ ] Sum 1–100,000 squared into an `int` and a `long`; find where the `int` goes wrong.
 - [ ] `List<Integer>` of 10 M vs `int[]` of 10 M: watch heap in VisualVM / `jcmd <pid> GC.heap_info`.
 - [ ] Recurse without a base case; read the `StackOverflowError`; rerun with `-Xss4m` and see depth change.
-- [ ] Explain to a rubber duck why P1's `Money` wraps `BigDecimal` and never `double`.
+- [ ] Explain to a rubber duck why LedgerX's money amounts are `BigDecimal` / `NUMERIC(19,4)` and never `double`.
 
 ---
 

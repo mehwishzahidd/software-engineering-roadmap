@@ -1,6 +1,6 @@
 # CS Fundamentals — Interview Questions (90)
 
-> Drill weekly from Week 6. Answer **out loud** before opening the answer. Mark each question in your
+> Drill weekly from Week 5; full sweep in Weeks 20–26. Answer **out loud** before opening the answer. Mark each question in your
 > notes: ✅ confident · 🟡 shaky · ❌ couldn't. Re-drill 🟡/❌ on the Day 3/7/14/30 cycle used for DSA.
 > Answers are deliberately short — the target is a clear 30–60 second spoken answer, plus an example
 > from your projects where marked 🛠.
@@ -69,7 +69,7 @@ Relevant when computing `Math.abs(hashCode()) % n` — use `Math.floorMod`.
 <details><summary>9. Why shouldn't you store money in a double? 🛠</summary>
 
 Binary floating point can't represent most decimal fractions exactly (0.1 + 0.2 ≠ 0.3), so sums
-drift. P1 wraps `BigDecimal` (created from strings, explicit rounding) in a `Money` type; DB column is `NUMERIC(12,2)`.
+drift. LedgerX uses `BigDecimal` (created from strings, explicit scale and rounding) and a `NUMERIC` column; many systems use integer minor units (cents) instead.
 </details>
 
 <details><summary>10. Stack vs heap in Java?</summary>
@@ -123,8 +123,8 @@ CPU-bound: ≈ number of cores; more only adds switching. I/O-bound: threads mos
 <details><summary>17. What are virtual threads? 🛠</summary>
 
 Java 21 lightweight threads scheduled by the JVM onto a few carrier threads; blocking I/O unmounts
-them. Cheap enough for one per task. P4's checker uses them for thousands of concurrent HTTP checks.
-No gain for CPU-bound work.
+them. Cheap enough for one per task — a good fit for a ForgeCI worker that mostly waits on Docker and
+Redis, though the host still needs a cap on concurrent build containers. No gain for CPU-bound work.
 </details>
 
 <details><summary>18. What is virtual memory and a page fault?</summary>
@@ -191,8 +191,9 @@ Parallelism: literally simultaneous execution on multiple cores.
 
 <details><summary>27. What is a race condition? 🛠</summary>
 
-Correctness depends on thread timing. E.g. check-then-act "seat free? then hold" in TicketHold — two
-requests both see free. Fixed with DB-level optimistic locking and a uniqueness constraint.
+Correctness depends on thread timing. E.g. check-then-act "unit available? then reserve" in FlowGrid —
+two orders both see stock. Fixed in the DB with a row lock (`SELECT … FOR UPDATE`) or a version check,
+plus a `CHECK (available >= 0)` constraint, and proven with an N-threads-one-unit test.
 </details>
 
 <details><summary>28. Why is <code>count++</code> not thread-safe?</summary>
@@ -251,8 +252,8 @@ Starvation: a thread never gets resources because others always win (fix: fairne
 <details><summary>37. Explain producer-consumer. 🛠</summary>
 
 Producers enqueue work in a bounded buffer; consumers dequeue. Decouples rates and provides
-backpressure. In Java: `BlockingQueue.put/take`. In P4 the scheduler produces due checks and the
-checker workers consume them.
+backpressure. In Java: `BlockingQueue.put/take`. ForgeCI applies it across processes: the API
+produces jobs into a Redis queue and worker processes consume them.
 </details>
 
 <details><summary>38. Why prefer thread pools over <code>new Thread()</code> per task?</summary>
@@ -366,8 +367,9 @@ service name (`postgres:5432`) on the same network, or `host.docker.internal` fo
 <details><summary>55. What is CORS and who enforces it? 🛠</summary>
 
 A browser mechanism relaxing the same-origin policy when the server sends `Access-Control-Allow-*`
-headers (with preflight OPTIONS for non-simple requests). Enforced by browsers only. In TeamBoard I
-configured allowed origins in Spring Security for dev and served UI + API from one origin via nginx in prod.
+headers (with preflight OPTIONS for non-simple requests). Enforced by browsers only. For FlowGrid's
+dashboard: the Vite dev proxy (or an allowed-origins config in Spring Security) locally, and UI + API
+served from one origin via nginx in production.
 </details>
 
 <details><summary>56. What is a reverse proxy and why put nginx in front of Spring Boot?</summary>
@@ -395,7 +397,7 @@ touch few pages. Binary trees would be ~30 levels = ~30 random I/Os.
 <details><summary>59. Explain the leftmost-prefix rule. 🛠</summary>
 
 A composite index on (a, b) is sorted by a then b; it helps queries filtering on a, or a and b, but
-not b alone. P4's `(monitor_id, checked_at)` index serves "latest 50 results for monitor X" without a sort.
+not b alone. An index on `ledger_entries(account_id, created_at)` serves "latest 50 entries for account X" without a sort.
 </details>
 
 <details><summary>60. Why might the database ignore your index?</summary>
@@ -432,7 +434,7 @@ standard), serializable (none; also prevents write skew). Postgres default: read
 
 Two transactions read the same value and both write, one overwriting the other. Prevent with
 optimistic locking (`@Version`), `SELECT … FOR UPDATE`, atomic `UPDATE … SET x = x + 1`, or
-stricter isolation. TicketHold uses `@Version` on seats.
+stricter isolation. FlowGrid M2 compares `SELECT … FOR UPDATE` with `@Version` on inventory rows.
 </details>
 
 <details><summary>66. Optimistic vs pessimistic locking?</summary>
@@ -445,7 +447,7 @@ lock rows up front; best for high contention, risks waits/deadlocks.
 
 Reproduce with real parameters, `EXPLAIN (ANALYZE, BUFFERS)`, look for seq scans on big tables,
 sorts, estimate vs actual row mismatch; add/adjust index or rewrite; verify with a new plan and
-timing. I did this for P4's status query.
+timing — and record before/after plans in the project's `DATABASE.md`.
 </details>
 
 <details><summary>68. What does the query planner use to choose a plan?</summary>
@@ -478,13 +480,13 @@ Each is a backend process with its own memory; contention grows. Keep pools smal
 
 <details><summary>72. What does SRP mean? 🛠</summary>
 
-A class has one reason to change. P1 separates parsing, categorization and import orchestration.
+A class has one reason to change. E.g. FlowGrid: order orchestration, the allocation decision (pure logic) and reservation persistence live in separate classes.
 </details>
 
 <details><summary>73. Open/closed principle with an example? 🛠</summary>
 
-Extend behaviour without modifying existing code: new `CategorizationRule` implementations are
-added without touching the `Categorizer`.
+Extend behaviour without modifying existing code: a new FlagForge targeting-rule type is a new class;
+the evaluator loop is untouched.
 </details>
 
 <details><summary>74. What is Liskov substitution? Give a violation.</summary>
@@ -501,8 +503,8 @@ outside (constructor injection, Spring container) — it makes DIP convenient.
 
 <details><summary>76. When would you use the Strategy pattern? 🛠</summary>
 
-Multiple interchangeable algorithms selected by data/config — P1 categorization rules, P4 check
-types. Replaces growing `switch` statements.
+Multiple interchangeable algorithms selected by data/config — FlowGrid warehouse-scoring factors,
+FlagForge rule types. Replaces growing `switch` statements.
 </details>
 
 <details><summary>77. Builder vs constructor vs record?</summary>
@@ -519,8 +521,8 @@ instances; if needed, an enum singleton is simplest and thread-safe.
 
 <details><summary>79. Observer — where have you used it? 🛠</summary>
 
-P1 over-budget alerts notify listeners; P4 publishes an `IncidentOpened` event handled after commit
-by notification listeners. At scale, pub/sub via a broker.
+FlowGrid low-stock events handled by `@TransactionalEventListener(AFTER_COMMIT)`; LedgerX's outbox
+makes such events durable; FlagForge publishes config changes via Redis pub/sub to SSE clients.
 </details>
 
 <details><summary>80. Decorator vs Adapter?</summary>
@@ -547,8 +549,9 @@ idempotency keys), with exponential backoff, jitter and a max attempts cap. Neve
 
 <details><summary>84. What is technical debt? Give an example you managed.</summary>
 
-The future cost of an expedient choice. Example: in-memory storage in P1 until M4, made safe by
-coding against a repository interface, then replaced with JDBC without touching services.
+The future cost of an expedient choice. Make it deliberate and visible: e.g. deferring an
+Advanced-tier feature, or Redis on EC2 instead of ElastiCache, recorded in an ADR with its failure
+mode tested. Tell only stories that are true of your code.
 </details>
 
 ---
@@ -576,8 +579,8 @@ may you do (roles, ownership checks) → 403 if denied.
 <details><summary>88. What is idempotency and why does it matter in networks? 🛠</summary>
 
 Repeating an operation has the same effect as doing it once. Networks cause retries, so non-
-idempotent operations (POST booking) need an Idempotency-Key — TicketHold stores the key with the
-result and replays it on retry.
+idempotent operations (POST order, POST transfer) need an Idempotency-Key — FlowGrid and LedgerX store
+key + request hash + response and replay the response on retry (different body → conflict).
 </details>
 
 <details><summary>89. What is a hash function's role in a HashMap, and what happens on collisions?</summary>

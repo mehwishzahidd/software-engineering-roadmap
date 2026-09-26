@@ -119,6 +119,10 @@ Three strongest talking points:
 2. **Idempotent order creation** with `Idempotency-Key` (stored key + request hash + response, TTL) — what happens on retry, on a different body, after TTL.
 3. **Deterministic multi-warehouse allocation** (scoring by availability, capacity, distance proxy, workload, priority; tie-break by id) and **Redis-down → degrade to DB**.
 
+Python talking point: the `tools/` **order generator and load/simulation harness** (pytest-tested)
+that seeds realistic SKUs/warehouses and drives concurrent order creation to surface reservation
+contention — the same harness feeds the k6 protocol and the failure exercises.
+
 ### LedgerX
 
 LedgerX is a digital wallet built on a double-entry ledger: every journal transaction is a set of
@@ -133,6 +137,12 @@ Three strongest talking points:
 1. **$500 / two concurrent $400** — exactly one succeeds; how lock ordering prevents deadlock; what optimistic locking did instead and why you compared them.
 2. **DB-enforced immutability + invariants** — trigger / revoked privileges / CHECK constraints; the reconciliation job that flags drift.
 3. **Crash-between-steps fault injection** and **retry-after-crash idempotency** — what state the system was in, how the retry converged.
+
+Python talking point (often the strongest of all): the **independent reconciliation verifier**
+in `tools/` reads PostgreSQL directly with `psycopg` and `decimal` and proves every journal sums
+to zero and every balance equals its entries **without trusting the Java code** — "I did not let
+the system grade its own homework." Plus the transaction-data generator and the consistency
+checker used in the crash/retry exercises.
 
 ### ForgeCI
 
@@ -150,6 +160,11 @@ Three strongest talking points:
 2. **Failure taxonomy** — exit code ≠ 0 is not retried, container-start error / worker loss is retried with backoff and max N; graceful shutdown.
 3. **SSE over WebSockets** for live logs with replay-from-sequence — the ADR and the reconnect behaviour.
 
+Python talking point: the `tools/` **test-repository generator** (Git repos with passing / failing /
+slow / timeout / bad-config `.forgeci.yml` variants), the **signed-webhook load simulator** that
+measures queue wait and completion, and the **log/result analysis** tool that reports failure-taxonomy
+statistics — the evidence behind the retry policy and the queue numbers.
+
 ### FlagForge
 
 FlagForge is a feature-flag and progressive-rollout platform with a Java SDK: organisations,
@@ -165,6 +180,19 @@ Three strongest talking points:
 1. **SDK design** — builder API, local evaluation, resilience (timeouts, stale-if-error, offline defaults), contract tests, semantic versioning, Maven publishing.
 2. **Deterministic bucketing** — why the same user always lands in the same bucket, why rollouts are monotonic, why the hash input is `flagKey:userKey`.
 3. **Propagation and caching** — publish → Redis pub/sub → SSE; invalidate-on-publish; stampede protection; the measured p99.
+
+Python talking point: the **rollout-distribution simulator** (proves `pct ± tolerance` and
+stickiness over N users against server evaluation), the minimal **Python SDK / test client** that
+implements the same evaluation contract (polling + ETag, defaults, offline) and powers cross-SDK
+contract tests, and the **configuration linter** (overlapping / unreachable / invalid rules).
+"Two SDKs in two languages agreeing on every evaluation" is a compact proof that the contract is real.
+
+### Where Python sits in the story
+
+Backends are Java/Spring; Python is the coding-interview language and each project's tooling
+language. Say it that way. Never describe a project as "Python + Java" — describe it as a Java
+system with pytest-tested Python tooling, and name the tool. See
+[`17-resume-tech-defense/python.md`](./17-resume-tech-defense/python.md) for the defense drill.
 
 ---
 
@@ -184,6 +212,7 @@ Scan the JD, match keywords, lead with the first project in the row.
 | E-commerce, logistics, supply chain, inventory, operations, warehouse | FlowGrid | LedgerX | Your operations background is a differentiator here — say so |
 | AWS, cloud, EC2, RDS, S3, CloudWatch | FlowGrid | ForgeCI | FlowGrid = first and most complete deploy; ForgeCI = multi-service |
 | Testing, quality, reliability engineering, TDD | LedgerX | ForgeCI | Invariant suite + fault injection; chaos-style integration tests |
+| Python, scripting, tooling, automation, data pipelines (alongside Java) | LedgerX | FlagForge | Independent Python verifier; Python SDK/test client + rollout simulator. Backends stay Java — say so |
 | Internship / new grad, no specific stack | FlowGrid | LedgerX or ForgeCI | Breadth first, then the one hard story |
 | System design mentioned in interview process | FlagForge or ForgeCI | — | Both are textbook design problems you have actually built |
 
@@ -239,6 +268,8 @@ Rules:
 - Built **ForgeCI**'s worker service on a lease-based Redis queue (`BLMOVE` to per-worker processing lists) with heartbeat-driven orphan recovery; integration tests on Testcontainers show a job claimed by a killed worker is re-queued within `<lease seconds>` s and completes exactly once.
 - Streamed live build logs over Server-Sent Events with replay-from-sequence on reconnect; measured median queue wait `<x> ms` and `<y>` jobs/min with `<N>` workers on `<environment>`.
 - Published **FlagForge**'s Java SDK (`FlagClient`) as a Maven artifact with local evaluation, polling/SSE updates, stale-if-error and offline defaults; contract tests run against the live server in CI. Server-side evaluation p99 `<x> ms` at `<rps>` on `<environment>`.
+- Wrote an independent Python reconciliation verifier (`psycopg`, `decimal`, pytest) for **LedgerX** that reads PostgreSQL directly and confirms every journal sums to zero and every balance equals its entries across `<N>` generated transactions, including after injected crashes.
+- Built a Python rollout simulator for **FlagForge** that evaluates `<N>` synthetic users against the server and verifies a `<pct>%` rollout lands within `±<tolerance>` with 100% stickiness across `<runs>` runs.
 
 ### BAD bullets (fabricated, vague, or unverifiable — never write these)
 

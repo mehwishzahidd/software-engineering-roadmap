@@ -4,8 +4,9 @@
 > when building and debugging the four projects, and (b) appearing in internship / junior interviews.
 > If a concept doesn't pass both tests, it's not here.
 
-Time budget: part of the ≈22 h "CS fundamentals + system design" share in [ROADMAP §3](../ROADMAP.md#3-priority-weighting).
-You read each file in the week it becomes relevant, then drill [`interview-questions.md`](./interview-questions.md) weekly.
+Time budget: comes out of the 6–8 h/week "technology / CS learning" block in [ROADMAP §3](../ROADMAP.md#3-time-allocation),
+scheduled just-in-time by [ROADMAP §6](../ROADMAP.md#6-just-in-time-learning-map). Read each file the week a project needs it,
+then drill [`interview-questions.md`](./interview-questions.md) weekly; Weeks 20+ are the interview sweep.
 
 ---
 
@@ -13,13 +14,13 @@ You read each file in the week it becomes relevant, then drill [`interview-quest
 
 | File | Week | Why then | Project tie-in |
 |---|---|---|---|
-| [`memory-and-architecture.md`](./memory-and-architecture.md) | **6** | Same week as Java memory (stack/heap/GC) | P1: `BigDecimal` vs `double`, int overflow in amounts |
-| [`software-engineering-practices.md`](./software-engineering-practices.md) | **5** (patterns), revisit 12, 18 | SOLID/patterns week; code review from W5 PR workflow | P1 Strategy rules, Factory for CSV formats, Builder |
-| [`database-internals.md`](./database-internals.md) | **7–8** | Indexes, transactions, `EXPLAIN` | P1 M5 index, P2 optimistic locking, P4 composite index |
-| [`networking.md`](./networking.md) | **9** | Before the first Spring controller | P2 API, CORS in P3, TLS/DNS in P4 AWS |
-| [`operating-systems.md`](./operating-systems.md) | **13** (+ 19 with Linux) | With Java concurrency; again with Linux/Docker | Threads for P4 checker, signals for `docker stop` |
-| [`concurrency.md`](./concurrency.md) | **13** | Theory beside [`01-java/07-concurrency.md`](../01-java/07-concurrency.md) | P2 seat-hold race test, P4 worker pool |
-| [`interview-questions.md`](./interview-questions.md) | From **6**, weekly | Spaced review, 90 Q&A | All |
+| [`software-engineering-practices.md`](./software-engineering-practices.md) | **4–5** (SOLID, patterns, errors, logging), code review from W5 | FlowGrid's design + PR workflow start | Allocation strategies, ProblemDetail errors, structured logs; reused in every project |
+| [`memory-and-architecture.md`](./memory-and-architecture.md) | **5** | Same week as Java memory model + thread basics | Stack/heap for the first concurrency test; `BigDecimal` for LedgerX money |
+| [`database-internals.md`](./database-internals.md) | **9** (locking touched in W5, indexes in W6) | LedgerX is about correctness inside the DB | FlowGrid reservations, LedgerX append-only ledger, isolation experiments |
+| [`operating-systems.md`](./operating-systems.md) | **14** | With the Linux + Docker internals deep dive | ForgeCI runs processes in containers; signals for cancel/timeout |
+| [`concurrency.md`](./concurrency.md) | **15** (basics in 5) | With Java concurrency deep dive — theory beside [`01-java/07-concurrency.md`](../01-java/07-concurrency.md) | FlowGrid last-unit test, LedgerX transfers, ForgeCI worker pool |
+| [`networking.md`](./networking.md) | **15** (HTTP basics in 3) | ForgeCI talks to GitHub, Docker, Redis; SSE live logs | Every deploy's SGs/DNS/TLS; SSE in ForgeCI + FlagForge |
+| [`interview-questions.md`](./interview-questions.md) | From **5**, weekly; sweep **20+** | Spaced review | All four projects |
 
 ---
 
@@ -32,8 +33,11 @@ own code*. Example for "database index":
 > An index is a separate sorted data structure (a B-tree in Postgres) mapping column values to row
 > locations. It exists so lookups don't scan the whole table. The tree is shallow — 3–4 levels for
 > millions of rows — so a lookup is a handful of page reads. The cost is slower writes and extra
-> storage, since every insert updates every index. In PulseWatch, the status page query went from a
-> sequential scan to an index scan after I added a composite index on `(monitor_id, checked_at)`.
+> storage, since every insert updates every index. In LedgerX, the account-history query can walk a
+> composite index on `(account_id, created_at)` backwards and stop after 50 rows — I'd show the
+> before/after `EXPLAIN ANALYZE` from my `DATABASE.md`.
+
+(The last sentence must describe what *you* measured — never borrow numbers.)
 
 ---
 
@@ -76,11 +80,11 @@ own code*. Example for "database index":
 - [ ] Can convert between decimal, binary, hex; explain two's complement and why `Integer.MAX_VALUE + 1` is negative
 - [ ] Can explain stack vs heap for a specific Java method call with objects
 - [ ] Can explain process vs thread, context switch, and what happens on `java -jar app.jar`
-- [ ] Can name the four Coffman deadlock conditions and how lock ordering breaks one
+- [ ] Can name the four Coffman deadlock conditions and how lock ordering breaks one (LedgerX transfers)
 - [ ] Can walk through "what happens when you type a URL" for 3+ minutes without notes
-- [ ] Can explain why a B-tree index helps `WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 50`
+- [ ] Can explain why a B-tree index helps `WHERE account_id = ? ORDER BY created_at DESC LIMIT 50`
 - [ ] Can explain MVCC and why readers don't block writers in Postgres
-- [ ] Can name SOLID and give a real example of each from P1–P4
+- [ ] Can name SOLID and give a real example of each from FlowGrid, LedgerX, ForgeCI or FlagForge
 - [ ] Can implement Strategy, Builder, Factory, Observer from memory in Java
 - [ ] Score ≥ 80% on a random 20 from [`interview-questions.md`](./interview-questions.md)
 

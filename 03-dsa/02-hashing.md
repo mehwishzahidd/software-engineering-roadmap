@@ -1,9 +1,9 @@
-# 02 — HashMap / HashSet
+# 02 — HashMap / HashSet (Python `dict` / `set`)
 
-> **Week 2** · NeetCode section: **Arrays & Hashing** · Target: **7 new problems** + stretch pool
-> Back to [DSA overview](./README.md) · Tracker: [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md#02--hashmap--hashset) · Java APIs: [toolkit §4–§5](./java-dsa-toolkit.md#4-hashmap)
+> **Week 2** · NeetCode section: **Arrays & Hashing** · Target: **7 new problems** + stretch pool · Java rep: **49** (Week 2)
+> Back to [DSA overview](./README.md) · Tracker: [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md#02--hashmap--hashset) · Python: [`19-python/02-interview-toolkit.md`](../19-python/02-interview-toolkit.md) (`Counter`, `defaultdict`) · Java: [quick reference](./java-dsa-toolkit.md)
 
-Hashing turns "search" from O(n) into O(1) average. It is the single most common optimisation in interviews: *"the brute force is O(n²) because of the inner search — replace the inner loop with a hash lookup."* Week 2 also covers `HashMap` internals in [`01-java/03-collections-generics.md`](../01-java/03-collections-generics.md) — study them together.
+Hashing turns "search" from O(n) into O(1) average. It is the single most common optimisation in interviews: *"the brute force is O(n²) because of the inner search — replace the inner loop with a hash lookup."* Week 2 is also when you learn the Python interview toolkit (`Counter`, `defaultdict`) and Java's `HashMap` internals ([`01-java/03-collections-generics.md`](../01-java/03-collections-generics.md)) — study them together.
 
 ---
 
@@ -11,274 +11,292 @@ Hashing turns "search" from O(n) into O(1) average. It is the single most common
 
 | Concept | Key facts |
 |---|---|
-| Hash function | Maps a key to an int; `index = hash & (capacity - 1)` when capacity is a power of two |
-| `hashCode` / `equals` contract | Equal objects **must** have equal hash codes. Override both or neither. Records and `String` do it for you |
-| Collisions | Separate chaining (Java: linked list → red-black tree at 8 entries per bucket) vs open addressing |
-| Load factor & resizing | Java resizes ×2 at 0.75 full; rehash is O(n) but amortised O(1) per insert |
-| Complexity | Average O(1) get/put/remove; worst case O(log n) per op in Java 8+ |
-| `HashSet` | A `HashMap` with dummy values — membership only |
-| Ordered variants | `LinkedHashMap` (insertion/access order), `TreeMap` (sorted, O(log n)) |
-| Canonical keys | Group equivalent items under one key: sorted string, count signature, `(r, c)` record |
+| Hash function | Maps a key to an int; the table index is derived from it. Python: `hash(x)`; Java: `hashCode()` |
+| Hashable keys | Python keys must be **immutable & hashable**: `int`, `str`, `tuple` of hashables, `frozenset`. `list`, `dict`, `set` are unhashable → `TypeError` |
+| `__eq__` / `__hash__` contract | Equal objects must hash equal. `@dataclass(frozen=True)` generates both. (Java: `equals`/`hashCode`, records) |
+| Collisions | CPython `dict`/`set` use **open addressing**; Java `HashMap` uses **separate chaining** (list → red-black tree at 8 per bucket) |
+| Resizing | Tables grow when ~2/3 full (CPython) / 0.75 (Java); rehash O(n) but amortised O(1) per insert |
+| Complexity | Average O(1) get/set/delete/`in`; worst case O(n) |
+| Ordering | Python `dict` preserves **insertion order** (3.7+); `set` has no order. Java `HashMap` has none (use `LinkedHashMap`) |
+| `Counter` | `Counter(iterable)` counts in O(n); missing keys read as 0; `most_common(k)`; supports `+`, `-`, `==` |
+| `defaultdict` | `defaultdict(list)` / `defaultdict(int)` creates missing values on access — great for grouping |
+| Canonical keys | Group equivalent items under one key: sorted string, `tuple` of 26 counts, `(r, c)` tuple |
 | Complement lookup | For each `x`, ask "have I seen `target - x`?" |
-| Frequency buckets | Bucket sort by count: `List<Integer>[] buckets = new List[n + 1]` for top-K in O(n) |
+| Frequency buckets | Bucket sort by count: `buckets = [[] for _ in range(n + 1)]` for top-K in O(n) |
 
-**Practical use:** In [FlowGrid](../18-projects/flowgrid/README.md) you group inventory levels by warehouse (`computeIfAbsent`), and its `Idempotency-Key` store is a hash lookup ("have I seen this key before?") — the same patterns as 49 and 217, moved into PostgreSQL/Redis.
+**Practical use:** in [FlowGrid](../18-projects/flowgrid/README.md) you group inventory levels by warehouse and its `Idempotency-Key` store is a hash lookup ("have I seen this key before?") — the same patterns as 49 and 217, implemented in Java and moved into PostgreSQL/Redis.
 
 ---
 
 ## 2. Prerequisite knowledge
 
 - [`00-big-o.md`](./00-big-o.md), [`01-arrays-strings.md`](./01-arrays-strings.md)
-- `equals`/`hashCode` — [`01-java/02-oop.md`](../01-java/02-oop.md)
-- `Map`/`Set` API — [toolkit §4](./java-dsa-toolkit.md#4-hashmap), [§5](./java-dsa-toolkit.md#5-hashset), [§10 Integer `==` trap](./java-dsa-toolkit.md#10-the-integer-caching--trap)
+- Python dict/set basics, `Counter`, `defaultdict` — [`19-python/02-interview-toolkit.md`](../19-python/02-interview-toolkit.md)
+- Mutability and hashability — [`19-python/03-pitfalls-and-complexity.md`](../19-python/03-pitfalls-and-complexity.md)
 
 ---
 
-## 3. Java implementation
+## 3. Python implementation
 
 ### 3.1 A hash map from scratch (separate chaining)
 
-```java
-import java.util.*;
+```python
+class MyHashMap:
+    """Separate chaining with resize at load factor 0.75 (the Java HashMap design)."""
 
-class MyHashMap<K, V> {
-    private static final class Node<K, V> {
-        final K key; V value; Node<K, V> next;
-        Node(K key, V value, Node<K, V> next) { this.key = key; this.value = value; this.next = next; }
-    }
+    def __init__(self, capacity: int = 8) -> None:
+        self._buckets: list[list[list]] = [[] for _ in range(capacity)]   # each entry: [key, value]
+        self._size = 0
 
-    private Node<K, V>[] table;
-    private int size;
+    def _bucket(self, key) -> list[list]:
+        return self._buckets[hash(key) % len(self._buckets)]
 
-    @SuppressWarnings("unchecked")
-    MyHashMap() { table = (Node<K, V>[]) new Node[16]; }
+    def get(self, key, default=None):
+        for k, v in self._bucket(key):
+            if k == key:
+                return v
+        return default
 
-    private int index(Object key, int cap) {
-        int h = (key == null) ? 0 : key.hashCode();
-        h ^= (h >>> 16);                       // spread high bits (same trick as java.util.HashMap)
-        return h & (cap - 1);                  // cap is a power of two
-    }
+    def put(self, key, value) -> None:
+        bucket = self._bucket(key)
+        for entry in bucket:
+            if entry[0] == key:
+                entry[1] = value              # update in place
+                return
+        bucket.append([key, value])
+        self._size += 1
+        if self._size > 0.75 * len(self._buckets):
+            self._resize()
 
-    V get(K key) {
-        for (Node<K, V> n = table[index(key, table.length)]; n != null; n = n.next)
-            if (Objects.equals(n.key, key)) return n.value;
-        return null;
-    }
+    def remove(self, key) -> bool:
+        bucket = self._bucket(key)
+        for i, (k, _) in enumerate(bucket):
+            if k == key:
+                bucket[i] = bucket[-1]        # swap with last, pop: O(1)
+                bucket.pop()
+                self._size -= 1
+                return True
+        return False
 
-    V put(K key, V value) {
-        int i = index(key, table.length);
-        for (Node<K, V> n = table[i]; n != null; n = n.next) {
-            if (Objects.equals(n.key, key)) { V old = n.value; n.value = value; return old; }
-        }
-        table[i] = new Node<>(key, value, table[i]);   // prepend to chain
-        if (++size > table.length * 3 / 4) resize();
-        return null;
-    }
+    def _resize(self) -> None:
+        old = self._buckets
+        self._buckets = [[] for _ in range(2 * len(old))]
+        for bucket in old:
+            for k, v in bucket:
+                self._bucket(k).append([k, v])
 
-    V remove(K key) {
-        int i = index(key, table.length);
-        Node<K, V> prev = null;
-        for (Node<K, V> n = table[i]; n != null; prev = n, n = n.next) {
-            if (Objects.equals(n.key, key)) {
-                if (prev == null) table[i] = n.next; else prev.next = n.next;
-                size--;
-                return n.value;
-            }
-        }
-        return null;
-    }
+    def __len__(self) -> int:
+        return self._size
 
-    @SuppressWarnings("unchecked")
-    private void resize() {
-        Node<K, V>[] old = table;
-        table = (Node<K, V>[]) new Node[old.length * 2];
-        for (Node<K, V> head : old)
-            for (Node<K, V> n = head; n != null; n = n.next)
-                table[index(n.key, table.length)] = new Node<>(n.key, n.value, table[index(n.key, table.length)]);
-    }
 
-    int size() { return size; }
-
-    public static void main(String[] args) {
-        MyHashMap<String, Integer> m = new MyHashMap<>();
-        for (int i = 0; i < 100; i++) m.put("k" + i, i);
-        m.put("k5", 500);
-        m.remove("k7");
-        System.out.println(m.get("k5") + " " + m.get("k7") + " " + m.size());   // 500 null 99
-    }
-}
+m = MyHashMap()
+for i in range(100):
+    m.put(f"k{i}", i)
+m.put("k5", 500)
+assert m.remove("k7") and not m.remove("missing")
+assert m.get("k5") == 500 and m.get("k7") is None and len(m) == 99
+print("MyHashMap ok")
 ```
 
 ### 3.2 Hashing templates
 
-```java
-import java.util.*;
+```python
+from collections import Counter, defaultdict
 
-class HashingTemplates {
-    // Complement lookup (Two Sum): O(n)
-    static int[] twoSum(int[] nums, int target) {
-        Map<Integer, Integer> indexOf = new HashMap<>();
-        for (int i = 0; i < nums.length; i++) {
-            Integer j = indexOf.get(target - nums[i]);
-            if (j != null) return new int[]{j, i};
-            indexOf.put(nums[i], i);                 // put AFTER checking → never pairs i with itself
-        }
-        return new int[0];
-    }
 
-    // Frequency count with merge
-    static Map<Integer, Integer> counts(int[] nums) {
-        Map<Integer, Integer> c = new HashMap<>();
-        for (int x : nums) c.merge(x, 1, Integer::sum);
-        return c;
-    }
+def two_sum(nums: list[int], target: int) -> list[int]:
+    index_of: dict[int, int] = {}
+    for i, x in enumerate(nums):
+        j = index_of.get(target - x)
+        if j is not None:                     # `if j:` would be a bug when j == 0
+            return [j, i]
+        index_of[x] = i                       # insert AFTER checking → never pairs i with itself
+    return []
 
-    // Grouping by canonical key (Group Anagrams): O(n * k log k)
-    static List<List<String>> groupAnagrams(String[] strs) {
-        Map<String, List<String>> groups = new HashMap<>();
-        for (String s : strs) {
-            char[] k = s.toCharArray();
-            Arrays.sort(k);
-            groups.computeIfAbsent(new String(k), x -> new ArrayList<>()).add(s);
-        }
-        return new ArrayList<>(groups.values());
-    }
 
-    // Count-signature key: O(n * k) — avoids sorting each word
-    static String signature(String s) {
-        int[] f = new int[26];
-        for (int i = 0; i < s.length(); i++) f[s.charAt(i) - 'a']++;
-        return Arrays.toString(f);                   // "[1, 0, 0, ...]" is a valid map key
-    }
+def group_anagrams(strs: list[str]) -> list[list[str]]:
+    groups: defaultdict[str, list[str]] = defaultdict(list)
+    for s in strs:
+        groups["".join(sorted(s))].append(s)  # O(k log k) key
+    return list(groups.values())
 
-    // Bucket sort by frequency (Top K Frequent): O(n)
-    static int[] topKFrequent(int[] nums, int k) {
-        Map<Integer, Integer> c = counts(nums);
-        @SuppressWarnings("unchecked")
-        List<Integer>[] buckets = new List[nums.length + 1];
-        for (var e : c.entrySet()) {
-            int f = e.getValue();
-            if (buckets[f] == null) buckets[f] = new ArrayList<>();
-            buckets[f].add(e.getKey());
-        }
-        int[] res = new int[k];
-        int w = 0;
-        for (int f = nums.length; f > 0 && w < k; f--)
-            if (buckets[f] != null) for (int x : buckets[f]) if (w < k) res[w++] = x;
-        return res;
-    }
 
-    // Set membership for "seen before"
-    static boolean hasDuplicate(int[] nums) {
-        Set<Integer> seen = new HashSet<>();
-        for (int x : nums) if (!seen.add(x)) return true;
-        return false;
-    }
+def signature(s: str) -> tuple[int, ...]:     # O(k) key: tuple of 26 counts (hashable; a list is not)
+    counts = [0] * 26
+    for ch in s:
+        counts[ord(ch) - ord("a")] += 1
+    return tuple(counts)
 
-    public static void main(String[] args) {
-        System.out.println(Arrays.toString(twoSum(new int[]{2, 7, 11, 15}, 9)));           // [0, 1]
-        System.out.println(groupAnagrams(new String[]{"eat", "tea", "tan", "ate", "nat", "bat"}).size()); // 3
-        System.out.println(signature("aab").substring(0, 7));                              // [2, 1,
-        System.out.println(Arrays.toString(topKFrequent(new int[]{1, 1, 1, 2, 2, 3}, 2))); // [1, 2]
-        System.out.println(hasDuplicate(new int[]{1, 2, 3, 1}));                            // true
-    }
-}
+
+def top_k_frequent(nums: list[int], k: int) -> list[int]:
+    count = Counter(nums)
+    buckets: list[list[int]] = [[] for _ in range(len(nums) + 1)]
+    for x, f in count.items():
+        buckets[f].append(x)
+    out: list[int] = []
+    for f in range(len(buckets) - 1, 0, -1):
+        for x in buckets[f]:
+            out.append(x)
+            if len(out) == k:
+                return out
+    return out
+
+
+def is_anagram(s: str, t: str) -> bool:
+    return Counter(s) == Counter(t)           # O(n); sorted(s) == sorted(t) is O(n log n)
+
+
+assert two_sum([2, 7, 11, 15], 9) == [0, 1] and two_sum([3, 3], 6) == [0, 1]
+assert sorted(map(sorted, group_anagrams(["eat", "tea", "tan", "ate", "nat", "bat"]))) == \
+    [["ate", "eat", "tea"], ["bat"], ["nat", "tan"]]
+assert signature("aab")[:3] == (2, 1, 0)
+assert sorted(top_k_frequent([1, 1, 1, 2, 2, 3], 2)) == [1, 2]
+assert is_anagram("anagram", "nagaram") and not is_anagram("rat", "car")
+c = Counter("banana")
+assert c["a"] == 3 and c["z"] == 0 and "z" not in c          # reading a missing key doesn't insert it
+d = defaultdict(int)
+_ = d["z"]
+assert "z" in d                                               # ...but defaultdict DOES insert on read
+print("hashing templates ok")
 ```
 
 ---
 
-## 4. Common patterns (sub-variants)
+## 4. The same in Java (occasional reps)
 
-| Sub-pattern | Structure | Problems |
-|---|---|---|
-| Membership / dedupe | `HashSet.add` returns false on duplicate | 217 |
-| Frequency comparison | `int[26]` or `Map` counts, compare | 242, 383 |
-| Complement lookup | `Map<value, index>`; check before insert | 1 |
-| Grouping by canonical key | `computeIfAbsent(key, ...).add(item)` | 49 |
-| Frequency → bucket sort / heap | counts then top-K | 347 |
-| Multiple constraint sets | one `Set` per row/col/box | 36 |
-| Sequence starts | only expand from `x` where `x - 1` is absent | 128 |
-| Map + list for O(1) random access | index map + `ArrayList` swap-with-last | 380 |
+**This week's Java rep (Week 2): 49 Group Anagrams.**
+
+| Python | Java |
+|---|---|
+| `d.get(k, 0) + 1` / `Counter` | `map.merge(k, 1, Integer::sum)` |
+| `defaultdict(list)[k].append(v)` | `map.computeIfAbsent(k, key -> new ArrayList<>()).add(v)` |
+| `"".join(sorted(s))` as a key | `char[] c = s.toCharArray(); Arrays.sort(c); new String(c)` |
+| `tuple(counts)` as a key | `Arrays.toString(counts)` (arrays hash by identity — never use `int[]` as a key) |
+| `x in seen` / `seen.add(x)` | `seen.contains(x)` / `if (!seen.add(x))` detects duplicates |
+
+```java
+import java.util.*;
+
+class GroupAnagramsRep {
+    static List<List<String>> groupAnagrams(String[] strs) {
+        Map<String, List<String>> groups = new HashMap<>();
+        for (String s : strs) {
+            char[] key = s.toCharArray();
+            Arrays.sort(key);
+            groups.computeIfAbsent(new String(key), k -> new ArrayList<>()).add(s);
+        }
+        return new ArrayList<>(groups.values());
+    }
+
+    public static void main(String[] args) {
+        System.out.println(groupAnagrams(new String[]{"eat", "tea", "tan", "ate", "nat", "bat"}).size()); // 3
+    }
+}
+```
+
+Java traps: `map.get(k) + 1` on a missing key → `NullPointerException`; comparing two `Integer` counts with `==` fails above 127 ([quick reference §5](./java-dsa-toolkit.md#5-overflow-integer-caching-and-other-traps)).
 
 ---
 
-## 5. How to recognise the pattern
+## 5. Common patterns (sub-variants)
+
+| Sub-pattern | Structure | Problems |
+|---|---|---|
+| Membership / dedupe | `set`; `len(set(xs)) != len(xs)` or early exit | 217 |
+| Frequency comparison | `Counter(s) == Counter(t)` or `[0] * 26` | 242, 383 |
+| Complement lookup | `dict` value → index; check before insert | 1 |
+| Grouping by canonical key | `defaultdict(list)` | 49 |
+| Frequency → bucket sort / heap | `Counter` then buckets or `heapq.nlargest` | 347 |
+| Multiple constraint sets | one `set` per row/col/box (or a set of tuples) | 36 |
+| Sequence starts | only expand from `x` where `x - 1` is absent | 128 |
+| Dict + list for O(1) random access | index map + list swap-with-last | 380 |
+
+---
+
+## 6. How to recognise the pattern
 
 - Words: *duplicate*, *unique*, *count*, *frequency*, *anagram*, *seen before*, *pair with sum*, *group*.
 - The brute force has an **inner loop that searches** for something → replace with O(1) lookup.
 - Order of input doesn't matter (or you need O(n) and sorting would be O(n log n)).
-- "Must run in O(n) time" on unsorted input (e.g. 128) is a strong hint: sorting is forbidden → hash set.
-- If you need order (next bigger key), a `HashMap` is wrong → `TreeMap` ([toolkit §8](./java-dsa-toolkit.md#8-treemap--treeset)).
+- "Must run in O(n) time" on unsorted input (e.g. 128) → sorting is forbidden → set.
+- If you need order (next bigger key), a dict is wrong → `bisect` on a sorted list, or `TreeMap` in Java.
 
 ---
 
-## 6. Beginner problems (Week 2)
+## 7. Beginner problems (Week 2)
 
 | # | Problem | Difficulty | Hint |
 |---:|---|---|---|
-| 217 | [Contains Duplicate](https://leetcode.com/problems/contains-duplicate/) | Easy | `if (!set.add(x)) return true;` |
-| 242 | [Valid Anagram](https://leetcode.com/problems/valid-anagram/) | Easy | `int[26]`: +1 for `s`, −1 for `t`, all zeros at the end. Length check first. |
-| 1 | [Two Sum](https://leetcode.com/problems/two-sum/) | Easy | Map value → index; look up `target - x` before inserting `x`. |
+| 217 | [Contains Duplicate](https://leetcode.com/problems/contains-duplicate/) | Easy | `set` with early exit (see the worked example in [00](./00-big-o.md)). |
+| 242 | [Valid Anagram](https://leetcode.com/problems/valid-anagram/) | Easy | `Counter(s) == Counter(t)`; then write the `[0] * 26` version. |
+| 1 | [Two Sum](https://leetcode.com/problems/two-sum/) | Easy | Dict value → index; look up `target - x` before inserting `x`. |
 
 ---
 
-## 7. Interview problems (Week 2)
+## 8. Interview problems (Week 2)
 
 | # | Problem | Difficulty | Week | Key insight |
 |---:|---|---|---:|---|
-| 49 | [Group Anagrams](https://leetcode.com/problems/group-anagrams/) | Medium | 2 | <details><summary>show</summary>Canonical key = sorted chars (or 26-count signature); `computeIfAbsent(key, k -> new ArrayList<>()).add(s)`.</details> |
-| 347 | [Top K Frequent Elements](https://leetcode.com/problems/top-k-frequent-elements/) | Medium | 2 | <details><summary>show</summary>Count, then bucket by frequency (index = count, max n) and read from the highest bucket → O(n). Heap of size k is O(n log k).</details> |
-| 36 | [Valid Sudoku](https://leetcode.com/problems/valid-sudoku/) | Medium | 2 | <details><summary>show</summary>9 row sets, 9 col sets, 9 box sets; box index = `(r / 3) * 3 + c / 3`.</details> |
+| 49 | [Group Anagrams](https://leetcode.com/problems/group-anagrams/) | Medium | 2 | <details><summary>show</summary>Canonical key = `"".join(sorted(s))` or a 26-count `tuple`; `defaultdict(list)`.</details> |
+| 347 | [Top K Frequent Elements](https://leetcode.com/problems/top-k-frequent-elements/) | Medium | 2 | <details><summary>show</summary>`Counter`, then bucket by frequency (index = count ≤ n) and read from the highest bucket → O(n). `heapq.nlargest(k, count, key=count.get)` is O(n log k).</details> |
+| 36 | [Valid Sudoku](https://leetcode.com/problems/valid-sudoku/) | Medium | 2 | <details><summary>show</summary>Sets per row, column and box; box index `(r // 3, c // 3)`. Skip `"."`.</details> |
 | 128 | [Longest Consecutive Sequence](https://leetcode.com/problems/longest-consecutive-sequence/) | Medium | 2 | <details><summary>show</summary>Put all in a set; only start counting at `x` when `x - 1` is not in the set → each element visited ≤ 2 times → O(n).</details> |
 
-### Stretch pool (Weeks 21–26 mixed review)
+### Stretch pool (Weeks 20–26 mixed review)
 
 | # | Problem | Difficulty | Key insight |
 |---:|---|---|---|
-| 383 | [Ransom Note](https://leetcode.com/problems/ransom-note/) | Easy | <details><summary>show</summary>Count magazine letters in `int[26]`, then consume them for the note; any negative → false. Timed warm-up: ≤ 5 min.</details> |
-| 229 | [Majority Element II](https://leetcode.com/problems/majority-element-ii/) | Medium | <details><summary>show</summary>At most 2 elements appear > n/3 times; Boyer–Moore with two candidates + a verification pass. (Hash-count solution is fine first.)</details> |
-| 380 | [Insert Delete GetRandom O(1)](https://leetcode.com/problems/insert-delete-getrandom-o1/) | Medium | <details><summary>show</summary>`ArrayList` of values + `HashMap` value→index; delete by swapping with the last element and removing the tail.</details> |
+| 383 | [Ransom Note](https://leetcode.com/problems/ransom-note/) | Easy | <details><summary>show</summary>`not (Counter(ransomNote) - Counter(magazine))` — Counter subtraction drops non-positive counts. Timed warm-up: ≤ 5 min.</details> |
+| 229 | [Majority Element II](https://leetcode.com/problems/majority-element-ii/) | Medium | <details><summary>show</summary>At most 2 elements appear > n/3 times; Boyer–Moore with two candidates + a verification pass. (`Counter` solution first.)</details> |
+| 380 | [Insert Delete GetRandom O(1)](https://leetcode.com/problems/insert-delete-getrandom-o1/) | Medium | <details><summary>show</summary>List of values + dict value→index; delete by moving the last element into the hole and popping; `random.choice(list)`.</details> |
 
 ---
 
-## 8. Recommended NeetCode / LeetCode practice order
+## 9. Recommended NeetCode / LeetCode practice order
 
-NeetCode 150 **Arrays & Hashing**: 217 → 242 → 1 → 49 → 347 → (238 in [01](./01-arrays-strings.md)) → 36 → 128. (NeetCode's "Encode and Decode Strings" is LeetCode Premium 271 — optional, do it on neetcode.io if you have time; not counted.)
+NeetCode 150 **Arrays & Hashing**: 217 → 242 → 1 → 49 → 347 → (238 in [01](./01-arrays-strings.md)) → 36 → 128. (NeetCode's "Encode and Decode Strings" is LeetCode Premium 271 — optional on neetcode.io; not counted.)
 
-Order here (all Week 2, after 238 from [01](./01-arrays-strings.md)): implement `MyHashMap` → 217 → 242 → 1 → 49 → 347 → 36 → 128 → (W20–26) 383, 229, 380.
+Order here (all Week 2, after 238): implement `MyHashMap` → 217 → 242 → 1 → 49 → 347 → 36 → 128 → Java rep 49 → (W20–26) 383, 229, 380.
 
 ---
 
-## 9. Target number of problems
+## 10. Target number of problems
 
 **7 new** in Week 2 (+ 1 from [01](./01-arrays-strings.md) = the week's 8) + 3 stretch problems for Weeks 20–26.
 
 ---
 
-## 10. Mistakes beginners commonly make
+## 11. Mistakes beginners commonly make
 
-- `map.get(k) + 1` when absent → `NullPointerException`. Use `getOrDefault` or `merge`.
-- `map.get(a) == map.get(b)` with `Integer` values → false above 127 ([toolkit §10](./java-dsa-toolkit.md#10-the-integer-caching--trap)).
-- Using `char[]`/`int[]` as a key — arrays use identity hash. Convert to `String`.
-- In Two Sum, inserting before checking → pairs an element with itself (`[3]`, target 6).
-- Iterating a `HashMap` and expecting sorted/insertion order.
-- Using a `HashMap<Character,Integer>` where `int[26]` would do (slower, more boxing, more code).
-- Forgetting to override `hashCode` when overriding `equals` on a custom key class (use a `record`).
-- Claiming "O(1)" without "average".
+**Python-specific**
+- Using a `list` (or `dict`/`set`) as a key → `TypeError: unhashable type`. Convert to `tuple` / `frozenset` / `str`.
+- `if index_of.get(x):` when the stored index can be `0` → falsy → bug. Compare with `is not None`.
+- `defaultdict` **inserts** on read (`d[k]` creates the key); `Counter` doesn't. Checking `if d[k]` on a `defaultdict` silently grows it.
+- Mutating a dict while iterating (`for k in d: del d[k]`) → `RuntimeError`. Iterate over `list(d)`.
+- `x in lst` inside a loop instead of `x in set_of_x` → O(n²).
+- Relying on `set` ordering (there is none); relying on dict order is fine (insertion order) but say so.
+- Mutable default argument `def f(seen=set())` — the same set is shared across calls (and across LeetCode test cases).
+
+**General**
+- Two Sum: inserting before checking → pairs an element with itself (`[3]`, target 6).
 - 128: starting a count from **every** element → O(n²) worst case.
+- Claiming "O(1)" without "average".
+
+**Java-rep traps (49):** `char[]` keys, `map.get(k) + 1` NPE, `Integer ==`.
 
 ---
 
-## 11. Mastery criteria
+## 12. Mastery criteria
 
-- [ ] Implement `MyHashMap` (`get`/`put`/`remove`/`resize`) from memory in ≤ 20 min; explain load factor and collision handling.
+- [ ] Implement `MyHashMap` (`get`/`put`/`remove`/`_resize`) from memory in ≤ 20 min; explain load factor and collision handling (and how CPython differs: open addressing).
 - [ ] Solve 49, 347 and 128 from blank in ≤ 20 min each, with the O(n) variants for 347 and 128.
 - [ ] Solve 2 unseen hashing Mediums in ≤ 25 min each.
-- [ ] Explain the `equals`/`hashCode` contract with an example of what breaks when it's violated.
+- [ ] Explain why a `list` can't be a dict key and what makes an object hashable.
+- [ ] Java rep: 49 in Java in ≤ 20 min.
 
 ---
 
-## 12. Revision schedule
+## 13. Revision schedule
 
 | Review | Week 2 early set (217, 242, 1) | Week 2 late set (49, 347, 36, 128) |
 |---|---|---|
@@ -288,49 +306,45 @@ Order here (all Week 2, after 238 from [01](./01-arrays-strings.md)): implement 
 | Day 14 | W4 | W4 |
 | Day 30 | W6 | W6 |
 
-**Revisit:** Week 4 (Checkpoint 4: 1 and 49 timed), Week 8 review week (128, 347), Week 11 (347 again with a heap in [13](./13-heap-priority-queue.md)), Weeks 20–26 stretch pool.
+**Revisit:** Week 4 (Checkpoint 4: 1 and 49 timed), Week 8 review week (128, 347), Week 11 (347 again with `heapq` in [13](./13-heap-priority-queue.md)), Weeks 20–26 stretch pool.
 
 ---
 
 ## Worked example — 128. Longest Consecutive Sequence
 
-**Clarify.** `int[] nums`, 0 ≤ n ≤ 10⁵, values in [−10⁹, 10⁹], may contain duplicates, unsorted. Return the length of the longest run of consecutive integers (values, not positions). **Must be O(n).** Empty → 0.
+**Clarify.** `nums: list[int]`, 0 ≤ n ≤ 10⁵, values in [−10⁹, 10⁹], may contain duplicates, unsorted. Return the length of the longest run of consecutive integers (values, not positions). **Must be O(n).** Empty → 0.
 
-**Brute force.** For each x, count x+1, x+2, … by scanning the array → O(n³); with a set, O(n²) worst case (e.g. `1..n`, every element walks the whole run).
+**Brute force.** For each x, count x+1, x+2, … by scanning the list → O(n³); with a set, O(n²) worst case (e.g. `1..n`: every element walks the whole run).
 
-**Sort-based.** Sort, then scan counting runs (skip duplicates) → O(n log n). Correct but violates the O(n) requirement — mention it as a stepping stone.
+**Sort-based.** `sorted(set(nums))`, then scan counting runs → O(n log n). Correct but violates the O(n) requirement — mention it as a stepping stone.
 
-**Optimise.** Put everything in a `HashSet`. A number `x` is the **start** of a sequence iff `x - 1` is not in the set. Only from starts do we walk `x+1, x+2, …`. Every element is visited once by the outer loop and at most once by an inner walk → O(n).
+**Optimise.** Put everything in a `set`. A number `x` is the **start** of a sequence iff `x - 1` is not in the set. Only from starts do we walk `x+1, x+2, …`. Every element is visited once by the outer loop and at most once by an inner walk → O(n).
 
-**Code.**
+**Code (Python).**
 
-```java
-import java.util.*;
+```python
+def longest_consecutive(nums: list[int]) -> int:
+    num_set = set(nums)
+    best = 0
+    for x in num_set:                 # iterate the SET so duplicates don't repeat work
+        if x - 1 in num_set:
+            continue                  # not the start of a run
+        length = 1
+        while x + length in num_set:
+            length += 1
+        best = max(best, length)
+    return best
 
-class LongestConsecutive {
-    public int longestConsecutive(int[] nums) {
-        Set<Integer> set = new HashSet<>();
-        for (int x : nums) set.add(x);
-        int best = 0;
-        for (int x : set) {                    // iterate the SET, so duplicates don't repeat work
-            if (set.contains(x - 1)) continue; // not a start
-            int len = 1;
-            while (set.contains(x + len)) len++;
-            best = Math.max(best, len);
-        }
-        return best;
-    }
 
-    public static void main(String[] args) {
-        LongestConsecutive s = new LongestConsecutive();
-        System.out.println(s.longestConsecutive(new int[]{100, 4, 200, 1, 3, 2}));        // 4
-        System.out.println(s.longestConsecutive(new int[]{0, 3, 7, 2, 5, 8, 4, 6, 0, 1})); // 9
-        System.out.println(s.longestConsecutive(new int[]{}));                             // 0
-        System.out.println(s.longestConsecutive(new int[]{1, 2, 0, 1}));                   // 3
-    }
-}
+assert longest_consecutive([100, 4, 200, 1, 3, 2]) == 4
+assert longest_consecutive([0, 3, 7, 2, 5, 8, 4, 6, 0, 1]) == 9
+assert longest_consecutive([]) == 0
+assert longest_consecutive([1, 2, 0, 1]) == 3
+assert longest_consecutive([-1, -2, 0]) == 3
+assert longest_consecutive([-10**9, 10**9]) == 1
+print("128 worked example passed")
 ```
 
-**Test cases.** `[100,4,200,1,3,2]` → 4 · `[0,3,7,2,5,8,4,6,0,1]` → 9 · `[]` → 0 · duplicates `[1,2,0,1]` → 3 · negatives `[-1,-2,0]` → 3 · extremes `[-1000000000, 1000000000]` → 1 (values are bounded by 10⁹, so `x + len` stays below `Integer.MAX_VALUE`; if values could reach `Integer.MAX_VALUE`, `x + 1` would wrap to `MIN_VALUE` — say this out loud).
+**Test cases.** `[100,4,200,1,3,2]` → 4 · `[0,3,7,2,5,8,4,6,0,1]` → 9 · `[]` → 0 · duplicates `[1,2,0,1]` → 3 · negatives `[-1,-2,0]` → 3 · extremes → 1. (In your Java version, `x + len` near `Integer.MAX_VALUE` could overflow — the constraint ±10⁹ keeps it safe.)
 
 **Complexity.** Time O(n) average (each element touched ≤ 2 times + O(1) set ops). Space O(n) for the set.

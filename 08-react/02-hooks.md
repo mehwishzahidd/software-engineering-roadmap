@@ -1,6 +1,6 @@
 # 02 — Hooks
 
-> Week 16 · ≈ 5 hours. Hooks are functions that let components hold state and run effects.
+> Week 7 · ≈ 2 hours (§8 streaming hook: Week 16, ForgeCI). Hooks are functions that let components hold state and run effects.
 > **Rules of hooks:** call them only at the top level of a component or custom hook — never in loops,
 > conditions or nested functions — because React identifies hooks by **call order**. Enable `eslint-plugin-react-hooks` (Vite template does).
 
@@ -32,32 +32,32 @@ The lint rule enforces this. Lying to it causes stale closures.
 ### Fetching in an effect — the correct shape
 
 ```tsx
-function IssueList({ projectId }: { projectId: number }) {
-  const [state, setState] = useState<AsyncState<Issue[]>>({ status: "loading" });
+function InventoryTable({ warehouseId }: { warehouseId: number }) {
+  const [state, setState] = useState<AsyncState<InventoryLevel[]>>({ status: "loading" });
 
   useEffect(() => {
     const controller = new AbortController();
     setState({ status: "loading" });
 
-    issuesApi
-      .list(projectId, controller.signal)
+    inventoryApi
+      .list(warehouseId, controller.signal)
       .then((data) => setState({ status: "success", data }))
       .catch((err: unknown) => {
         if (err instanceof DOMException && err.name === "AbortError") return; // cancelled — ignore
         setState({ status: "error", error: err instanceof Error ? err.message : "Unknown error" });
       });
 
-    return () => controller.abort();   // cancels on projectId change and on unmount → no race
-  }, [projectId]);
+    return () => controller.abort();   // cancels on warehouseId change and on unmount → no race
+  }, [warehouseId]);
 
   if (state.status === "loading") return <p>Loading…</p>;
   if (state.status === "error") return <p role="alert">{state.error}</p>;
-  if (state.status === "success" && state.data.length === 0) return <p>No issues.</p>;
-  return state.status === "success" ? <IssueTable issues={state.data} /> : null;
+  if (state.status === "success" && state.data.length === 0) return <p>No stock recorded for this warehouse.</p>;
+  return state.status === "success" ? <InventoryGrid rows={state.data} /> : null;
 }
 ```
 
-Without the cleanup, switching quickly from project 1 to project 2 can show project 1's issues if its response arrives last.
+Without the cleanup, switching quickly from warehouse BER-1 to HAM-1 can show Berlin's stock under the Hamburg heading if its response arrives last — an operator would pick from the wrong numbers.
 
 ### StrictMode double-invoke (development only)
 
@@ -81,10 +81,10 @@ Purpose: surface missing cleanups and impure renders. It does **not** happen in 
 
 ```tsx
 // ❌ effect + extra state
-const [visible, setVisible] = useState<Issue[]>([]);
-useEffect(() => setVisible(issues.filter((i) => i.status !== "DONE")), [issues]);
+const [visible, setVisible] = useState<OrderSummary[]>([]);
+useEffect(() => setVisible(orders.filter((o) => o.status !== "SHIPPED")), [orders]);
 // ✅ derive
-const visible = issues.filter((i) => i.status !== "DONE");
+const visible = orders.filter((o) => o.status !== "SHIPPED");
 ```
 
 ---
@@ -95,10 +95,10 @@ A mutable box (`ref.current`) that persists across renders **without causing re-
 
 ```tsx
 // 1. DOM access
-function IssueTitleInput() {
+function ScanInput() {                              // pick screen: focus the barcode field on mount
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
-  return <input ref={inputRef} aria-label="Title" />;
+  return <input ref={inputRef} aria-label="Scan SKU barcode" />;
 }
 
 // 2. Mutable instance values (timer ids, previous values, "is latest request")
@@ -118,7 +118,7 @@ function usePolling(fn: () => Promise<void>, ms: number) {
 }
 ```
 
-`usePolling` is what the PulseWatch dashboard uses to refresh monitor status every 10 s without overlapping requests.
+`usePolling` is what FlowGrid's low-stock widget uses to refresh every 30 s without overlapping requests.
 
 Rule: don't read or write `ref.current` during rendering (except lazy init) — refs are for effects and handlers.
 
@@ -128,17 +128,17 @@ Rule: don't read or write `ref.current` during rendering (except lazy init) — 
 
 ```tsx
 const sorted = useMemo(
-  () => issues.toSorted((a, b) => a.title.localeCompare(b.title)),
-  [issues],
+  () => levels.toSorted((a, b) => a.available - b.available),
+  [levels],
 );                                                       // caches a VALUE
 
-const handleMove = useCallback((id: number, to: IssueStatus) => {
-  setIssues((prev) => prev.map((i) => (i.id === id ? { ...i, status: to } : i)));
+const handleAdvance = useCallback((id: number, to: OrderStatus) => {
+  setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: to } : o)));
 }, []);                                                  // caches a FUNCTION identity
 ```
 
 **When they're worth it:**
-1. The computation is measurably expensive (profile first; sorting 50 issues is not).
+1. The computation is measurably expensive (profile first; sorting 50 SKUs is not).
 2. The value/function is passed to a `React.memo` child, so a stable identity avoids re-rendering it.
 3. The value/function is a dependency of another hook (`useEffect`), and a new identity each render would re-run it.
 
@@ -149,33 +149,38 @@ Otherwise they add noise and cost. (The React Compiler, where adopted, automates
 ## 4. `useReducer` — when state transitions get complex
 
 ```tsx
-type FormState = { title: string; status: IssueStatus; submitting: boolean; error: string | null };
+// Pick screen: scanning items for one pick list
+type PickState = { remaining: Record<string, number>; lastScan: string | null; error: string | null };
 type Action =
-  | { type: "field"; name: "title"; value: string }
-  | { type: "status"; value: IssueStatus }
-  | { type: "submit" }
-  | { type: "failure"; error: string }
-  | { type: "success" };
+  | { type: "scanned"; sku: string }
+  | { type: "undo"; sku: string }
+  | { type: "reset"; remaining: Record<string, number> };
 
-function reducer(state: FormState, action: Action): FormState {
+function reducer(state: PickState, action: Action): PickState {
   switch (action.type) {
-    case "field": return { ...state, [action.name]: action.value };
-    case "status": return { ...state, status: action.value };
-    case "submit": return { ...state, submitting: true, error: null };
-    case "failure": return { ...state, submitting: false, error: action.error };
-    case "success": return { ...state, submitting: false, title: "" };
+    case "scanned": {
+      const left = state.remaining[action.sku];
+      if (left === undefined) return { ...state, error: `${action.sku} is not on this pick list` };
+      if (left === 0) return { ...state, error: `${action.sku} already fully picked` };
+      return { remaining: { ...state.remaining, [action.sku]: left - 1 }, lastScan: action.sku, error: null };
+    }
+    case "undo":
+      return { ...state, remaining: { ...state.remaining, [action.sku]: (state.remaining[action.sku] ?? 0) + 1 }, error: null };
+    case "reset":
+      return { remaining: action.remaining, lastScan: null, error: null };
   }
 }
-const [state, dispatch] = useReducer(reducer, { title: "", status: "TODO", submitting: false, error: null });
+const [state, dispatch] = useReducer(reducer, { remaining: { "BOLT-M8-50": 3 }, lastScan: null, error: null });
 ```
 
-Reducers are pure functions → trivially unit-testable, and discriminated-union actions are type-checked.
+Reducers are pure functions → trivially unit-testable (no React needed), and discriminated-union actions are type-checked.
+The server still records each pick — the reducer only drives the screen.
 
 ---
 
 ## 5. Context
 
-Context passes a value to a whole subtree without prop drilling. Good for: current user/auth, theme, current organization.
+Context passes a value to a whole subtree without prop drilling. Good for: current user/auth, theme, the currently selected warehouse.
 Not a general state manager — **every consumer re-renders when the value changes**.
 
 ```tsx
@@ -228,11 +233,11 @@ export function useAsync<T>(fn: (signal: AbortSignal) => Promise<T>, deps: React
 }
 
 // usage
-const issues = useAsync((signal) => issuesApi.list(projectId, signal), [projectId]);
+const inventory = useAsync((signal) => inventoryApi.list(warehouseId, signal), [warehouseId]);
 ```
 
 ```tsx
-// src/shared/hooks/useDebouncedValue.ts — for the issue search box
+// src/shared/hooks/useDebouncedValue.ts — for the SKU search box
 export function useDebouncedValue<T>(value: T, ms = 300): T {
   const [debounced, setDebounced] = useState(value);
   useEffect(() => {
@@ -261,6 +266,42 @@ function Ticker() {
 ```
 
 Fix: `setCount((c) => c + 1)` (no dependency on `count` needed), or add `count` to deps (restarts the interval each tick).
+
+---
+
+## 8. Subscriptions: a streaming hook (Week 16, ForgeCI M3)
+
+The same effect/cleanup rules apply to long-lived subscriptions. A minimal shape for consuming a job's live log over SSE
+(see [07/02 §8](../07-javascript-typescript/02-async-javascript.md#8-server-sent-events-eventsource)):
+
+```tsx
+type LogLine = { seq: number; text: string };
+
+export function useJobLog(jobId: number) {
+  const [lines, setLines] = useState<LogLine[]>([]);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    setLines([]);
+    setDone(false);
+    const es = new EventSource(`/api/jobs/${jobId}/logs/stream`);
+    es.addEventListener("log", (e) => {
+      const chunk = JSON.parse(e.data) as LogLine[];
+      setLines((prev) => prev.concat(chunk));          // updater form: never closes over a stale `lines`
+    });
+    es.addEventListener("end", () => { setDone(true); es.close(); });
+    return () => es.close();                           // unmount / jobId change → no leaked connection
+  }, [jobId]);
+
+  return { lines, done };
+}
+```
+
+What you must still design yourself for ForgeCI: dedupe by `seq` after a reconnect replay, a cap on lines kept in
+memory, and rendering thousands of lines without jank ([05 §4](./05-architecture-testing.md#4-performance-basics-just-enough)).
+
+> **Break it:** remove `return () => es.close()` and navigate between three builds. DevTools → Network shows three open
+> streams, and lines from the old job appear in the new one.
 
 ---
 
@@ -309,7 +350,7 @@ DOM nodes and mutable values the UI doesn't display (timer ids, latest callback)
 <details><summary>What's a custom hook? Give one you wrote.</summary>
 
 A `use`-prefixed function that composes hooks to share stateful logic. Each call has independent state. I wrote
-`usePolling` for PulseWatch's dashboard and `useDebouncedValue` for TeamBoard's search.
+`usePolling` for FlowGrid's low-stock widget, `useDebouncedValue` for SKU search, and (Week 16) `useJobLog` for ForgeCI's live logs.
 </details>
 
 <details><summary>Context vs a state library?</summary>
@@ -329,4 +370,5 @@ complex client state may justify a reducer or a small store.
 - [ ] Implement `usePolling`, `useDebouncedValue`, `useAsync` from scratch.
 - [ ] Build `AuthProvider` + `useAuth` with a guarded context.
 - [ ] Reproduce and fix a stale-closure interval bug.
+- [ ] (Week 16) Build `useJobLog` with cleanup and explain what happens on reconnect.
 - [ ] Explain when I'd use `useMemo`/`useCallback` — with a concrete counter-example where I wouldn't.

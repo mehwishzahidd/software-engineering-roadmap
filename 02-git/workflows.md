@@ -2,7 +2,9 @@
 
 > **Outcome:** work on every project the way a team does: short-lived branches, small PRs
 > with clear descriptions, CI checks, self-review, a consistent commit convention, and a
-> deliberate merge strategy. From **Week 5**, nothing lands on `main` in P1–P4 without a PR.
+> deliberate merge strategy. Each flagship project (FlowGrid, LedgerX, ForgeCI, FlagForge) lives in
+> its **own GitHub repository** with CI from its first PR (Week 4); from **Week 5**, nothing lands on
+> `main` without a PR, and each milestone is a GitHub milestone with issues.
 
 Related: [README.md](./README.md) · CI checks on PRs: [../13-cicd/github-actions.md](../13-cicd/github-actions.md) · GitHub docs: docs.github.com (Pull requests, Protected branches)
 
@@ -17,9 +19,9 @@ main ──●────────────●─────────
 ```
 
 1. `git switch main && git pull` — start from the latest `main`.
-2. `git switch -c feat/budget-alerts` — one branch per change; name it `type/short-desc`.
+2. `git switch -c feat/reservation-expiry` — one branch per change; name it `type/short-desc`.
 3. Commit small, logical steps with Conventional Commit messages.
-4. `git push -u origin feat/budget-alerts`; open a PR early (draft) if you want feedback.
+4. `git push -u origin feat/reservation-expiry`; open a PR early (draft) if you want feedback.
 5. CI runs (`./mvnw -B verify`, later `npm test`, lint).
 6. Review (self-review when solo — see §4), address comments with new commits.
 7. Update with `main` (`git rebase main` + `--force-with-lease`, or merge `main` in).
@@ -43,17 +45,17 @@ Rules of thumb: branches live **< 2 days**; PRs are **< ~400 lines** of meaningf
 
 ```bash
 git switch main && git pull
-git switch -c feat/p2-seat-hold-expiry
+git switch -c feat/reservation-expiry
 
 # work...
-git add -p && git commit -m "feat(holds): add expires_at to holds"
-git add -p && git commit -m "feat(holds): scheduled cleanup of expired holds"
-git add -p && git commit -m "test(holds): expired hold frees seat"
+git add -p && git commit -m "feat(reservations): add expires_at to reservations"
+git add -p && git commit -m "feat(reservations): scheduled release of expired reservations"
+git add -p && git commit -m "test(reservations): expired reservation frees stock"
 
 git fetch origin
 git rebase origin/main              # replay my commits on the latest main
 ./mvnw -q verify                    # still green after rebase?
-git push -u origin feat/p2-seat-hold-expiry        # first time
+git push -u origin feat/reservation-expiry          # first time
 git push --force-with-lease         # after later rebases of THIS branch
 ```
 
@@ -85,18 +87,19 @@ Format (conventionalcommits.org):
 | `ci` | CI config (GitHub Actions) |
 | `chore` | Maintenance that fits nowhere else |
 
-Examples from the projects:
+Examples in the style of the projects:
 
 ```
-feat(import): report per-row CSV errors with line numbers
+feat(orders): store Idempotency-Key with request hash and response
 fix(money): normalize BigDecimal scale so 1.5 equals 1.50
-refactor(repo): extract TransactionRepository interface
-perf(reports): add index on transactions(account_id, date)
-test(holds): prove only one of 20 concurrent holds wins
+refactor(allocation): extract WarehouseScorer strategy
+perf(ledger): add index on ledger_entry(account_id, created_at)
+feat(webhooks): verify X-Hub-Signature-256 before parsing payload
+test(reservations): exactly one of 20 concurrent reservations wins
 build: bump spring-boot-starter-parent to 3.3.x
 ci: run mvn verify on pull requests
 
-feat(api)!: require Idempotency-Key on POST /bookings
+feat(api)!: require Idempotency-Key on POST /orders
 
 BREAKING CHANGE: clients must send an Idempotency-Key header.
 ```
@@ -123,7 +126,7 @@ Why it matters: readable history, changelog generation, semantic versioning (`fe
 One or two sentences: what changes for the user/system.
 
 ## Why
-Link the issue / milestone (e.g. P2 M4). The problem this solves.
+Link the issue / milestone (e.g. FlowGrid M2, #14). The problem this solves.
 
 ## How
 Key design decisions and trade-offs. Anything reviewers should look at first.
@@ -131,7 +134,7 @@ Key design decisions and trade-offs. Anything reviewers should look at first.
 ## Testing
 - [ ] Unit tests added/updated
 - [ ] `./mvnw verify` passes locally
-- [ ] Manual check: `curl -i -X POST localhost:8080/api/holds ...` → 201
+- [ ] Manual check: `curl -i -X POST localhost:8080/api/orders -H 'Idempotency-Key: …' ...` → 201, repeat → same response
 
 ## Screenshots / output
 (For UI or CLI changes)
@@ -171,7 +174,7 @@ merge. This builds the habits interviewers ask about ("walk me through your PR p
 
 ### Writing comments
 
-- Be specific and kind; comment on code, not people. Ask questions: "What happens if `holds` is empty here?"
+- Be specific and kind; comment on code, not people. Ask questions: "What happens if `reservations` is empty here?"
 - Label severity: **blocking**, `nit:` (optional polish), `question:`, `suggestion:` (use GitHub's suggestion blocks).
 - Approve with minor nits rather than blocking on style.
 - Praise good things too — it's information.
@@ -196,7 +199,7 @@ This roadmap's default: **squash and merge**, with the PR title in Conventional 
 ```bash
 # Squash all commits on the branch into one (branch based on main):
 git reset --soft $(git merge-base main HEAD)
-git commit -m "feat(budgets): over-budget alerts via BudgetListener"
+git commit -m "feat(alerts): scheduled low-stock alerts"
 git push --force-with-lease
 ```
 `reset --soft` moves the branch back to where it forked but keeps all changes staged — one fresh commit. See exercise scenario in [exercises.md](./exercises.md).
@@ -208,7 +211,7 @@ git push --force-with-lease
 GitHub → Settings → Branches → Branch protection rule (or Rulesets) for `main`:
 
 - [x] Require a pull request before merging (0 approvals when solo; 1+ in teams)
-- [x] Require status checks to pass (select the CI job, e.g. `build`) — from **Week 12** when CI exists
+- [x] Require status checks to pass (select the CI job, e.g. `build`) — from **Week 4** (every project has CI from its first PR)
 - [x] Require branches to be up to date before merging
 - [x] Require conversation resolution
 - [x] Block force pushes and deletions
@@ -242,7 +245,7 @@ Read `CONTRIBUTING.md` first; sign the CLA if required; keep the PR tiny for a f
 
 ```bash
 git switch main && git pull
-git tag -a v1.0 -m "TicketHold v1.0: holds, bookings, JWT auth, CI"
+git tag -a v1.0 -m "LedgerX v1.0: double-entry core, idempotent transfers, reconciliation"
 git push origin v1.0
 gh release create v1.0 --generate-notes     # notes from merged PR titles (Conventional Commits pay off)
 ```
@@ -297,4 +300,4 @@ strong CI and feature flags to hide incomplete features. Minimizes merge pain; r
 - [ ] Reviewed own PRs the next day with the reviewer checklist; left comments
 - [ ] Used `reset --soft $(git merge-base main HEAD)` to clean a branch
 - [ ] Made one small open-source (or classmate) PR via the forking model
-- [ ] Tagged and released `v1.0` for P1 with generated notes
+- [ ] Tagged and released `v1.0` for FlowGrid (W8) with generated notes; same for LedgerX (W13), ForgeCI (W18), FlagForge (W23)

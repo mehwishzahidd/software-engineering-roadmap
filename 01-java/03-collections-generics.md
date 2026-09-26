@@ -256,6 +256,133 @@ Details in [06-memory-jvm.md](./06-memory-jvm.md#5-autoboxing-and-the-integer-ca
 
 ---
 
+## Java for occasional DSA reps
+
+DSA, LeetCode/NeetCode and OAs are done in **Python** in this roadmap ([../19-python/README.md](../19-python/README.md),
+[../PYTHON_INTERVIEW_CHEATSHEET.md](../PYTHON_INTERVIEW_CHEATSHEET.md)). Java collections fluency is
+kept alive with **one "Java rep" per week**: re-implement one problem you have *already solved* in
+Python, log it in the tracker's *Java rep* column ([../trackers/dsa-tracker.md](../trackers/dsa-tracker.md)),
+never count it as a new problem, never solve everything twice. The point is fluency with the APIs
+you also use in production code — and being able to answer "can you code it in Java?" calmly.
+
+### Python → Java translation table
+
+| Python | Java |
+|---|---|
+| `d = {}`, `d.get(k, 0)`, `d[k] = d.get(k, 0) + 1` | `Map<K,V> d = new HashMap<>()`, `d.getOrDefault(k, 0)`, `d.merge(k, 1, Integer::sum)` |
+| `defaultdict(list)` | `d.computeIfAbsent(k, x -> new ArrayList<>()).add(v)` |
+| `Counter(s)` | `int[26]` with `c - 'a'`, or `merge` into a `HashMap<Character,Integer>` |
+| `seen = set()`, `x in seen`, `seen.add(x)` | `Set<T> seen = new HashSet<>()`, `seen.contains(x)`, `seen.add(x)` (returns `false` if present) |
+| list as stack: `append` / `pop` / `st[-1]` | `Deque<T> st = new ArrayDeque<>()`: `push` / `pop` / `peek` |
+| `deque`: `append` / `popleft` | `Deque<T> q = new ArrayDeque<>()`: `offer` / `poll` |
+| `heapq` (min-heap), push `-x` for max | `new PriorityQueue<>()`; max: `new PriorityQueue<>(Comparator.reverseOrder())` |
+| `heappush(h, (dist, node))` | `new PriorityQueue<int[]>(Comparator.comparingInt(a -> a[0]))` |
+| `sorted(xs, key=lambda p: (p.a, -p.b))` | `xs.sort(Comparator.comparing(P::a).thenComparing(P::b, Comparator.reverseOrder()))` |
+| `float('inf')` | `Integer.MAX_VALUE` / `Long.MAX_VALUE` (watch overflow when adding to it) |
+| `[[0] * c for _ in range(r)]` | `new int[r][c]` |
+| `(r, c)` tuple as a set key | `r * cols + c` as an `int`, or a `record Cell(int r, int c)` (records have `equals`/`hashCode`) |
+| arbitrary-size `int` | `int` overflows silently → use `long` for sums/products |
+
+### The idioms, compiled and tested on JDK 21
+
+```java
+// HashMap: Two Sum (LeetCode 1)
+static int[] twoSum(int[] nums, int target) {
+    Map<Integer, Integer> seen = new HashMap<>();              // value -> index
+    for (int i = 0; i < nums.length; i++) {
+        Integer j = seen.get(target - nums[i]);
+        if (j != null) return new int[]{j, i};
+        seen.put(nums[i], i);
+    }
+    return new int[0];
+}
+
+// ArrayDeque as a stack: Valid Parentheses (LeetCode 20)
+static boolean isValid(String s) {
+    Deque<Character> stack = new ArrayDeque<>();
+    Map<Character, Character> open = Map.of(')', '(', ']', '[', '}', '{');
+    for (char c : s.toCharArray()) {
+        if (open.containsKey(c)) {
+            if (stack.isEmpty()) return false;
+            char top = stack.pop();                               // unbox to char: never compare Character with ==
+            if (top != open.get(c)) return false;
+        } else {
+            stack.push(c);
+        }
+    }
+    return stack.isEmpty();
+}
+
+// PriorityQueue + Comparator: K Closest Points to Origin (LeetCode 973), max-heap of size k
+static int[][] kClosest(int[][] points, int k) {
+    PriorityQueue<int[]> heap = new PriorityQueue<>(
+        Comparator.comparingInt((int[] p) -> p[0] * p[0] + p[1] * p[1]).reversed());
+    for (int[] p : points) {
+        heap.offer(p);
+        if (heap.size() > k) heap.poll();                          // evict the farthest
+    }
+    return heap.toArray(new int[0][]);
+}
+
+// ArrayDeque as a queue: BFS on a grid, Number of Islands (LeetCode 200)
+static int numIslands(char[][] grid) {
+    int rows = grid.length, cols = grid[0].length, islands = 0;
+    int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+    for (int r = 0; r < rows; r++) {
+        for (int c = 0; c < cols; c++) {
+            if (grid[r][c] != '1') continue;
+            islands++;
+            Deque<int[]> q = new ArrayDeque<>();
+            q.offer(new int[]{r, c});
+            grid[r][c] = '0';                                       // mark when ENQUEUED, not when polled
+            while (!q.isEmpty()) {
+                int[] cell = q.poll();
+                for (int[] d : dirs) {
+                    int nr = cell[0] + d[0], nc = cell[1] + d[1];
+                    if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] == '1') {
+                        grid[nr][nc] = '0';
+                        q.offer(new int[]{nr, nc});
+                    }
+                }
+            }
+        }
+    }
+    return islands;
+}
+
+// Trees + recursion: Maximum Depth of Binary Tree (LeetCode 104)
+static final class TreeNode {
+    int val; TreeNode left, right;
+    TreeNode(int val, TreeNode left, TreeNode right) { this.val = val; this.left = left; this.right = right; }
+}
+static int maxDepth(TreeNode root) {
+    if (root == null) return 0;
+    return 1 + Math.max(maxDepth(root.left), maxDepth(root.right));
+}
+
+// DFS on an adjacency list, iterative with an explicit stack (no recursion-depth risk)
+static Set<Integer> reachable(Map<Integer, List<Integer>> graph, int start) {
+    Set<Integer> visited = new HashSet<>();
+    Deque<Integer> stack = new ArrayDeque<>(List.of(start));
+    while (!stack.isEmpty()) {
+        int node = stack.pop();
+        if (!visited.add(node)) continue;                           // already seen
+        for (int next : graph.getOrDefault(node, List.of())) stack.push(next);
+    }
+    return visited;
+}
+```
+
+Java-specific traps that Python never shows you: `Integer` comparison with `==` outside −128..127,
+`int` overflow in sums, `Arrays.asList(int[])` giving a `List<int[]>`, `ArrayDeque` rejecting
+`null`, recursion depth (~10⁴ frames by default — use an explicit stack for deep graphs), and
+`PriorityQueue` iteration order not being sorted.
+
+- [ ] One Java rep logged per week (pattern of that week: hashing → stack → heap → BFS/DFS → trees → recursion)
+- [ ] Can write each block above from a blank file in ≤ 5 minutes
+
+---
+
 ## 🔨 Break it
 
 1. Insert 1 000 000 entries into `new ArrayList<>()` vs `new ArrayList<>(1_000_000)`; time both.
@@ -356,4 +483,5 @@ you can't follow up with `containsKey` atomically. So nulls are banned.
 - [ ] Write a multi-key `Comparator` chain without `a - b`
 - [ ] Write a generic method with a bounded type parameter and a PECS wildcard
 - [ ] Explain type erasure and array covariance vs generic invariance
+- [ ] Do one Java rep per week using the idioms in [Java for occasional DSA reps](#java-for-occasional-dsa-reps)
 - [ ] Complete the Week 2 collections exercises in [exercises.md](./exercises.md#week-2--oop-exceptions-collections-maven--junit)

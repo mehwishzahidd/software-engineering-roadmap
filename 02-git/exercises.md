@@ -104,7 +104,7 @@ commit App.java 'public class App {}' "feat: app skeleton"
 echo 'DB_PASSWORD=hunter2' > .env
 echo 'class Db {}' > Db.java
 git add . && git commit -q -m "feat: database config"
-commit README.md '# Ledger' "docs: readme"
+commit README.md '# Katas' "docs: readme"
 ```
 
 **Task:** (a) remove `.env` from **all** history (it was never pushed) while keeping the file on
@@ -291,7 +291,7 @@ If the branch was already pushed: `git push --force-with-lease` (only because it
 
 ```bash
 source ~/git-lab/common.sh; lab 07
-commit README.md '# Ledger' "docs: readme"
+commit README.md '# Katas' "docs: readme"
 git switch -q -c feature/budgets
 commit Budget.java 'record Budget(String category, long limitCents) {}' "feat: budget record"
 commit BudgetTracker.java 'class BudgetTracker {}' "feat: budget tracker"
@@ -385,7 +385,7 @@ Why not `reset --hard HEAD~2` + `push --force`? The teammate's clone would diver
 
 ```bash
 source ~/git-lab/common.sh; lab 10
-commit README.md '# Ledger' "docs: readme"
+commit README.md '# Katas' "docs: readme"
 git switch -q -c feature/alerts
 commit Alert.java 'class Alert {' "wip"
 commit Alert.java 'class Alert { String msg; }' "wip 2"
@@ -420,7 +420,7 @@ If the branch was pushed: `git push --force-with-lease`. (GitHub's "Squash and m
 
 ```bash
 source ~/git-lab/common.sh; lab 11
-commit README.md '# Ledger' "docs: readme"
+commit README.md '# Katas' "docs: readme"
 make_remote
 commit Report.java 'class Report {}' "feat: monthly report"
 commit ReportTest.java 'class ReportTest {}' "test: monthly report"
@@ -449,7 +449,7 @@ git log --oneline --graph --all
 
 ```bash
 source ~/git-lab/common.sh; lab 12
-commit README.md '# Ledger' "docs: readme"
+commit README.md '# Katas' "docs: readme"
 echo 'class Report {}' > Report.java
 echo 'class ReportTest {}' > ReportTest.java
 git add Report.java && git commit -q -m "feat: add reprot"
@@ -545,13 +545,13 @@ git log --oneline --graph --all --decorate
 
 ```bash
 source ~/git-lab/common.sh; lab 15
-commit README.md '# PulseWatch' "docs: readme"
+commit README.md '# ForgeCI playground' "docs: readme"
 make_remote
 me="$(pwd)"
 git clone -q "$me-remote.git" "$me-teammate"
 ( cd "$me-teammate" && git config user.name "Teammate" && git config user.email "tm@example.com" \
-  && printf 'monitors: []\n' > config.yml && git add . && git commit -q -m "chore: config" && git push -q )
-commit Worker.java 'class Worker {}' "feat: checker worker"
+  && printf 'pipelines: []\n' > config.yml && git add . && git commit -q -m "chore: config" && git push -q )
+commit Worker.java 'class Worker {}' "feat: job worker"
 git push 2>&1 | tail -3 || true
 echo "Rejected: the remote has a commit you don't have."
 ```
@@ -559,7 +559,7 @@ echo "Rejected: the remote has a commit you don't have."
 **Task:** publish your commit on top of the teammate's, keeping history linear. No force push.
 
 **Acceptance:**
-- [ ] `git log --oneline origin/main` shows readme → config → worker, with no merge commit
+- [ ] `git log --oneline origin/main` shows readme → config → job worker, with no merge commit
 - [ ] `git status` says up to date with `origin/main`
 
 <details><summary>Solution</summary>

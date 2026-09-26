@@ -1,7 +1,8 @@
 # 05 — Frontend Architecture and Testing
 
-> Weeks 17–18 · ≈ 4 hours. How to organise TeamBoard's frontend so it stays readable at 50+ components, where state
-> belongs, basic performance hygiene, and how testing fits in. Full testing guide: [09-testing/frontend-testing.md](../09-testing/frontend-testing.md).
+> Week 7 (FlowGrid M4), revisited Week 16 (ForgeCI's data-heavy live views) and Week 23 (FlagForge admin).
+> ≈ 1 hour of reading. How to organise a dashboard so it stays readable at 50+ components, where state belongs,
+> performance basics for long lists and streams, and how testing fits in. Full testing guide: [09-testing/frontend-testing.md](../09-testing/frontend-testing.md).
 
 ---
 
@@ -11,7 +12,7 @@
 **By feature** keeps what changes together, together — the same idea as package-by-feature in Spring.
 
 ```
-teamboard-web/
+flowgrid-web/
 ├── index.html
 ├── vite.config.ts
 ├── .env.development
@@ -20,67 +21,53 @@ teamboard-web/
     ├── app/
     │   ├── router.tsx               # route tree
     │   ├── providers.tsx            # QueryClient, AuthProvider
-    │   └── Layout.tsx               # top nav, <Outlet/>
+    │   └── Layout.tsx               # top nav, warehouse switcher, <Outlet/>
     ├── features/
-    │   ├── auth/
-    │   │   ├── AuthContext.tsx
-    │   │   ├── authApi.ts
-    │   │   ├── LoginPage.tsx
-    │   │   ├── RequireAuth.tsx
-    │   │   ├── roles.ts
-    │   │   └── roles.test.ts
-    │   ├── issues/
-    │   │   ├── api.ts               # issuesApi
-    │   │   ├── types.ts             # Issue, IssueStatus, CreateIssueRequest
-    │   │   ├── hooks.ts             # useBoard, useMoveIssue
-    │   │   ├── BoardPage.tsx
-    │   │   ├── IssueForm.tsx
-    │   │   ├── IssueForm.test.tsx
-    │   │   └── components/          # IssueCard, Lane (private to the feature)
-    │   ├── projects/
-    │   ├── comments/
-    │   └── audit/
+    │   ├── auth/                    # AuthContext, LoginPage, RequireAuth, permissions.ts (+ tests)
+    │   ├── inventory/               # api.ts, types.ts, hooks.ts, InventoryPage.tsx, AdjustmentForm.tsx (+ tests)
+    │   ├── orders/                  # OrderListPage, OrderDetailPage, components/OrderCard.tsx
+    │   ├── fulfillment/             # PickPackBoardPage, pick reducer
+    │   └── transfers/
     ├── shared/
     │   ├── api/client.ts            # request<T>, ApiError, tokenStore
     │   ├── ui/                      # Button, ErrorPanel, Spinner, EmptyState — no business logic
     │   ├── hooks/                   # useDebouncedValue, usePolling
     │   └── types.ts                 # Page<T>, AsyncState<T>
-    └── test/
-        ├── setup.ts                 # jest-dom, MSW server lifecycle
-        ├── server.ts                # MSW handlers
-        └── render.tsx               # renderWithProviders helper
+    └── test/                        # setup.ts, MSW server + handlers, renderWithProviders
 ```
 
 Rules:
 1. `features/X` may import from `shared/`; `shared/` never imports from `features/`.
-2. Features import each other only through a small public surface (e.g. `features/auth/index.ts` exporting `useAuth`, `RequireRole`).
+2. Features import each other only through a small public surface (e.g. `features/auth/index.ts` exporting `useAuth`, `can`).
 3. Tests live next to the code they test.
-4. Page components (routes) compose; leaf components render. Keep fetching in pages/hooks, not in `shared/ui`.
+4. Page components (routes) compose and fetch; leaf components render. Keep fetching out of `shared/ui`.
 
-The PulseWatch dashboard follows the same layout with `features/monitors`, `features/incidents`, `features/status`.
+ForgeCI's UI (Week 16) uses the same layout with `features/builds`, `features/jobs`, `features/logs`, `features/repos`;
+FlagForge's (Week 23) with `features/flags`, `features/rules`, `features/versions`, `features/audit`.
 
 ---
 
 ## 2. Where does state live?
 
-| Kind of state | Example | Where |
+| Kind of state | FlowGrid example | Where |
 |---|---|---|
-| **Server state** (cached copy of backend data) | issues, monitors, members | TanStack Query or `useAsync` in the page/feature hook |
-| **URL state** | filters, search, page, selected tab | `useSearchParams` / route params |
-| **Global client state** | current user, theme | Context (low-frequency) |
-| **Local UI state** | modal open, form fields, hover | `useState` in the component |
-| **Derived** | filtered issues, counts per lane | compute during render (maybe `useMemo`) |
+| **Server state** (cached copy of backend data) | inventory levels, orders, pick lists | TanStack Query or `useAsync` in the page/feature hook |
+| **URL state** | warehouse id, search, filters, sort, page | route params / `useSearchParams` |
+| **Global client state** | current user, permissions, theme | Context (low-frequency) |
+| **Local UI state** | modal open, form fields, pick-screen scans | `useState` / `useReducer` in the component |
+| **Derived** | lane counts, low-stock count | compute during render (maybe `useMemo`) |
+| **Streamed state** (Week 16) | live log lines, job status | a subscription hook (`useJobLog`) owned by the page |
 
-The most common architectural mistake is **copying server data into global client state** and then fighting to
-keep it in sync. Let the server-state layer own it and invalidate after mutations.
+The most common architectural mistake is **copying server data into global client state** and then fighting to keep it
+in sync. Let the server-state layer own it and invalidate after mutations.
 
 ---
 
 ## 3. Component design guidelines
 
 - **Small and single-purpose.** If a component name needs "And", split it.
-- **Props down, events up.** Callback props named `onX` (`onMove`, `onSubmit`).
-- **Container vs presentational (loosely):** `BoardPage` fetches and handles states; `Board`/`Lane`/`IssueCard` receive data and render — easy to test and reuse.
+- **Props down, events up.** Callback props named `onX` (`onAdvance`, `onSubmit`).
+- **Container vs presentational (loosely):** `InventoryPage` fetches and handles states; `InventoryTable` receives rows and renders — easy to test and reuse.
 - **Type the props, not the internals.** Export prop types when others compose the component.
 - **Don't abstract early.** Three similar components → maybe extract. Two → leave it.
 - **Accessibility is design:** labelled inputs, buttons for actions, headings in order, `role="alert"` for errors.
@@ -91,12 +78,17 @@ keep it in sync. Let the server-state layer own it and invalidate after mutation
 
 1. **Measure first**: React DevTools Profiler → "Highlight updates when components render".
 2. Common real fixes, in order of payoff:
-   - Keep state as **low** in the tree as possible (typing in a search box shouldn't re-render the whole board).
+   - Keep state as **low** in the tree as possible (typing in the SKU search shouldn't re-render the whole dashboard).
    - Stable keys in lists.
-   - Paginate / virtualise long lists (issue history, check results) — don't render 5,000 rows.
+   - Paginate on the server; **virtualise** long lists (render only visible rows — e.g. `@tanstack/react-virtual`).
    - `React.memo` on a heavy child + `useCallback` for its callback props.
-   - Code-split routes: `const SettingsPage = lazy(() => import("./SettingsPage"))` inside `<Suspense>`.
-3. Network beats rendering: fewer, smaller requests; server-side pagination and filtering (your Spring API already supports them).
+   - Code-split routes: `const TransfersPage = lazy(() => import("./TransfersPage"))` inside `<Suspense>`.
+3. Network beats rendering: fewer, smaller requests; server-side filtering and pagination.
+
+**Week 16 — ForgeCI live logs** are the stress test: a build can emit tens of thousands of lines. Batch incoming chunks
+(append once per animation frame or per SSE message, not per line), virtualise the list, cap lines kept in memory with a
+"load earlier lines" action backed by the API, and key rows by sequence number. Measure before and after with the Profiler
+and record it — that's an honest, specific interview story.
 
 ---
 
@@ -104,11 +96,8 @@ keep it in sync. Let the server-state layer own it and invalidate after mutation
 
 A render-time exception unmounts the whole tree (white screen) unless caught by an **error boundary**.
 Error boundaries must be class components (or use a small library such as `react-error-boundary`).
-React Router's `errorElement` on a route is a built-in boundary for that route subtree — use it at the layout level.
-
-```tsx
-{ path: "/orgs/:orgId/projects/:projectId", element: <ProjectLayout />, errorElement: <RouteError />, children: [...] }
-```
+React Router's `errorElement` on a route is a built-in boundary for that subtree — use it at the layout level
+(see the route tree in [03 §2.1](./03-forms-routing.md#21-designing-the-route-tree)).
 
 Error boundaries don't catch errors in event handlers or async code — those go through your `ApiError` handling.
 
@@ -118,20 +107,22 @@ Error boundaries don't catch errors in event handlers or async code — those go
 
 | Level | Tool | What | Share |
 |---|---|---|---|
-| Unit | Vitest | pure functions: `roles.ts` (`atLeast`), reducers, `validate`, formatters | many, tiny |
-| Component/integration | Vitest + React Testing Library + user-event + MSW | a page/component with real hooks and a mocked **network**: renders loading → data; submits form; shows 403/empty/error | the bulk |
-| End-to-end | Playwright (optional, 1–3 tests) | login → create issue → see it on board, against the real Compose stack | few |
+| Unit | Vitest | pure functions: `can()`, reducers (pick screen), `validate`, formatters | many, tiny |
+| Component/integration | Vitest + React Testing Library + user-event + MSW | a page with real hooks and a mocked **network**: loading → data; form submit; 403/409/empty/error | the bulk |
+| End-to-end | Playwright (optional, 1–3 tests) | login → create order → see it on the board, against the Compose stack | few |
 
-What to test in TeamBoard (M4 minimum, ≥ 10 tests):
-- [ ] `atLeast` / `roleIn` for every role pair.
-- [ ] `IssueForm`: required title error; server 400 field error lands under the field; submit disabled while saving.
-- [ ] `BoardPage`: loading → lanes with counts; empty state; error state with retry.
-- [ ] Moving an issue sends `PATCH` and the card appears in the new lane.
+What to test in FlowGrid M4 (minimum ≈ 6 meaningful tests; describe them first, then write them):
+- [ ] `can()` for every role × a few permissions (table-driven).
+- [ ] Pick-screen reducer: scanning a SKU not on the list sets an error; over-picking is rejected.
+- [ ] `InventoryPage`: loading → rows; empty state; error state with retry.
+- [ ] `AdjustmentForm`: required fields; server 400 field error under the field; 409 as a form alert; submit disabled while saving.
 - [ ] `RequireAuth` redirects anonymous users to `/login`.
-- [ ] VIEWER does not see Edit/Delete; MEMBER does.
-- [ ] Login form: wrong password shows the server's message.
+- [ ] VIEWER sees no mutation buttons; OPS_MANAGER does.
 
-Code and setup for all of these: [09-testing/frontend-testing.md](../09-testing/frontend-testing.md).
+Week 16 adds: the log view renders replayed lines once (no duplicates after reconnect). Week 23 adds: the rules editor
+round-trips a rule set, and rollback asks for confirmation.
+
+Setup and code patterns: [09-testing/frontend-testing.md](../09-testing/frontend-testing.md).
 
 ---
 
@@ -141,21 +132,22 @@ Code and setup for all of these: [09-testing/frontend-testing.md](../09-testing/
 npm run build        # tsc -b && vite build → dist/ (static files)
 npm run preview      # serve dist/ locally to sanity-check
 npx tsc --noEmit     # type-check in CI (Vite doesn't)
-npm test -- --run    # vitest single run for CI
+npx vitest run       # single test run for CI
 ```
 
-`dist/` is static: nginx serves it, with `try_files ... /index.html` for client routes and `location /api/` proxying to
-Spring — packaged in P3 M5's Compose stack ([11-docker/compose.md](../11-docker/compose.md)).
-CI for the frontend (lint, type-check, test, build) is covered in [13-cicd/pipeline-examples.md](../13-cicd/pipeline-examples.md).
+`dist/` is static: nginx serves it, with `try_files … /index.html` for client routes and `location /api/` proxying to
+Spring ([11-docker/dockerfiles.md](../11-docker/dockerfiles.md)). CI for the frontend (lint, type-check, test, build) is
+covered in [13-cicd/pipeline-examples.md](../13-cicd/pipeline-examples.md).
 
 ---
 
 ## 8. Break it
 
-1. Move `const [q, setQ] = useState("")` from `SearchBox` up to `BoardPage`. Profile typing — every lane re-renders per keystroke. Move it back down (or debounce).
-2. Throw inside `IssueCard` render when `title` is empty. See the white screen. Add `errorElement` — now only the route shows an error.
-3. Import something from `features/issues` inside `shared/ui/Button.tsx`. Explain why the dependency rule forbids it (cycles, coupling).
+1. Move the SKU search `useState` from `SkuSearch` up to the dashboard root. Profile typing — everything re-renders per keystroke. Move it back down (or debounce).
+2. Throw inside `OrderCard` render when `number` is empty. See the white screen. Add `errorElement` — now only that route shows an error.
+3. Import something from `features/orders` inside `shared/ui/Button.tsx`. Explain why the dependency rule forbids it (cycles, coupling).
 4. Remove `npx tsc --noEmit` from CI and introduce a type error. `vite build` still succeeds. Put it back.
+5. (Week 16) Append log lines one `setState` per line for a 20,000-line log. Profile. Then batch per SSE message and virtualise. Record both numbers.
 
 ---
 
@@ -176,16 +168,15 @@ CI for the frontend (lint, type-check, test, build) is covered in [13-cicd/pipel
 
 <details><summary>How is your React app structured?</summary>
 
-By feature: `features/auth`, `features/issues`, `features/projects`, each with its API module, types, hooks,
-pages and tests; `shared/` for the HTTP client, generic UI and hooks, with a one-way dependency rule. The router and
-providers live in `app/`.
+By feature: `features/auth`, `features/inventory`, `features/orders`, each with its API module, types, hooks, pages and
+tests; `shared/` for the HTTP client, generic UI and hooks, with a one-way dependency rule. The router and providers
+live in `app/`.
 </details>
 
 <details><summary>How do you decide where state lives?</summary>
 
-Server data in a server-state layer (TanStack Query / a fetch hook) keyed by the request; filters and pagination in
-the URL; low-frequency globals like the current user in context; everything else local; derived data computed
-rather than stored.
+Server data in a server-state layer keyed by the request; filters and pagination in the URL; low-frequency globals like
+the current user in context; everything else local; derived data computed rather than stored.
 </details>
 
 <details><summary>How do you test React components?</summary>
@@ -195,19 +186,20 @@ level so the real API client runs. I test visible behaviour — loading, data, e
 visibility — not internal state.
 </details>
 
-<details><summary>How would you find and fix a slow component?</summary>
+<details><summary>How would you render a very long, live log without freezing the page?</summary>
 
-Profile with React DevTools to see what renders and why; usually state is too high in the tree or a list is too long.
-Push state down, paginate/virtualise, then memoize the specific hot child with stable callbacks if still needed.
+Batch incoming lines per message instead of per line, virtualise the list so only visible rows are in the DOM, cap
+what's kept in memory with on-demand loading of older lines, key rows by sequence number, and measure with the
+Profiler before and after.
 </details>
 
 ---
 
 ## Mastery checklist
 
-- [ ] TeamBoard `src/` follows the feature layout; `shared/` has no feature imports.
-- [ ] I can classify every piece of state in TeamBoard into the table in §2.
+- [ ] FlowGrid `src/` follows the feature layout; `shared/` has no feature imports.
+- [ ] I can classify every piece of state in the dashboard into the table in §2.
 - [ ] Route-level `errorElement` in place.
-- [ ] ≥ 10 frontend tests passing in CI; `tsc --noEmit` in CI.
+- [ ] Frontend tests and `tsc --noEmit` run in CI.
 - [ ] I used the Profiler once and fixed one real unnecessary re-render.
 - [ ] I can draw the frontend architecture on a whiteboard in 2 minutes.

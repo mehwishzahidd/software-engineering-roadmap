@@ -1,6 +1,7 @@
 # JUnit 5 (Jupiter) + AssertJ
 
-> Basics in **Week 2** (first tests), deepened in **Week 12**. Examples from P1 Ledger and P2 TicketHold.
+> Basics in **Week 2** (foundation katas), then daily in every project. Examples use the Week 2 kata and small,
+> isolated pieces of FlowGrid, LedgerX, ForgeCI and FlagForge logic.
 > Version note: this file uses the JUnit Jupiter API (JUnit 5.x, as managed by Spring Boot 3.x). JUnit 6 keeps the same
 > Jupiter annotations and assertions, so everything here carries over.
 
@@ -9,7 +10,7 @@
 ## 1. Setup
 
 With Spring Boot, `spring-boot-starter-test` brings JUnit Jupiter, AssertJ, Mockito, Hamcrest, JSONassert and Spring Test.
-Plain Maven (P1 Ledger):
+Plain Maven (Week 2 kata, or a non-Spring module such as FlagForge's SDK):
 
 ```xml
 <dependencyManagement>
@@ -46,7 +47,7 @@ Run: `mvn test` · single class: `mvn test -Dtest=MoneyTest` · single method: `
 ## 2. Anatomy and lifecycle
 
 ```java
-package dev.ledger.domain;
+package dev.kata.money;
 
 import org.junit.jupiter.api.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -78,6 +79,8 @@ class MoneyTest {                           // package-private is fine; no `publ
 }
 ```
 
+The Week 2 `Money` kata is throwaway, but the lessons (BigDecimal, scale, currency checks) return in LedgerX (Week 9).
+
 **Lifecycle fact:** JUnit creates a **new instance of the test class for every test method** (default
 `@TestInstance(Lifecycle.PER_METHOD)`). Instance fields are fresh per test → tests don't share state. With
 `@TestInstance(Lifecycle.PER_CLASS)`, one instance is shared and `@BeforeAll` can be non-static.
@@ -93,7 +96,8 @@ class MoneyTest {                           // package-private is fine; no `publ
 | `@Disabled` | skip (always give a reason) |
 | `@Tag("slow")` | filter: `mvn test -Dgroups=slow` / `-DexcludedGroups=slow` |
 | `@Timeout(2)` | fail if slower than 2 s |
-| `@TempDir Path dir` | fresh temp directory (great for P1 CSV import tests) |
+| `@TempDir Path dir` | fresh temp directory (config/workspace/file tests) |
+| `@RepeatedTest(50)` | run a test many times (useful while hunting a flaky concurrency test) |
 | `@ExtendWith(...)` | plug in extensions (Mockito, Spring) |
 
 ---
@@ -104,16 +108,16 @@ class MoneyTest {                           // package-private is fine; no `publ
 
 ```java
 assertEquals(expected, actual);            // expected FIRST — reversed order gives confusing messages
-assertEquals(0.3, 0.1 + 0.2, 1e-9);        // doubles need a delta
+assertEquals(0.3, 0.1 + 0.2, 1e-9);        // doubles need a delta (and money must not be double at all)
 assertNotNull(x); assertTrue(cond); assertSame(a, b);
 assertIterableEquals(List.of(1, 2), list);
-assertThrows(SeatUnavailableException.class, () -> service.hold(seatId, userId));
-assertDoesNotThrow(() -> parser.parse(line));
-assertTimeout(Duration.ofMillis(200), () -> report.generate());
-assertAll("parsed transaction",            // reports ALL failures, not just the first
-    () -> assertEquals(LocalDate.of(2026, 1, 3), tx.date()),
-    () -> assertEquals("COFFEE BAR", tx.merchant()),
-    () -> assertEquals(Money.of("-4.50", "EUR"), tx.amount()));
+assertThrows(InsufficientStockException.class, () -> reservations.reserve(skuId, warehouseId, 5));
+assertDoesNotThrow(() -> parser.parse(yaml));
+assertTimeout(Duration.ofMillis(200), () -> evaluator.evaluate(flag, context));
+assertAll("parsed pipeline",               // reports ALL failures, not just the first
+    () -> assertEquals("eclipse-temurin:21-jdk", config.image()),
+    () -> assertEquals(3, config.steps().size()),
+    () -> assertEquals(Duration.ofMinutes(10), config.timeout()));
 ```
 
 ### AssertJ (preferred: fluent, better failure messages)
@@ -121,31 +125,31 @@ assertAll("parsed transaction",            // reports ALL failures, not just the
 ```java
 import static org.assertj.core.api.Assertions.*;
 
-assertThat(report.total()).isEqualByComparingTo("123.45");        // BigDecimal: ignores scale
-assertThat(tx.merchant()).isEqualTo("COFFEE BAR").startsWith("COFFEE");
-assertThat(transactions)
+assertThat(balance).isEqualByComparingTo("123.45");                 // BigDecimal: ignores scale
+assertThat(order.number()).startsWith("SO-").hasSize(7);
+assertThat(allocations)
     .hasSize(3)
-    .extracting(Transaction::category)
-    .containsExactly(Category.FOOD, Category.RENT, Category.FOOD);
-assertThat(transactions)
-    .filteredOn(t -> t.amount().isNegative())
-    .extracting(Transaction::merchant, t -> t.amount().value())
-    .contains(tuple("COFFEE BAR", new BigDecimal("-4.50")));
-assertThat(optionalEvent).isPresent().get().extracting(Event::name).isEqualTo("Jazz Night");
-assertThat(map).containsEntry("FOOD", new BigDecimal("12.00")).doesNotContainKey("UNKNOWN");
+    .extracting(Allocation::warehouseCode)
+    .containsExactly("BER-1", "BER-1", "HAM-1");
+assertThat(levels)
+    .filteredOn(l -> l.available() < l.reorderPoint())
+    .extracting(InventoryLevel::sku, InventoryLevel::available)
+    .contains(tuple("BOLT-M8-50", 4));
+assertThat(repo.findByCode("BOLT-M8-50")).isPresent().get().extracting(Sku::name).isEqualTo("Bolt M8×50");
+assertThat(countsByStatus).containsEntry(OrderStatus.PICKING, 3L).doesNotContainKey(OrderStatus.CANCELLED);
 
-assertThatThrownBy(() -> bookingService.confirm(holdId))
-    .isInstanceOf(HoldExpiredException.class)
-    .hasMessageContaining("expired");
+assertThatThrownBy(() -> order.transitionTo(OrderStatus.SHIPPED))
+    .isInstanceOf(IllegalStateTransitionException.class)
+    .hasMessageContaining("PICKING -> SHIPPED");
 
-assertThatExceptionOfType(ImportException.class)
-    .isThrownBy(() -> importer.importFile(badCsv))
-    .satisfies(e -> assertThat(e.errors()).hasSize(2));
+assertThatExceptionOfType(PipelineConfigException.class)
+    .isThrownBy(() -> parser.parse("steps: 42"))
+    .satisfies(e -> assertThat(e.line()).isEqualTo(1));
 
 // Soft assertions: collect all failures
 SoftAssertions.assertSoftly(s -> {
-    s.assertThat(event.name()).isEqualTo("Jazz Night");
-    s.assertThat(event.capacity()).isEqualTo(120);
+    s.assertThat(result.variation()).isEqualTo("on");
+    s.assertThat(result.reason()).isEqualTo(Reason.RULE_MATCH);
 });
 
 // Recursive comparison for DTOs without equals()
@@ -153,123 +157,131 @@ assertThat(actualDto).usingRecursiveComparison().ignoringFields("id", "createdAt
 ```
 
 > **Break it:** `assertThat(new BigDecimal("1.0")).isEqualTo(new BigDecimal("1.00"))` fails (`equals` compares scale).
-> `isEqualByComparingTo` passes. Same trap as P1 Ledger's `Money.equals` — decide and document which semantics you want.
+> `isEqualByComparingTo` passes. LedgerX must decide which semantics its `Money` type has — and document it.
 
 ---
 
 ## 4. Parameterized tests
 
+Parameterized tests are how you test **boundaries** cheaply — the classic source of off-by-one bugs.
+
 ```java
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.*;
 
-class MerchantRuleTest {
+class PercentageRolloutTest {                         // FlagForge M2: bucket in [0, 10000)
 
-    @ParameterizedTest(name = "[{index}] \"{0}\" matches COFFEE rule → {1}")
+    @ParameterizedTest(name = "[{index}] bucket {0} with rollout {1}% → included={2}")
     @CsvSource({
-        "COFFEE BAR 123,     true",
-        "coffee bar,         true",
-        "'STARBUCKS, NYC',   false",   // quote values containing commas
-        "'',                 false"
+        "0,     1,   true",
+        "99,    1,   true",      // boundary: last bucket inside 1%
+        "100,   1,   false",     // boundary: first bucket outside
+        "9999, 100,  true",
+        "0,     0,   false"
     })
-    void merchantContains(String merchant, boolean expected) {
-        var rule = new MerchantContainsRule("coffee", Category.FOOD);
-        assertThat(rule.matches(txWithMerchant(merchant))).isEqualTo(expected);
+    void includesBucketsBelowThreshold(int bucket, int percent, boolean expected) {
+        assertThat(Rollout.includes(bucket, percent)).isEqualTo(expected);
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"2026-13-01", "not-a-date", "01/02/2026"})
-    void rejectsBadDates(String raw) {
-        assertThatThrownBy(() -> CsvRowParser.parseDate(raw)).isInstanceOf(DateTimeParseException.class);
+    @ValueSource(strings = {"user-1", "user-2", "ü-ñ-日本", ""})
+    void bucketIsStableAndInRange(String userKey) {
+        int b1 = Bucketing.bucket("new-checkout", userKey);
+        int b2 = Bucketing.bucket("new-checkout", userKey);
+        assertThat(b1).isEqualTo(b2).isBetween(0, 9_999);
     }
+}
 
+class SkuCodeTest {
     @ParameterizedTest
     @NullAndEmptySource
-    @ValueSource(strings = {"  ", "\t"})
-    void blankMerchantIsUncategorized(String merchant) {
-        assertThat(engine.categorize(txWithMerchant(merchant))).isEqualTo(Category.UNCATEGORIZED);
+    @ValueSource(strings = {"  ", "bolt m8", "TOO-LONG-CODE-THAT-EXCEEDS-THIRTY-TWO-CHARS"})
+    void rejectsInvalidCodes(String code) {
+        assertThatThrownBy(() -> SkuCode.of(code)).isInstanceOf(IllegalArgumentException.class);
+    }
+}
+
+class OrderStateMachineTest {
+    @ParameterizedTest
+    @EnumSource(value = OrderStatus.class, names = {"SHIPPED", "CANCELLED"})
+    void terminalStatesCannotBeCancelled(OrderStatus terminal) {
+        var order = TestOrders.inStatus(terminal);
+        assertThatThrownBy(order::cancel).isInstanceOf(IllegalStateTransitionException.class);
     }
 
     @ParameterizedTest
-    @EnumSource(value = Role.class, names = {"CUSTOMER"})
-    void customersCannotCreateEvents(Role role) { /* ... */ }
-
-    @ParameterizedTest
-    @MethodSource("amountRanges")
-    void amountRange(BigDecimal amount, boolean expected) {
-        assertThat(new AmountRangeRule(new BigDecimal("10"), new BigDecimal("50")).matches(txWithAmount(amount)))
-            .isEqualTo(expected);
+    @MethodSource("legalTransitions")
+    void allowsLegalTransitions(OrderStatus from, OrderStatus to) {
+        assertThat(TestOrders.inStatus(from).transitionTo(to).status()).isEqualTo(to);
     }
-    static Stream<Arguments> amountRanges() {
+    static Stream<Arguments> legalTransitions() {
         return Stream.of(
-            Arguments.of(new BigDecimal("9.99"), false),
-            Arguments.of(new BigDecimal("10.00"), true),   // boundary: inclusive lower
-            Arguments.of(new BigDecimal("50.00"), true),   // boundary: inclusive upper
-            Arguments.of(new BigDecimal("50.01"), false));
+            Arguments.of(OrderStatus.RESERVED, OrderStatus.ALLOCATED),
+            Arguments.of(OrderStatus.ALLOCATED, OrderStatus.PICKING),
+            Arguments.of(OrderStatus.PICKING, OrderStatus.PACKED));
     }
 }
 ```
 
 Requires `junit-jupiter-params` (included in the `junit-jupiter` aggregate and in `spring-boot-starter-test`).
-Parameterized tests are how you test **boundaries** cheaply — the classic source of off-by-one bugs.
+The names above (`Rollout`, `Bucketing`, `OrderStatus`…) are illustrative — use your own classes; the point is the
+**table of boundaries**, which you derive from the milestone's acceptance criteria.
 
 ---
 
 ## 5. Nested tests
 
 ```java
-@DisplayName("Hold")
-class HoldTest {
+@DisplayName("Reservation")                            // FlowGrid M2: reservations expire
+class ReservationTest {
     private final Instant start = Instant.parse("2026-05-01T10:00:00Z");
 
     @Nested @DisplayName("when active")
     class WhenActive {
-        Hold hold = Hold.create(1L, 42L, start, Duration.ofMinutes(5));
-        Clock at4min = Clock.fixed(start.plusSeconds(240), ZoneOffset.UTC);
+        Reservation r = Reservation.create(7L, 3, start, Duration.ofMinutes(15));
+        Clock at14min = Clock.fixed(start.plus(Duration.ofMinutes(14)), ZoneOffset.UTC);
 
-        @Test void canBeConfirmed() { assertThat(hold.confirm(at4min).status()).isEqualTo(HoldStatus.CONFIRMED); }
-        @Test void isNotExpired()   { assertThat(hold.isExpired(at4min)).isFalse(); }
+        @Test void canBeAllocated() { assertThat(r.allocate(at14min).status()).isEqualTo(ReservationStatus.ALLOCATED); }
+        @Test void isNotExpired()   { assertThat(r.isExpired(at14min)).isFalse(); }
     }
 
     @Nested @DisplayName("when expired")
     class WhenExpired {
-        Hold hold = Hold.create(1L, 42L, start, Duration.ofMinutes(5));
-        Clock at5min = Clock.fixed(start.plusSeconds(300), ZoneOffset.UTC);   // boundary!
+        Reservation r = Reservation.create(7L, 3, start, Duration.ofMinutes(15));
+        Clock at15min = Clock.fixed(start.plus(Duration.ofMinutes(15)), ZoneOffset.UTC);   // boundary!
 
-        @Test void cannotBeConfirmed() {
-            assertThatThrownBy(() -> hold.confirm(at5min)).isInstanceOf(HoldExpiredException.class);
+        @Test void cannotBeAllocated() {
+            assertThatThrownBy(() -> r.allocate(at15min)).isInstanceOf(ReservationExpiredException.class);
         }
     }
 }
 ```
 
 `@Nested` classes must be non-static inner classes; outer `@BeforeEach` methods run before inner ones.
+Whether "exactly at expiry" counts as expired is a **decision** — the boundary test forces you to make it.
 
 ---
 
-## 6. Testing with files and exceptions (P1 Ledger)
+## 6. Testing with files (`@TempDir`)
 
 ```java
 @Test
-void importReportsBadRowsWithoutAbortingGoodOnes(@TempDir Path dir) throws IOException {
-    Path csv = dir.resolve("bank.csv");
-    Files.writeString(csv, """
-        date,merchant,amount
-        2026-01-03,COFFEE BAR,-4.50
-        2026-01-04,,-10.00
-        not-a-date,RENT,-900.00
+void parsesStepsAndReportsBadLineNumbers(@TempDir Path workspace) throws IOException {   // ForgeCI M1
+    Files.writeString(workspace.resolve(".forgeci.yml"), """
+        image: eclipse-temurin:21-jdk
+        steps:
+          - mvn -B verify
+          -
         """);
 
-    ImportResult result = new CsvImporter().importFile(csv);
-
-    assertThat(result.imported()).hasSize(1);
-    assertThat(result.errors())
-        .extracting(RowError::lineNumber, RowError::message)
-        .containsExactly(
-            tuple(3, "merchant is blank"),
-            tuple(4, "invalid date: not-a-date"));
+    assertThatThrownBy(() -> PipelineConfigParser.parse(workspace.resolve(".forgeci.yml")))
+        .isInstanceOf(PipelineConfigException.class)
+        .hasMessageContaining("line 4");
 }
 ```
+
+`@TempDir` gives each test a fresh directory that JUnit deletes afterwards — the same "always clean up the workspace"
+idea ForgeCI's worker must implement for real.
 
 ---
 
@@ -286,11 +298,11 @@ Test order is deterministic but **intentionally not obvious**. Never depend on i
 
 ## 8. Break it
 
-1. Make a test share a `static List` that each test adds to. Run tests individually (pass) and together (fail). Fix with an instance field.
+1. Make tests share a `static List` that each test adds to. Run tests individually (pass) and together (fail). Fix with an instance field.
 2. Reverse `assertEquals(actual, expected)` and read the misleading failure message.
 3. Write a test with no assertion. It passes. Coverage goes up. What did it prove?
-4. Replace `Clock.fixed` with `Instant.now()` in `HoldTest` and add a `Thread.sleep`. Run it 20 times (`-Dsurefire.rerunFailingTestsCount` hides flakiness — don't rely on it).
-5. Delete `maven-surefire-plugin` version pinning on an old parent → tests silently not discovered. Check `Tests run: 0`.
+4. Replace `Clock.fixed` with `Instant.now()` in `ReservationTest` and add a `Thread.sleep`. Run it with `@RepeatedTest(20)`. Why is it slow *and* unreliable?
+5. Make `Bucketing.bucket` use `String.hashCode()` with `Math.abs(h) % 10000`. Find the input class that breaks it (hint: `Integer.MIN_VALUE`). Why does FlagForge need a stable, well-distributed hash instead?
 
 ---
 
@@ -330,13 +342,14 @@ Yes, by default (PER_METHOD), which isolates instance state between tests. `@Tes
 
 <details><summary>Why parameterized tests?</summary>
 
-To cover many inputs, especially boundaries, with one test body — e.g. amount-range rules at 9.99/10.00/50.00/50.01 in my Ledger project.
+To cover many inputs, especially boundaries, with one test body — e.g. the rollout-percentage boundaries in FlagForge
+or every legal/illegal transition of FlowGrid's order state machine.
 </details>
 
-<details><summary>Why AssertJ over plain assertions?</summary>
+<details><summary>How do you test code that depends on time?</summary>
 
-Fluent, type-specific assertions (collections, optionals, exceptions, BigDecimal comparison, recursive comparison)
-with much clearer failure messages.
+Inject `java.time.Clock` and use `Clock.fixed`/an adjustable test clock, so expiry boundaries are exact and tests are
+instant and deterministic.
 </details>
 
 ---
@@ -345,7 +358,7 @@ with much clearer failure messages.
 
 - [ ] Explain the JUnit 5 lifecycle and per-method instances.
 - [ ] Write a parameterized boundary test with `@CsvSource` and `@MethodSource`.
-- [ ] Use `@Nested` + `@DisplayName` to structure a state-based test class.
-- [ ] Use `@TempDir` for file-import tests in P1.
-- [ ] Use AssertJ `extracting`, `containsExactly`, `assertThatThrownBy`, `usingRecursiveComparison`.
+- [ ] Use `@Nested` + `@DisplayName` for a state-based class (reservation, job, flag version).
+- [ ] Use `@TempDir` for a file/workspace test.
+- [ ] Use AssertJ `extracting`, `containsExactly`, `assertThatThrownBy`, `usingRecursiveComparison`, `isEqualByComparingTo`.
 - [ ] Run a single test method from Maven and from the IDE.

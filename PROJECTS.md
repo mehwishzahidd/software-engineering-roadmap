@@ -13,7 +13,7 @@
 
 1. [Why four sequential projects](#1-why-four-sequential-projects)
 2. [The four projects at a glance](#2-the-four-projects-at-a-glance)
-3. [Technology × project matrix](#3-technology--project-matrix)
+3. [Technology × project matrix](#3-technology--project-matrix) · [3a. Python engineering component per project](#3a-python-engineering-component-per-project)
 4. [The compounding plan](#4-the-compounding-plan)
 5. [Scope tiers and the scope-control rule](#5-scope-tiers-and-the-scope-control-rule)
 6. [Timeline and milestones](#6-timeline-and-milestones)
@@ -83,9 +83,38 @@ demos, issues/milestones and résumé bullets from measured results.
 | SSE (Server-Sent Events) | — | — | ● live logs, replay-from-sequence | ● streaming updates to SDKs | 16, 22 |
 | SDK / client-library design | — | — | — | ● `FlagClient`, polling, local eval, Maven artifact | 22 |
 | Load / benchmark tooling (k6, JMH) | ● k6 order-creation baseline | ● throughput measurement | ● queue wait time, jobs/min | ● p99 evaluation latency | 8, 12, 18, 21 |
+| Python 3.12 (`tools/`, pytest, type hints) | ● data generator + load/simulation harness | ● independent reconciliation verifier, data generator, consistency checker | ● test-repo generator, webhook/load simulator, log analysis | ● rollout simulator, Python SDK/test client, config linter | 1–3, then W7, W12, W18, W22–23 |
 
 Every résumé technology appears as `●` in at least one project. Nothing is on the résumé
 that no project can back up — see [`RESUME_TECH_DEFENSE.md`](./RESUME_TECH_DEFENSE.md).
+
+**Language split (ROADMAP §1, §8):** every backend stays **Java 21 / Spring Boot** — the projects
+and the résumé/software-engineering interview track (Track B) are Java. **Python** is the
+coding-interview and DSA language (Track A, ≈90% of algorithm practice) *and* the tooling language
+inside each project. The two are never mixed in an interview: algorithms in Python, systems in Java.
+
+---
+
+## 3a. Python engineering component per project
+
+Each project ships **at least one tested, documented Python component** that serves a real purpose
+inside the project — that is where practical Python experience beyond DSA comes from, and it is the
+only Python that may appear on the résumé (see [`17-resume-tech-defense/python.md`](./17-resume-tech-defense/python.md)).
+
+| Project | Python component(s) | Where | Milestone / week | Used by |
+|---|---|---|---|---|
+| **FlowGrid** | Synthetic inventory & order generator (realistic SKUs, warehouses, order mix; writes via API or SQL); load/simulation harness that drives concurrent order creation and reports latency + reservation contention | `tools/` | M4–M5 · W7–8 | k6/benchmark protocol, failure exercises, seeding the demo |
+| **LedgerX** | **Independent** reconciliation verifier (reads Postgres directly with `psycopg` + `decimal`; proves every journal sums to zero and balance == Σ entries **without trusting the Java code**); transaction-data generator; consistency checker for crash/retry exercises | `tools/` | M4 · W12 | Invariant suite, failure exercises, CP-12 |
+| **ForgeCI** | Test-repository generator (creates Git repos with `.forgeci.yml` variants: passing, failing, slow, timeout, bad config); worker/load simulator (fires HMAC-signed webhooks at a rate, measures queue wait & completion); build-result/log analysis tooling (parses persisted logs/results, reports failure-taxonomy stats) | `tools/` | M5 · W18 | Integration tests, queue benchmarks, failure suite |
+| **FlagForge** | Rollout-distribution simulator (proves `pct ± tolerance` and stickiness over N users, compares against server evaluation); minimal **Python SDK / test client** implementing the same evaluation contract (polling + ETag, defaults, offline) for cross-SDK contract tests; configuration validation tool (lints rules for overlaps / unreachable / invalid) | `tools/` + `sdk-python/` | M3–M4 · W22–23 | SDK contract tests, p99/bucketing benchmarks, dashboard validation |
+
+**Rules for every Python component**
+- It has its own `README.md`, `pytest` tests, type hints, and a `pyproject.toml` (or `requirements.txt`); `ruff`/`mypy` optional but encouraged.
+- It runs in CI (a `python` job alongside `mvn verify`) or its README says exactly why it does not.
+- It is listed in the project's `TESTING.md` or `PERFORMANCE.md` at the place it is used.
+- **Only add tooling that is actually used** by a test, a benchmark or a failure exercise. A script nobody runs is clutter, not evidence.
+- It never replaces Java where Java is the point: the backend, the SDK's primary implementation (Java), the concurrency tests inside the Spring app stay Java.
+- The Python component is part of the [definition of done](#8-definition-of-done) for the STRONG RESUME VERSION.
 
 ---
 
@@ -96,10 +125,10 @@ This is why order matters and why nothing is built in parallel.
 
 | Project | Reuses (already learned — don't re-learn, just apply faster) | Newly teaches (where the hours go) |
 |---|---|---|
-| **FlowGrid** | Foundation Java, JUnit, Maven, Git, SQL basics, the Week-3 Spring Boot intro | Everything about a production Spring Boot service: JPA + Flyway, validation and ProblemDetail errors, JWT auth and roles, pagination/filtering, OpenAPI, transactions and `FOR UPDATE` vs `@Version`, idempotency keys, Redis cache-aside, state machines, deterministic allocation, React/TS dashboard, Docker, CI, first AWS deploy, first k6 run |
-| **LedgerX** | Controllers, DTOs, validation, error handling, security, JPA mappings, Testcontainers, Docker, CI, AWS deploy — all from FlowGrid. **LedgerX does not re-teach controllers.** | Correctness under concurrency: double-entry model, DB-enforced immutability (triggers / revoked privileges, CHECK constraints), balances derived from entries + materialized balance with invariant check, idempotency store with request fingerprint and conflict detection, ordered pessimistic locking vs optimistic, isolation-level experiments, compensating transactions, cursor pagination, audit log, transactional outbox, reconciliation job, crash-between-steps fault injection, retry-after-crash tests, invariant suite |
-| **ForgeCI** | Spring Boot, Postgres, auth, testing, Docker/Compose, CI/CD, AWS — all routine by now. Idempotency (from FlowGrid M2 / LedgerX M2) is reapplied to webhook delivery IDs. State machines reapplied to builds/jobs. | **Queues, workers, containers and recovery**: reliable Redis queue (`BLMOVE` with per-worker processing list + lease, or Streams consumer groups — chosen and justified), separate worker app in a multi-module Maven repo, Docker Engine API execution with guaranteed cleanup, log chunk pipeline → Redis pub/sub → SSE with replay, per-job timeouts, cancellation of queued and running jobs, app-vs-infra failure retry policy with backoff, heartbeats, lease-expiry orphan recovery, per-project concurrency limits, graceful shutdown, DAG scheduling with topological sort, Docker-socket security |
-| **FlagForge** | Everything above. Versioned/immutable records (from LedgerX's append-only thinking). Pub/sub + SSE (from ForgeCI's live logs). Multi-tenant auth (from FlowGrid roles). | **Caching, latency, SDK and propagation**: immutable config versions with rollback-as-new-version, priority rule engine, deterministic percentage bucketing (`hash(flagKey:userKey) mod 10000`), Redis environment snapshots with invalidate-on-publish, measured p99 evaluation latency, `FlagClient` SDK (builder, polling, local snapshot, local evaluation, defaults, timeouts, stale-if-error, offline mode), contract tests against the server, Maven artifact publishing, publish → pub/sub → SSE propagation, stampede protection |
+| **FlowGrid** | Foundation Java, JUnit, Maven, Git, SQL basics, the Week-3 Spring Boot intro; Python core + `pytest` + scripting from Weeks 1–3 | Everything about a production Spring Boot service: JPA + Flyway, validation and ProblemDetail errors, JWT auth and roles, pagination/filtering, OpenAPI, transactions and `FOR UPDATE` vs `@Version`, idempotency keys, Redis cache-aside, state machines, deterministic allocation, React/TS dashboard, Docker, CI, first AWS deploy, first k6 run; Python: first real tool (data generator + load/simulation harness) |
+| **LedgerX** | Controllers, DTOs, validation, error handling, security, JPA mappings, Testcontainers, Docker, CI, AWS deploy — all from FlowGrid. **LedgerX does not re-teach controllers.** Python scripting/pytest habits from FlowGrid's generator and harness. | Correctness under concurrency: double-entry model, DB-enforced immutability (triggers / revoked privileges, CHECK constraints), balances derived from entries + materialized balance with invariant check, idempotency store with request fingerprint and conflict detection, ordered pessimistic locking vs optimistic, isolation-level experiments, compensating transactions, cursor pagination, audit log, transactional outbox, reconciliation job, crash-between-steps fault injection, retry-after-crash tests, invariant suite; Python: an **independent verifier** that reads the database directly (`psycopg`, `decimal`) |
+| **ForgeCI** | Spring Boot, Postgres, auth, testing, Docker/Compose, CI/CD, AWS — all routine by now. Idempotency (from FlowGrid M2 / LedgerX M2) is reapplied to webhook delivery IDs. State machines reapplied to builds/jobs. Python load-harness patterns from FlowGrid. | **Queues, workers, containers and recovery**: reliable Redis queue (`BLMOVE` with per-worker processing list + lease, or Streams consumer groups — chosen and justified), separate worker app in a multi-module Maven repo, Docker Engine API execution with guaranteed cleanup, log chunk pipeline → Redis pub/sub → SSE with replay, per-job timeouts, cancellation of queued and running jobs, app-vs-infra failure retry policy with backoff, heartbeats, lease-expiry orphan recovery, per-project concurrency limits, graceful shutdown, DAG scheduling with topological sort, Docker-socket security; Python: test-repo generator, signed-webhook load simulator, log/result analysis |
+| **FlagForge** | Everything above. Versioned/immutable records (from LedgerX's append-only thinking). Pub/sub + SSE (from ForgeCI's live logs). Multi-tenant auth (from FlowGrid roles). Python HTTP-client and simulation patterns from all three. | **Caching, latency, SDK and propagation**: immutable config versions with rollback-as-new-version, priority rule engine, deterministic percentage bucketing (`hash(flagKey:userKey) mod 10000`), Redis environment snapshots with invalidate-on-publish, measured p99 evaluation latency, `FlagClient` SDK (builder, polling, local snapshot, local evaluation, defaults, timeouts, stale-if-error, offline mode), contract tests against the server, Maven artifact publishing, publish → pub/sub → SSE propagation, stampede protection; Python: rollout-distribution simulator, a second (Python) SDK/test client for cross-SDK contract tests, config linter |
 
 **Practical consequence:** in LedgerX Week 9 you should scaffold entities, controllers, auth and CI
 in a day or two, not a week. If that scaffolding still takes a week, that is a FlowGrid remediation
@@ -236,6 +265,7 @@ list into each repo's final milestone issue.
 - [ ] Unit tests for domain logic; slice tests (`@WebMvcTest`, `@DataJpaTest`) where useful; integration tests on Testcontainers
 - [ ] `mvn verify` is green in GitHub Actions on `main`; the badge is in the README
 - [ ] Failure-engineering exercises from `failure-engineering.md` are completed and each has a regression test or a documented design-around
+- [ ] The project's **Python component** (§3a) exists in `tools/` (and `sdk-python/` for FlagForge), has `pytest` tests passing, type hints, a README, and is referenced from TESTING.md or PERFORMANCE.md where it is used
 
 **Deployment**
 - [ ] Deployed to AWS at least once with a documented, reproducible procedure (DEPLOYMENT.md), including IAM least privilege and CloudWatch logs
@@ -273,6 +303,7 @@ or interviewer will open. Standard for every project:
 | `docs/SECURITY.md` | Auth model, roles, secrets, input validation, threat notes (e.g. Docker socket in ForgeCI, SDK keys in FlagForge) | **Always** (short is fine) |
 | `docs/DESIGN_DECISIONS.md` | Index of ADRs ([template](./18-projects/templates/adr.md)) | **Always** |
 | `docs/PERFORMANCE.md` | Benchmark reports ([template](./18-projects/templates/benchmark-report.md)) | **Only if meaningful** — only with a real measured result. An empty or speculative PERFORMANCE.md is worse than none. |
+| `tools/README.md` (and `sdk-python/README.md`) | What each Python tool does, how to install/run it (`python -m …`), how to run its `pytest` suite, which test/benchmark/exercise uses it | **Always** (§3a) |
 
 **"Only if meaningful" rule:** every document must say something that is true about *this* repo.
 A generic SECURITY.md copied between projects, or a PERFORMANCE.md with "should handle thousands
@@ -284,7 +315,7 @@ of requests", is a red flag to an experienced reader. Shorter and true beats lon
 - [ ] ERD (Mermaid `erDiagram` or an exported image) in DATABASE.md
 - [ ] OpenAPI spec (springdoc-generated; commit a snapshot at `docs/openapi.yaml` or document the `/v3/api-docs` URL)
 - [ ] `Dockerfile` (multi-stage) and `compose.yaml` that run the full stack
-- [ ] Tests visible and runnable: `mvn verify` (backend), `npm test` (frontend where present)
+- [ ] Tests visible and runnable: `mvn verify` (backend), `npm test` (frontend where present), `pytest` (Python tools)
 - [ ] GitHub Actions workflow(s) in `.github/workflows/`; green badge on README
 - [ ] `.env.example` with every environment variable, no real secrets ever committed
 - [ ] Screenshots and/or a short demo GIF/video in README (dashboard, live logs, rules editor)

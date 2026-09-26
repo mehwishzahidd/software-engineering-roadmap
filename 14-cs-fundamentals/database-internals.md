@@ -1,7 +1,8 @@
-# Database Internals (Weeks 7–8, revisited Week 22)
+# Database Internals (Week 9; locking from Week 5, indexes from Week 6)
 
 > **Practical use:** predict whether a query will use an index before running `EXPLAIN`, understand
-> why P2's optimistic locking works, why Postgres tables bloat, and what a read replica can and can't do for P4.
+> why FlowGrid's reservation locking works, why LedgerX's append-only ledger is cheap for MVCC, why
+> Postgres tables bloat, and what a read replica can and can't do.
 > **Interview use:** "How does an index work?", "What is MVCC?", "What's a WAL?", "Why isn't my index used?"
 
 SQL usage lives in [`04-sql-databases/`](../04-sql-databases/README.md) — especially
@@ -20,7 +21,7 @@ Examples are PostgreSQL 16.
 - Large values (long text/JSON) are moved out of line (**TOAST**) automatically.
 
 ```sql
-SELECT ctid, id, name FROM monitors LIMIT 3;   -- see physical row addresses
+SELECT ctid, id, code FROM skus LIMIT 3;   -- see physical row addresses
 ```
 
 ---
@@ -46,15 +47,15 @@ A **B+tree** is a balanced tree with a **high fan-out** (hundreds of keys per 8 
 
 ### Composite indexes — leftmost prefix rule
 
-Index on `check_results(monitor_id, checked_at)` is sorted by `monitor_id`, then by `checked_at` within each monitor:
+Index on `ledger_entries(account_id, created_at)` is sorted by `account_id`, then by `created_at` within each account:
 
 | Query | Uses index well? | Why |
 |---|---|---|
-| `WHERE monitor_id = 42` | ✅ | Leftmost column |
-| `WHERE monitor_id = 42 AND checked_at > now() - interval '1 day'` | ✅ | Equality then range — ideal |
-| `WHERE monitor_id = 42 ORDER BY checked_at DESC LIMIT 50` | ✅✅ | Reads 50 entries backwards, **no sort** — P4's status-page query |
-| `WHERE checked_at > now() - interval '1 day'` | ❌ (mostly) | Not a leftmost prefix |
-| `WHERE monitor_id IN (1,2,3) ORDER BY checked_at` | Partly | Needs a merge/sort across monitors |
+| `WHERE account_id = 42` | ✅ | Leftmost column |
+| `WHERE account_id = 42 AND created_at > now() - interval '30 days'` | ✅ | Equality then range — ideal |
+| `WHERE account_id = 42 ORDER BY created_at DESC LIMIT 50` | ✅✅ | Reads 50 entries backwards, **no sort** — LedgerX's account-history page (add `id` as a tie-breaker for cursor pagination) |
+| `WHERE created_at > now() - interval '1 day'` | ❌ (mostly) | Not a leftmost prefix |
+| `WHERE account_id IN (1,2,3) ORDER BY created_at` | Partly | Needs a merge/sort across accounts |
 
 Rule of thumb for column order: **equality columns first, then range/sort column**.
 
@@ -62,11 +63,11 @@ Rule of thumb for column order: **equality columns first, then range/sort column
 
 | Kind | Use |
 |---|---|
-| **Unique index** | Enforces uniqueness (P1 dedupe, P2 one active hold per seat) |
+| **Unique index** | Enforces uniqueness (ForgeCI webhook dedupe on the delivery ID, idempotency keys in FlowGrid/LedgerX) |
 | **Partial index** | `CREATE INDEX … WHERE status = 'OPEN'` — smaller, targets hot subset |
 | **Covering index** (`INCLUDE`) | Adds columns so the query is answered from the index alone (**index-only scan**) |
 | **Expression index** | `CREATE INDEX ON users (lower(email))` for `WHERE lower(email) = ?` |
-| **GIN** | Full-text search, JSONB containment, arrays (P3 issue search) |
+| **GIN** | Full-text search, JSONB containment, arrays (FlowGrid product search if `ILIKE` becomes too slow; FlagForge rule JSON) |
 | **BRIN** | Huge append-only tables ordered by time — tiny index |
 | **Hash** | Equality only |
 
@@ -112,9 +113,9 @@ truth" is a recurring system-design theme.
 started (or before each statement, depending on isolation level).
 
 ```
- tuple versions for seat 17          xmin (created by)   xmax (deleted by)
- v1: status=FREE,  version=3          tx 100               tx 205
- v2: status=HELD,  version=4          tx 205               –
+ inventory_level (sku 17, wh 2)          xmin (created by)   xmax (deleted by)
+ v1: available=5, reserved=0, version=3   tx 100               tx 205
+ v2: available=4, reserved=1, version=4   tx 205               –
  Tx 204 (snapshot before 205 committed) still sees v1. Tx 206 sees v2.
 ```
 
@@ -129,17 +130,19 @@ Consequences:
 | Repeatable Read | One snapshot **per transaction** | + non-repeatable reads, phantoms (in PG) | Concurrent update of same row → serialization error, retry |
 | Serializable | + dependency tracking (SSI) | All anomalies incl. write skew | Retries required on `40001` errors |
 
-### Locking strategies for "two users, one seat" (P2)
+### Locking strategies for "two orders, last unit" (FlowGrid M2) and "two transfers, one balance" (LedgerX M2)
 
 | Strategy | SQL | Behaviour |
 |---|---|---|
-| **Optimistic** (`@Version`) | `UPDATE seats SET status='HELD', version=version+1 WHERE id=? AND version=?` | No lock held while thinking; 0 rows updated ⇒ conflict ⇒ `OptimisticLockException` → 409 |
-| **Pessimistic** | `SELECT … FROM seats WHERE id=? FOR UPDATE` | Second transaction **waits** for the first to commit |
-| **Constraint** | Unique partial index on active holds per seat | Second `INSERT` fails with unique violation |
-| **Atomic conditional update** | `UPDATE seats SET status='HELD' WHERE id=? AND status='FREE'` | Check-and-act in one statement; row count tells you who won |
+| **Optimistic** (`@Version`) | `UPDATE inventory_levels SET available=available-1, reserved=reserved+1, version=version+1 WHERE id=? AND version=?` | No lock held while thinking; 0 rows updated ⇒ conflict ⇒ `OptimisticLockException` → 409 |
+| **Pessimistic** | `SELECT … FROM inventory_levels WHERE sku_id=? AND warehouse_id=? FOR UPDATE` | Second transaction **waits** for the first to commit |
+| **Constraint** | `CHECK (available >= 0)`; unique index on idempotency keys | The losing statement fails instead of corrupting data |
+| **Atomic conditional update** | `UPDATE inventory_levels SET available=available-?, reserved=reserved+? WHERE id=? AND available>=?` | Check-and-act in one statement; row count tells you who won |
 
 Optimistic fits low contention and short user flows; pessimistic fits high contention on hot rows
-(but hold locks briefly). Constraints are your last line of defence regardless.
+(but hold locks briefly). Constraints are your last line of defence regardless. When one transaction
+must lock **several** rows (LedgerX: debit account A, credit account B), always lock them in a fixed
+order (e.g. ascending account id) — otherwise two opposite transfers deadlock ([concurrency.md §5](./concurrency.md#5-deadlock)).
 
 ---
 
@@ -161,16 +164,16 @@ using **statistics** (row counts, value distributions, `n_distinct`, histograms)
 
 ```sql
 EXPLAIN (ANALYZE, BUFFERS)
-SELECT checked_at, status, latency_ms
-FROM check_results
-WHERE monitor_id = 42
-ORDER BY checked_at DESC
+SELECT id, created_at, direction, amount
+FROM ledger_entries
+WHERE account_id = 42
+ORDER BY created_at DESC, id DESC
 LIMIT 50;
 ```
 
 Read it bottom-up / inside-out. Compare **estimated rows vs actual rows** — big mismatches mean bad
-statistics or correlated columns. `BUFFERS` shows `shared hit` (cache) vs `read` (disk). P4 Week 22
-evidence: before/after plans for the composite index go into your README.
+statistics or correlated columns. `BUFFERS` shows `shared hit` (cache) vs `read` (disk). Evidence:
+before/after plans for each index you add go into the project's `DATABASE.md` / `PERFORMANCE.md`.
 
 ---
 
@@ -196,15 +199,15 @@ App ───────────────► Primary ──────�
 | **Streaming replication** | Replicas apply the primary's WAL continuously |
 | **Asynchronous** | Primary commits without waiting → replicas **lag** (ms–s); failover can lose the last few transactions |
 | **Synchronous** | Primary waits for replica ack → no loss, higher write latency (RDS Multi-AZ standby) |
-| **Read replica** | Serve reads (status page, reports) to offload the primary |
-| **Replication lag** | Read-your-own-writes problem: user creates a monitor, next page reads from replica, monitor "missing" → route that user's reads to the primary for a while |
+| **Read replica** | Serve reads (dashboards, reports, history pages) to offload the primary |
+| **Replication lag** | Read-your-own-writes problem: user creates an order, next page reads from a replica, order "missing" → route that user's reads to the primary for a while |
 | **Failover** | Promote a replica to primary; clients reconnect via DNS/endpoint |
 | **Logical replication** | Row-change level; for upgrades, CDC, selective tables |
 
 Replication gives **availability and read scaling, not write scaling**. Writes scale via
 **sharding/partitioning** (see [`15-system-design/scalability.md`](../15-system-design/scalability.md)).
-Postgres **table partitioning** (e.g. `check_results` by month) is a single-node technique that makes
-retention cleanup a cheap `DROP TABLE` of an old partition — a nice P4 follow-up.
+Postgres **table partitioning** (e.g. ForgeCI's log chunks by month) is a single-node technique that
+makes retention cleanup a cheap `DROP TABLE` of an old partition — a nice ForgeCI follow-up.
 
 ---
 
@@ -218,8 +221,8 @@ retention cleanup a cheap `DROP TABLE` of an old partition — a nice P4 follow-
 
 ## 9. Break → Debug drills
 
-- [ ] Insert 1 M rows into `check_results`; `EXPLAIN ANALYZE` the status query before/after the composite index; record timings.
-- [ ] Create the index as `(checked_at, monitor_id)` instead; explain why the plan got worse.
+- [ ] Generate 1 M rows into LedgerX's `ledger_entries` (your Python data generator); `EXPLAIN ANALYZE` the history query before/after the composite index; record timings and environment.
+- [ ] Create the index as `(created_at, account_id)` instead; explain why the plan got worse.
 - [ ] Open two `psql` sessions: `BEGIN; SELECT … FOR UPDATE` in one, try to update the same row in the other — observe the wait.
 - [ ] Two sessions updating two rows in opposite order → `ERROR: deadlock detected`.
 - [ ] Leave a transaction open, update rows in a loop from another session, check dead tuples in `pg_stat_user_tables.n_dead_tup`.

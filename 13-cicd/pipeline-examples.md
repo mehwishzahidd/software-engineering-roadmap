@@ -1,153 +1,25 @@
-# Pipeline Examples — P1/P2, P3, P4
+# Pipeline Examples — FlowGrid, ForgeCI, deploy
 
-> Complete workflows you can drop into `.github/workflows/`. Read them line by line; every line is
-> explained in [github-actions.md](./github-actions.md). Adjust paths to your actual repo layout.
+> Complete workflows you can drop into `.github/workflows/`. **Pipelines are infrastructure, not the
+> project's engineering problem**, so full YAML is given here — but read every line; each is explained
+> in [github-actions.md](./github-actions.md). Adjust paths to your actual repo layout.
 
 ← [GitHub Actions](./github-actions.md) · [CI/CD README](./README.md)
 
-| # | Project | Week | File |
+| # | Workflow | Week | File |
 |---|---|---|---|
-| 1a | P1 Ledger | 8 (optional) | `.github/workflows/ci.yml` — `mvn verify` with a Postgres service container |
-| 1b | P2 TicketHold | 12 | `.github/workflows/ci.yml` — `mvn verify` with Testcontainers |
-| 2 | P3 TeamBoard | 17–18 | `.github/workflows/ci.yml` — backend + frontend jobs |
-| 3 | P4 FlowGrid | 22 | `.github/workflows/cicd.yml` — test → image → push → deploy → verify, plus `rollback.yml` |
+| 1 | FlowGrid CI — backend `mvn verify` + frontend lint/test/build | 4 (backend), 7 (frontend job added) | `.github/workflows/ci.yml` |
+| 2 | ForgeCI — multi-module (api + worker) test, then build & push both images | 18 | `.github/workflows/ci.yml` |
+| 3 | Deploy job — FlowGrid to EC2 with health gate and rollback (+ SSH variant, manual rollback, ForgeCI ordering) | 8, 18–19 | `.github/workflows/deploy.yml`, `rollback.yml` |
 
-Action versions below are the current majors at the time of writing; check each action's README
-(and let Dependabot bump them).
-
----
-
-## 1. P1 / P2 — `mvn verify`
-
-### 1a. P1 Ledger (JDBC integration test against a Postgres service)
-
-P1's integration test reads `DB_URL`, `DB_USER`, `DB_PASSWORD` from the environment (M4).
-
-```yaml
-name: CI
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_DB: ledger_test
-          POSTGRES_USER: ledger
-          POSTGRES_PASSWORD: ledger
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd "pg_isready -U ledger -d ledger_test"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    env:
-      DB_URL: jdbc:postgresql://localhost:5432/ledger_test
-      DB_USER: ledger
-      DB_PASSWORD: ledger
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Apply schema
-        run: psql "postgresql://ledger:ledger@localhost:5432/ledger_test" -v ON_ERROR_STOP=1 -f schema.sql
-
-      - name: Build and test
-        run: mvn -B -ntp verify
-
-      - name: Upload test reports
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: target/surefire-reports/
-          retention-days: 7
-```
-
-### 1b. P2 TicketHold (Testcontainers — no `services:` needed)
-
-```yaml
-name: CI
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
-
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-
-      - name: Build, unit + integration tests (Testcontainers uses the runner's Docker)
-        run: mvn -B -ntp verify
-
-      - name: Upload test reports
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-reports
-          path: |
-            target/surefire-reports/
-            target/failsafe-reports/
-          retention-days: 7
-
-      - name: Build Docker image (smoke — not pushed)
-        run: docker build -t tickethold:${{ github.sha }} .
-```
-
-Then: Settings → Branches → add a rule (or ruleset) for `main`: require PR + require status check
-`verify`. Add the badge to your README:
-
-```markdown
-![CI](https://github.com/<owner>/tickethold/actions/workflows/ci.yml/badge.svg)
-```
-
-If you use the Maven Wrapper (`./mvnw`), make sure it's executable in Git:
-`git update-index --chmod=+x mvnw` — otherwise CI fails with `Permission denied`.
+LedgerX (W9–13) and FlagForge (W20–23) reuse #1 and #3 almost unchanged — FlagForge adds its SDK module to the Maven build.
+Action versions below are current majors at the time of writing; check each action's README and let Dependabot bump them.
 
 ---
 
-## 2. P3 TeamBoard — backend + frontend jobs
+## 1. FlowGrid CI — backend + frontend
 
-Assumed layout: `backend/` (Maven, Spring Boot) and `frontend/` (Vite + React + TS) with these
-`package.json` scripts:
+Assumed layout: Maven project at the repo root (Spring Boot), React + TS (Vite) in `frontend/` with these scripts:
 
 ```json
 {
@@ -180,25 +52,29 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
-          cache-dependency-path: backend/pom.xml
-      - run: mvn -B -ntp verify
-      - if: failure()
+
+      - name: Build, unit + integration tests (Testcontainers uses the runner's Docker)
+        run: mvn -B -ntp verify
+
+      - name: Upload test reports
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-reports
-          path: backend/target/surefire-reports/
+          path: |
+            target/surefire-reports/
+            target/failsafe-reports/
+          retention-days: 7
 
-  frontend:
+  frontend:                                   # added in Week 7 with the dashboard
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -211,7 +87,7 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Install (exactly what the lockfile says)
+      - name: Install exactly what the lockfile says
         run: npm ci
       - name: Lint
         run: npm run lint
@@ -219,41 +95,171 @@ jobs:
         run: npm test -- --run
       - name: Type-check and build
         run: npm run build
-      - uses: actions/upload-artifact@v4
-        with:
-          name: frontend-dist
-          path: frontend/dist/
-          retention-days: 3
 ```
 
 Notes:
-- `defaults.run.working-directory` applies to `run:` steps only — `uses:` steps need explicit paths
-  (hence `cache-dependency-path` and the artifact `path`).
+- Week 4 starts with only the `backend` job; M1 has no Testcontainers yet, so `mvn verify` runs unit + slice tests. From M2 (Week 5) the N-threads-one-unit reservation test runs against a real Postgres via Testcontainers — no `services:` block needed on `ubuntu-latest`.
+- `defaults.run.working-directory` applies to `run:` steps only — `uses:` steps need explicit paths (hence `cache-dependency-path`).
 - `npm ci` fails if `package.json` and `package-lock.json` disagree — that's a feature. Commit the lockfile.
-- `vitest` without `--run` starts watch mode locally; in CI it detects `CI=true` and runs once anyway, but being explicit is clearer.
-- Both jobs run in parallel; require **both** status checks on `main`.
-- Optional third job: `needs: [backend, frontend]` → `docker compose build` to prove the full stack builds.
+- `vitest` without `--run` watches locally; in CI it detects `CI=true` and runs once anyway, but explicit is clearer.
+- Require **both** status checks (`backend`, `frontend`) on `main` via branch protection or a ruleset. Add a badge:
+  `![CI](https://github.com/<owner>/flowgrid/actions/workflows/ci.yml/badge.svg)`
+- Maven Wrapper? Make it executable in Git: `git update-index --chmod=+x mvnw`.
+- A **flaky concurrency test** in CI is a bug report, not bad luck: see [`14-cs-fundamentals/concurrency.md` §9](../14-cs-fundamentals/concurrency.md#9-testing-concurrent-code).
 
 ---
 
-## 3. P4 FlowGrid — build → test → image → deploy
+## 2. ForgeCI — multi-module test, then build & push api + worker images
 
-Assumed layout:
+Assumed layout (one repo, one parent POM):
 
 ```
-pom.xml                  (parent: modules common, api, worker)
-api/Dockerfile           (multi-stage; build context = repo root)
-worker/Dockerfile
-frontend/                (status dashboard) + frontend/Dockerfile (node build → nginx with dist + nginx.conf)
-deploy/compose.prod.yml
-deploy/deploy.sh         (copied to /opt/flowgrid on the instance once)
+pom.xml                      <modules>common, api, worker</modules>
+common/                      shared DTOs, job/step model, queue key names
+api/     Dockerfile          webhooks, REST, SSE
+worker/  Dockerfile          queue consumer, Docker Engine API client
+ui/      Dockerfile          React build → nginx
 ```
 
-The deploy walkthrough mounted `frontend-dist` into nginx; in the pipeline the frontend becomes its
-own image `flowgrid-web`, so the `nginx` service in `compose.prod.yml` becomes
-`image: ghcr.io/<owner>/flowgrid-web:${IMAGE_TAG}`.
+Module-aware Dockerfile build stage (the only interesting line for multi-module is `-pl … -am`):
 
-### 3a. Server-side `deploy/deploy.sh` (health gate + automatic rollback)
+```dockerfile
+FROM maven:3.9-eclipse-temurin-21 AS build
+WORKDIR /src
+COPY . .
+RUN mvn -B -ntp -pl worker -am package -DskipTests   # build worker + the modules it depends on
+
+FROM eclipse-temurin:21-jre
+COPY --from=build /src/worker/target/worker-*.jar /app/app.jar
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+```
+
+(Copy the POMs first and run `mvn dependency:go-offline` in a separate layer if build time matters — [`11-docker/dockerfiles.md`](../11-docker/dockerfiles.md).)
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: All modules — unit, integration (Testcontainers Postgres + Redis), worker Docker tests
+        run: mvn -B -ntp verify
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: '**/target/*-reports/'
+          retention-days: 7
+
+  ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test -- --run
+      - run: npm run build
+
+  images:
+    needs: [test, ui]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - component: api
+            context: .
+            dockerfile: api/Dockerfile
+          - component: worker
+            context: .
+            dockerfile: worker/Dockerfile
+          - component: ui
+            context: ui
+            dockerfile: ui/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase owner (GHCR requires lowercase names)
+        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/forgeci-${{ matrix.component }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.OWNER }}/forgeci-${{ matrix.component }}:main
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+```
+
+Why this shape:
+- **Test once at the root** (`mvn verify` builds modules in dependency order), then build images — never publish an image from an untested commit.
+- **Same SHA tag for every component** → a deploy is "run version `abc123` of everything"; mixing api `abc123` with worker `def456` is how queue-message format mismatches happen.
+- **Matrix = parallel image builds**, each with its own BuildKit cache scope.
+- Worker tests that start real containers work on `ubuntu-latest` because the runner has a Docker daemon. They'd fail on a runner without one — note it in `TESTING.md`.
+- Path filters (`paths: ['worker/**', 'common/**']`) can skip unaffected images later; start without them — correctness first.
+- FlowGrid's image job (Week 8) is the same matrix with two entries: `api` (context `.`) and `ui` (context `frontend`).
+
+---
+
+## 3. Deploy job — FlowGrid to EC2 with health gate and rollback
+
+### 3a. Server-side `deploy.sh` (health gate + automatic rollback)
+
+Lives in the repo (`deploy/deploy.sh`), copied once to `/opt/flowgrid/` on the instance (see
+[`12-aws/deploy-walkthrough.md`](../12-aws/deploy-walkthrough.md)). Deploying a different tag = editing `IMAGE_TAG` in `.env`.
 
 ```bash
 #!/usr/bin/env bash
@@ -279,11 +285,10 @@ healthy() {
 
 echo "Deploying $NEW_TAG (previous: $PREV_TAG)"
 set_tag "$NEW_TAG"
-$COMPOSE pull api worker nginx
+$COMPOSE pull api ui
 $COMPOSE up -d --remove-orphans
 
 if healthy; then
-  echo "$PREV_TAG" > .previous_tag
   docker image prune -f >/dev/null
   echo "Deploy OK: $NEW_TAG"
   exit 0
@@ -297,118 +302,34 @@ healthy && echo "Rollback OK" >&2 || echo "ROLLBACK ALSO UNHEALTHY — manual ac
 exit 1
 ```
 
+It assumes nginx (the `ui` container) proxies `/actuator/health` to the API — or change the URL to
+`http://localhost:8080/...` if you publish the API port on the host's loopback only.
+
 One-time on the instance: `docker login ghcr.io` with a `read:packages` token (or make packages
-public), put `IMAGE_TAG=` in `.env`, `chmod +x deploy.sh`.
+public), `IMAGE_TAG=` line in `.env`, `chmod +x deploy.sh`.
 
 Rollback caveat: this restores **code**, not the **database**. If the new version ran a Flyway
 migration, the old version must still work on the new schema → expand/contract migrations
 ([README §7](./README.md#7-rollbacks)).
 
-### 3b. `.github/workflows/cicd.yml`
+### 3b. `.github/workflows/deploy.yml` (runs after CI succeeds on `main`)
 
 ```yaml
-name: FlowGrid CI/CD
+name: Deploy
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
 
 permissions:
   contents: read
-
-env:
-  REGISTRY: ghcr.io
+  id-token: write              # OIDC → AWS
 
 jobs:
-  backend-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '21'
-          cache: maven
-      - name: Unit + integration tests (Testcontainers Postgres + Redis)
-        run: mvn -B -ntp verify
-      - if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-test-reports
-          path: '**/target/surefire-reports/'
-
-  frontend-test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
-      - run: npm run lint
-      - run: npm test -- --run
-      - run: npm run build
-
-  images:
-    needs: [backend-test, frontend-test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    permissions:
-      contents: read
-      packages: write
-    strategy:
-      matrix:
-        include:
-          - component: api
-            dockerfile: api/Dockerfile
-            context: .
-          - component: worker
-            dockerfile: worker/Dockerfile
-            context: .
-          - component: web
-            dockerfile: frontend/Dockerfile
-            context: frontend
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Lowercase owner (GHCR requires lowercase names)
-        run: echo "OWNER=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_ENV"
-
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/flowgrid-${{ matrix.component }}:${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ env.OWNER }}/flowgrid-${{ matrix.component }}:main
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-          cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
-
   deploy:
-    needs: images
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -417,11 +338,8 @@ jobs:
     concurrency:
       group: deploy-production
       cancel-in-progress: false
-    permissions:
-      contents: read
-      id-token: write            # OIDC → AWS
     env:
-      TAG: ${{ github.sha }}
+      TAG: ${{ github.event.workflow_run.head_sha }}   # the commit CI tested and the images were tagged with
       INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
     steps:
       - uses: aws-actions/configure-aws-credentials@v4
@@ -465,31 +383,36 @@ jobs:
         run: echo "Deployed \`$TAG\` → ${{ vars.PUBLIC_HOST }} (${{ job.status }})" >> "$GITHUB_STEP_SUMMARY"
 ```
 
-Setup for this workflow:
+Why `workflow_run`: the deploy workflow starts only after the `CI` workflow (which pushed the images)
+finished successfully on `main`, and it deploys exactly the SHA CI tested. (Alternative: put the
+`deploy` job at the end of `ci.yml` with `needs: images` and `TAG: ${{ github.sha }}` — simpler, one file.
+Either is fine; be able to explain your choice.) `workflow_run` only fires for workflow files on the
+default branch.
+
+Setup:
 
 | Where | Name | Value |
 |---|---|---|
-| Environment `production` → protection | Required reviewers | You |
+| Environment `production` → protection | Required reviewers | You (continuous delivery); remove for continuous deployment |
 | Environment `production` → secrets | `AWS_DEPLOY_ROLE_ARN` | Role from [github-actions.md §10](./github-actions.md#oidc-to-aws) |
 | Environment `production` → variables | `EC2_INSTANCE_ID`, `PUBLIC_HOST` | `i-0abc…`, public IP/DNS |
-| AWS deploy role policy | `ssm:SendCommand` | on the instance ARN **and** `arn:aws:ssm:eu-west-1::document/AWS-RunShellScript` |
-| AWS deploy role policy | `ssm:GetCommandInvocation` | `*` (no resource-level support) |
+| Deploy role policy | `ssm:SendCommand` | On the instance ARN **and** `arn:aws:ssm:eu-west-1::document/AWS-RunShellScript` |
+| Deploy role policy | `ssm:GetCommandInvocation` | `*` (no resource-level support) |
 | EC2 instance role | `AmazonSSMManagedInstanceCore` | So the SSM agent can receive commands ([iam.md](../12-aws/iam.md#43-create-it-with-the-cli)) |
 
 ### 3c. SSH alternative to the SSM step
 
-Simpler to understand, but port 22 must be reachable from GitHub-hosted runners, whose IP ranges
-are large and change — in practice that means opening 22 widely (key-only auth, but still a larger
-attack surface). SSM + OIDC avoids both the open port and the stored key; that trade-off is a good
-interview answer.
+Simpler to understand, but port 22 must be reachable from GitHub-hosted runners, whose IP ranges are
+large and change — in practice that means opening 22 widely (key-only auth, but a bigger attack
+surface). SSM + OIDC avoids both the open port and the stored key — a good interview trade-off answer.
 
 ```yaml
       - name: Deploy over SSH
         env:
           SSH_KEY: ${{ secrets.EC2_SSH_KEY }}           # private key of a dedicated deploy key pair
-          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}   # from: ssh-keyscan -t ed25519 <host> (verify fingerprint!)
+          KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}   # from: ssh-keyscan -t ed25519 <host> (verify the fingerprint!)
           HOST: ${{ vars.PUBLIC_HOST }}
-          TAG: ${{ github.sha }}
+          TAG: ${{ github.event.workflow_run.head_sha }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
@@ -508,7 +431,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag (git SHA) to deploy'
+        description: 'Image tag (full git SHA) to deploy'
         required: true
         type: string
 
@@ -547,8 +470,18 @@ jobs:
           echo "Status: $S"; [ "$S" = Success ]
 ```
 
-The tag validation matters: `inputs.tag` ends up inside a shell command on your server, so it
-must not be able to contain `;` or `$(...)`.
+The tag validation matters: `inputs.tag` ends up inside a shell command on your server, so it must
+not be able to contain `;` or `$(...)`.
+
+### 3e. ForgeCI deploy ordering (Week 18–19)
+
+Same building blocks, two targets:
+
+1. **API instance first** (runs Flyway migrations; new schema must be backward compatible with the running workers).
+2. **Workers second**, one at a time: send the worker a graceful-shutdown signal (SIGTERM → stop taking jobs, finish or release leases), wait, pull the new tag, start. In the workflow this is a second job `deploy-workers: needs: deploy-api` that loops over worker instance IDs (an SSM `--targets Key=tag:role,Values=forgeci-worker` call with `--max-concurrency 1` does the same in one command).
+3. **Verify end to end**: push a commit to a test repo → webhook → job runs on the new worker → logs stream in the UI. That's your post-deploy smoke test.
+
+- [ ] Document in `DEPLOYMENT.md` what happens to a build that is running when its worker is redeployed (it should finish, or be re-queued via lease expiry — never silently lost).
 
 ---
 
@@ -558,33 +491,33 @@ must not be able to contain `;` or `$(...)`.
 |---|---|---|
 | `./mvnw: Permission denied` | Wrapper not executable in Git | `git update-index --chmod=+x mvnw` |
 | `release version 21 not supported` | Wrong JDK on runner | `setup-java` with `java-version: '21'` before Maven |
-| Tests pass locally, fail in CI with `Connection refused localhost:5432` | Test expects a local Postgres | Service container or Testcontainers |
-| `Could not find a valid Docker environment` (Testcontainers) | Runner without Docker (e.g. macOS runner, or job in a container) | Use `ubuntu-latest` |
-| `npm ci` → `package-lock.json ... not in sync` | Lockfile not updated/committed | `npm install` locally, commit lockfile |
+| Tests pass locally, fail in CI with `Connection refused localhost:5432` | Test expects a locally running Postgres | Testcontainers (or a `services:` container) |
+| `Could not find a valid Docker environment` (Testcontainers / ForgeCI worker tests) | Runner without Docker (macOS runner, or job inside a `container:`) | Use `ubuntu-latest` |
+| Multi-module: `Could not resolve dependencies ... forgeci-common` | Building one module without its siblings | `mvn -pl worker -am ...` or build from the root |
+| `npm ci` → `package-lock.json ... not in sync` | Lockfile not updated/committed | `npm install` locally, commit the lockfile |
 | `Cannot find module` only in CI | Case-sensitive filesystem (`./Button` vs `button.tsx`) | Fix the import casing |
-| Some cache "Cache not found" | First run or key changed | Normal; second run is faster |
-| `denied: permission_denied: write_package` | Missing `packages: write` or package not linked to repo | Add permission; package settings → manage Actions access |
+| `denied: permission_denied: write_package` | Missing `packages: write`, or package not linked to the repo | Add the permission; package settings → manage Actions access |
 | `invalid reference format: repository name must be lowercase` | Owner has uppercase letters | `${GITHUB_REPOSITORY_OWNER,,}` |
-| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` doesn't match (branch vs environment), missing `id-token: write` | Print the claim format; match `repo:owner/repo:environment:production` |
-| `Credentials could not be loaded` | Forgot `id-token: write` at job level when `permissions` is set per job | Add it |
-| SSM status `Failed`, stdout shows `docker: permission denied` | Ran as root/ssm-user without group or login | `sudo -iu ec2-user` |
-| SSM command stuck `Pending` | Instance's SSM agent offline / missing role policy | Check Fleet Manager; attach `AmazonSSMManagedInstanceCore` |
-| Deploy "succeeds" but site serves old version | Tag not changed / `pull` skipped / browser cache | Check `docker compose ps` image digests; `.env` IMAGE_TAG |
-| Health check times out, rolls back | Missing env var, DB SG, Flyway failure | `docker compose logs api` / CloudWatch `/flowgrid/api` |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | Trust policy `sub` doesn't match (branch vs environment), or missing `id-token: write` | Match `repo:<owner>/<repo>:environment:production` |
+| Deploy workflow never starts | `workflow_run` file not on the default branch, or `workflows:` name ≠ the CI workflow's `name:` | Check both |
+| SSM status `Failed`, stdout shows `docker: permission denied` | Ran as root/ssm-user without the docker group | `sudo -iu ec2-user` |
+| SSM command stuck `Pending` | Instance's SSM agent offline / missing role policy | Fleet Manager; attach `AmazonSSMManagedInstanceCore` |
+| Deploy "succeeds" but the old version is served | Tag unchanged / `pull` skipped / browser cached `index.html` | `docker compose ps` image digests; `.env`; `Cache-Control: no-cache` on `index.html` |
+| Health check times out, rolls back | Missing env var, DB security group, Flyway failure | `docker compose logs api` / CloudWatch `/flowgrid/api` |
 | `exec format error` on EC2 | Image built for arm64, instance is x86_64 (or vice versa) | `platforms: linux/amd64` |
-| Workflow doesn't trigger | YAML in wrong folder, branch filter, or `workflow_dispatch` not on default branch | `.github/workflows/`, check `on:` |
-| Deploy job skipped | `if:` false on PRs (intended), or a `needs` job failed/skipped | Check the graph view |
+| Flaky concurrency test | Real race in code or test (shared state, missing latch, timing assumptions) | Reproduce with `@RepeatedTest`; never "retry until green" |
 
 Debugging order: **read the first error, not the last** (later errors cascade) → reproduce the exact
-command locally in a clean container → enable debug logging → add a temporary diagnostic step
-(`java -version`, `ls -la`, `env | sort` — never print secrets).
+command locally in a clean container (`docker run --rm -it -v "$PWD":/w -w /w maven:3.9-eclipse-temurin-21 mvn -B verify`)
+→ enable debug logging → add a temporary diagnostic step (`java -version`, `ls -la`, `env | sort` — never print secrets).
 
 ---
 
-## 5. Break → Debug drills (Week 22)
+## 5. Break → Debug drills
 
-- [ ] Commit a failing unit test on a branch → PR blocked → fix
-- [ ] Remove `packages: write` → push to `main` fails at image push → restore
-- [ ] Set a wrong `SPRING_DATASOURCE_URL` on the server → deploy rolls back automatically → read logs → fix
-- [ ] Change the OIDC trust `sub` to another environment name → `AssumeRoleWithWebIdentity` denied → fix
-- [ ] Run `rollback.yml` with the previous SHA and confirm via `docker compose ps`
+- [ ] Commit a failing unit test on a branch → PR blocked → fix (Week 4)
+- [ ] Remove `packages: write` → image push fails on `main` → restore (Week 8)
+- [ ] Put a wrong `DB_PASSWORD` in the server `.env` → deploy rolls back automatically → read the logs → fix (Week 8)
+- [ ] Change the OIDC trust `sub` to another environment name → `AssumeRoleWithWebIdentity` denied → fix (Week 8)
+- [ ] Run `rollback.yml` with the previous SHA and confirm via `docker compose ps` (Week 8)
+- [ ] ForgeCI: change a queue message field in `common` without updating the worker → integration test catches the mismatch before images are built (Week 18)

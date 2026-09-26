@@ -116,14 +116,14 @@ Do it once per pattern, spread across the week's DSA blocks (see §10).
 | Step | What you do | Time | Output |
 |---:|---|---|---|
 | **1. Learn the concept** | Read §1 "Concepts" of the guide + watch *one* NeetCode explanation of the pattern's anchor problem. Write 5 lines in your own words: what the pattern is, when it applies, its core invariant. | 30–45 min | Notes in the guide's margin or your notes file |
-| **2. Implement from scratch in Java** | Close everything. Type the data structure / template from §3 of the guide from memory (e.g. `class MinHeap`, `class Trie`, the sliding-window loop). Then compare line by line. Fix differences. Repeat until it's clean. | 30–60 min | A `.java` file in your practice repo that compiles and has a `main` with 3 asserts |
-| **3. Break it** | Change one thing and predict what fails: `<=` → `<` in binary search, remove `visited`, swap `poll`/`pop`. Run it. Was your prediction right? | 15 min | One line per break in your notes |
-| **4. Two beginner problems** | The first two problems in §6 of the guide. Use the timebox protocol (§4 below). These prove you can *apply* the template. | 30–60 min | Tracker rows updated |
-| **5. Interview problems** | Work through §7 in order. Timebox strictly. Log status honestly. | rest of the week | Tracker rows updated |
+| **2. Implement from scratch in Python** | Close everything. Type the data structure / template from §3 of the guide from memory (e.g. `class MinHeap`, `class Trie`, the sliding-window loop). Then compare line by line. Fix differences. Repeat until it's clean. | 30–60 min | A `.py` file in your practice repo that runs and ends with 3 `assert`s (or a tiny `pytest` file — you learn pytest in Week 3) |
+| **3. Break it** | Change one thing and predict what fails: `<=` → `<` in binary search, remove `visited`, `popleft()` → `pop()`, a mutable default argument, `res.append(path)` without copying. Run it. Was your prediction right? | 15 min | One line per break in your notes |
+| **4. Two beginner problems** | The first two problems in §7 of the guide. Use the timebox protocol (§4 below). These prove you can *apply* the template. | 30–60 min | Tracker rows updated |
+| **5. Interview problems** | Work through §8 in order. Timebox strictly. Log status honestly. | rest of the week | Tracker rows updated |
 | **6. Explain** | For at least one problem per session: explain out loud (or record) the approach, why it's correct, and its complexity — as if to an interviewer. | 5 min / problem | "Explained ✓" in tracker notes |
-| **7. Review** | Put every problem on the Day 0/3/7/14/30 schedule (§6). Reviews are **never** skipped ([ROADMAP §13](../ROADMAP.md#13-rules-for-falling-behind) rule 1). | ongoing | Review queue in tracker |
+| **7. Review (+ Java rep)** | Put every problem on the Day 0/3/7/14/30 schedule (§6). Reviews are **never** skipped ([ROADMAP §13](../ROADMAP.md#13-rules-for-falling-behind) rule 1). | ongoing | Review queue in tracker; once a week do the guide's Java rep (§4 of the guide) |
 
-> **Rule:** you are not allowed to start step 5 until step 2 produces a template you typed from memory that compiles.
+> **Rule:** you are not allowed to start step 5 until step 2 produces a template you typed from memory that runs and passes its asserts.
 
 ---
 
@@ -136,7 +136,7 @@ Use a timer. The protocol is identical for Easy and Medium; only the timebox cha
 | **A. Read & clarify** | 2 min | 3 min | 5 min | Restate the problem in one sentence. Write 2 examples by hand, including an edge case (empty, one element, duplicates, negatives, max constraint). Read the **constraints** — they tell you the target complexity (§8). |
 | **B. Brute force** | 2 min | 3 min | 5 min | Say the naive solution and its complexity out loud. Don't code it unless stuck. |
 | **C. Optimise** | ≤ 8 min | ≤ 12 min | ≤ 20 min | Find the bottleneck in the brute force. Match against §7 cheat table. Write the plan as 3–6 comment lines *before* coding. |
-| **D. Code** | ≤ 8 min | ≤ 12 min | ≤ 20 min | Java from a blank editor. No autocomplete crutches in timed practice (LeetCode editor is fine). |
+| **D. Code** | ≤ 8 min | ≤ 12 min | ≤ 20 min | Python from a blank editor, with type hints on the function signature (as LeetCode shows them). No autocomplete crutches in timed practice (LeetCode editor is fine). |
 | **E. Test** | 2 min | 3 min | 5 min | Trace one normal example and one edge case **by hand** before pressing Run. |
 | **Total** | **15 min** | **25 min** | **45 min** | |
 
@@ -160,7 +160,7 @@ You have NeetCode Pro. Use it as a **structured syllabus and explanation library
 | **NeetCode 150 / Roadmap** | The section names in the progression table map 1:1 to the roadmap tree on neetcode.io. Tick problems there *and* in [`trackers/dsa-tracker.md`](../trackers/dsa-tracker.md) (the tracker is the source of truth — it has review dates). |
 | **Courses (DSA for Beginners / Advanced Algorithms)** | Use the lesson for a data structure in **Step 1** of the loop (e.g., the heap lesson before implementing `MinHeap`). One lesson, not the whole course. |
 | **Video solutions** | Only *after* the timebox, or after solving to compare approaches. Watch at 1.25×. Pause before the code section and write the code yourself. |
-| **Java solutions tab** | Compare *after* you've submitted. Look for idioms you missed (`merge`, `computeIfAbsent`, `Integer.compare`). |
+| **Python solutions tab** | Compare *after* you've submitted. Look for idioms you missed (`Counter`, `defaultdict`, `enumerate`, `zip`, `heapq.nlargest`, `bisect_left`). For the weekly Java rep, compare against the Java tab (`merge`, `computeIfAbsent`, `Integer.compare`). |
 | **Premium LeetCode problems** (e.g. 252, 253, 261, 269, 286, 323) | NeetCode hosts free equivalents (e.g. "Meeting Rooms", "Graph Valid Tree", "Islands and Treasure" for Walls and Gates, "Count Connected Components"). Use those — you don't need LeetCode Premium. |
 | **Practice / flashcards (spaced review)** | Optional. The tracker's Day 0/3/7/14/30 schedule is the authoritative one; don't run two review systems. |
 | **Mock interview / timed mode** | Think-aloud weekly from Week 5, mock #1 in Week 10, weekly mocks from Week 14, OA simulations from Week 17 — see [`OA_PREP.md`](../OA_PREP.md). |
@@ -186,7 +186,7 @@ Full statuses and transition rules live in [`trackers/dsa-tracker.md`](../tracke
 3. **Reviews come before new problems.** If you only have 30 minutes, do reviews.
 4. A review of a Medium should take ≤ 15 min — you're recalling, not re-deriving. If it takes longer, that's a fail.
 5. Cap reviews at ~6 per day; if the queue exceeds that, cut new problems that week ([ROADMAP §13](../ROADMAP.md#13-rules-for-falling-behind)).
-6. Each pattern gets a **"revisit week"** later in the roadmap (listed in each guide's §12) where you re-solve 2–3 of its problems timed, even if they're not due.
+6. Each pattern gets a **"revisit week"** later in the roadmap (listed in each guide's §13) where you re-solve 2–3 of its problems timed, even if they're not due.
 
 ---
 
@@ -223,7 +223,7 @@ Read the statement for these signals. More detail in each guide's §5.
 
 ## 8. Constraint → complexity cheat table
 
-A judge does roughly **10^8 simple operations per second** in Java. Use `n` to pick the target complexity **before** designing.
+Rough budget: **~10^7 simple Python operations per second** (Java ≈ 10^8). Python is ~10× slower per operation, so the complexity class matters even more — an O(n²) with n = 10^4 (10^8 steps) will time out in Python where Java might squeak through. Use `n` to pick the target complexity **before** designing.
 
 | Constraint on n | Target complexity | Typical patterns |
 |---|---|---|
@@ -235,15 +235,15 @@ A judge does roughly **10^8 simple operations per second** in Java. Use `n` to p
 | n ≤ 10^6 – 10^7 | O(n) | Hashing, two pointers, sliding window, prefix sums |
 | n up to 10^9 / 10^18 (a *value*, not a length) | O(log n) or O(1) | Binary search on answer, math, bits |
 
-Also: values up to 10^9 summed over 10^5 elements **overflow `int`** → use `long` (see [toolkit](./java-dsa-toolkit.md#9-integer-overflow-and-long)).
+Python `int` never overflows (arbitrary precision), so sums of 10^5 values up to 10^9 are safe — but the **same code overflows `int` in your Java rep** → use `long` there (see [Java quick reference](./java-dsa-toolkit.md#5-overflow-integer-caching-and-other-traps)). Also note: `n` up to 10^5 with **recursion** → Python's default recursion limit (1000) fails first; see each guide's mistakes section.
 
 ---
 
 ## 9. Structure of every pattern guide
 
-Each of `01`–`23` has the same 12 sections plus a worked example, so you always know where to look:
+Each of `01`–`23` has the same 13 sections plus a worked example, so you always know where to look:
 
-1. Concepts to learn · 2. Prerequisites · 3. Java implementation (compilable templates) · 4. Common sub-patterns · 5. How to recognise it · 6. Beginner problems · 7. Interview problems (insights hidden in `<details>`) + stretch pool · 8. NeetCode / LeetCode practice order · 9. Target count · 10. Common mistakes (incl. Java-specific) · 11. Mastery criteria · 12. Revision schedule · **Worked example** (clarify → brute force → optimise → Java → tests → complexity).
+1. Concepts to learn · 2. Prerequisites · 3. **Python implementation** (runnable Python 3.12 templates with asserts) · 4. **The same in Java (occasional reps)** — Java idioms + the week's Java-rep problem · 5. Common sub-patterns · 6. How to recognise it · 7. Beginner problems · 8. Interview problems (insights hidden in `<details>`) + stretch pool · 9. NeetCode / LeetCode practice order · 10. Target count · 11. Common mistakes (Python pitfalls + general + Java-rep traps) · 12. Mastery criteria · 13. Revision schedule · **Worked example in Python** (clarify → brute force → optimise → code → tests → complexity).
 
 `00-big-o.md` uses the same skeleton adapted to analysis drills instead of LeetCode problems.
 
@@ -259,7 +259,7 @@ From the standard weekly rhythm in [`ROADMAP.md` §12](../ROADMAP.md#12-standard
 | Tue | 2 h | New problems (beginner → interview); one explained out loud in the interview block |
 | Wed | 1.5 h | Due reviews · re-solve Monday/Tuesday's Hint/Solution problems from a blank editor |
 | Thu | 2 h | New problems — the week's hardest problem goes here or Tuesday (fresh brain) |
-| Fri | 1 h | **Reviews only** (lighter day) + tracker update |
+| Fri | 1 h | **Reviews only** (lighter day) + the week's **Java rep** (~30 min) + tracker update |
 | Sat | — | Mock / think-aloud in the interview block uses a problem from this week's pattern |
 | Sun | review | Weekly test: 2 random problems from this week, timed; plan next week's review queue |
 
