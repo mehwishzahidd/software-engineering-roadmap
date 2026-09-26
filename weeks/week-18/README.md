@@ -6,10 +6,10 @@
 
 | Block | Hours | Focus |
 |---|---:|---|
-| Project | 32 | Failure-engineering suite, integration + concurrency tests, multi-worker Compose stack, CI/CD with image publishing, queue benchmarks |
+| Project | 32 | Failure-engineering suite, integration + concurrency tests, multi-worker Compose stack, CI/CD with image publishing, queue benchmarks, **Python tools** (test-repo generator, webhook load simulator, log analysis) |
 | Learning | 5 | Testcontainers (Postgres + Redis), chaos-style tests, Compose multi-worker stacks, GHCR image publishing |
-| DSA | 6 | 2-D DP — **7 new** + spaced reviews |
-| Interview / review | 4 | OA simulation #2, weekly mock, retro, trackers |
+| DSA (Python) | 6 | 2-D DP — **7 new** + spaced reviews + 1 Java rep |
+| Interview / review | 4 | OA simulation #2, weekly mock (Track A + Track B), retro, trackers |
 
 ---
 
@@ -22,7 +22,7 @@ Turn the ForgeCI that *works when nothing goes wrong* (M1–M4) into the ForgeCI
 - integration tests run against **real Postgres and Redis in Testcontainers** and pass in CI;
 - `docker compose up` starts api + N workers + postgres + redis + ui from a clean machine;
 - CI builds, tests, publishes images to GHCR and (optionally) deploys;
-- **queue wait time and jobs/min are measured** with the methodology recorded, not guessed.
+- **queue wait time and jobs/min are measured** with the methodology recorded, not guessed — driven by ForgeCI's **Python tools** (`tools/`: test-repository generator, webhook load simulator, log/result analysis), each with `pytest` tests and a README.
 
 ## 2. Prerequisites
 
