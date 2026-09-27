@@ -550,7 +550,7 @@ public interface FaultInjector {
 
 ## M4 — Reconciliation, failure injection, invariants (Week 12) → CP-12
 
-### 1. What to know first (~8 h; lighter learning week includes the Python sprint)
+### 1. What to know first (~8 h; lighter learning week — Python tooling patterns)
 
 - Failure-injection techniques (hooks, `kill -9`, DB connection kill, Toxiproxy-style
   latency): [`../../09-testing/testcontainers.md`](../../09-testing/testcontainers.md) and
