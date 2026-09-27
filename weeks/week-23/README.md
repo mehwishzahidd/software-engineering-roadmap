@@ -196,6 +196,27 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 
 - Milestone M4 closed; release `v1.0`; full docs set; screenshots folder with at least the flag detail and versions screens; `docs/PERFORMANCE.md` with three measured tables.
 
+### Interview questions this milestone generates (Track B)
+
+| Question | Strong answer contains |
+|---|---|
+| "How fast does a change reach clients, and how do you know?" | measured propagation p95; publish → pub/sub → SSE nudge → ETag fetch; fallback bounds (poll interval, TTL) |
+| "Pub/sub is at-most-once — so what?" | layered guarantees; every layer cheap; test `PubSubLostIT` |
+| "What is a cache stampede and what did you do?" | single-flight per instance, Redis lock across instances, jittered TTL, stale-while-revalidate; before/after graph |
+| "How did you handle concurrent edits in the UI?" | `If-Match` → 412 → banner; no silent overwrite; form state preserved |
+| "Walk me through your OWASP review." | the table: BOLA tests, SDK key hashing, rate limits, CORS, headers, Dependabot; what is still TODO |
+| "How long did the fourth AWS deploy take and why?" | a day; the runbook; SGs, IAM role, alarms, teardown script; what you would add for HA |
+| "What Python is in this project?" | Python SDK/test client (contract), rollout simulator (fairness/stickiness), config validator (unreachable/overlap rules) — all tested, in CI, documented |
+
+### Definition of done for the FlagForge phase
+
+- [ ] `v1.0` tagged with release notes; README honest about tiers
+- [ ] Propagation + stampede protection measured; `docs/PERFORMANCE.md` three tables
+- [ ] Dashboard with tests; security pass table; deployed with alarms + teardown
+- [ ] Full docs set; ADRs; diagrams may be ASCII until W25
+- [ ] Python components (`sdk-python/`, `rollout-sim`, `config-validator`) tested, typed, documented, in CI
+- [ ] Deep-dive recorded; [`trackers/project-tracker.md`](../../trackers/project-tracker.md) closed for FlagForge with actual hours
+
 ## 9. Git activity
 
 - Branches: `feat/m4-propagation`, `feat/m4-stampede`, `feat/m4-dashboard-*` (several small PRs), `sec/m4-review`, `ops/m4-aws`, `docs/m4-docs-set`.

@@ -281,7 +281,7 @@ One rep per week, always a problem already solved in Python that week (or earlie
 | 12 | 78 Subsets | `new ArrayList<>(path)`, `remove(size - 1)` | [14](./14-backtracking.md) |
 | 13 | 994 Rotting Oranges | grid BFS with `int[]` cells | [15](./15-graphs-bfs-dfs.md) |
 | 14 | 207 Course Schedule | `List<List<Integer>>` adjacency, in-degree array | [16](./16-topological-sort.md) |
-| 15 | 322 Coin Change | `int[] dp`, `Arrays.fill`, sentinel choice | [18](./18-dp-1d.md) |
+| 15 | 198 House Robber | `int[] dp` → two `int` variables | [18](./18-dp-1d.md) |
 | 16 | 56 Merge Intervals | `Arrays.sort(int[][], cmp)`, `List<int[]>` → `toArray` | [19](./19-intervals.md) |
 | 17 | 763 Partition Labels | `int[26]` last index, `List<Integer>` | [20](./20-greedy.md) |
 | 18 | 1143 Longest Common Subsequence | `int[][]` table | [21](./21-dp-2d.md) |

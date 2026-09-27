@@ -109,7 +109,7 @@ assert dd.find("a@x.com") == dd.find("b@x.com") != dd.find("c@x.com")
 print("DSU ok")
 ```
 
-> The `self.parent[x], x = root, self.parent[x]` line relies on right-to-left evaluation of the tuple **before** assignment: the old `parent[x]` is read first, then `parent[x]` is set to `root`, then `x` moves on. Write it as three lines if that reads more clearly to you.
+> The `self.parent[x], x = root, self.parent[x]` line works because Python evaluates the **whole right-hand side first** (reading the old `parent[x]`), then assigns targets **left to right**: `parent[x] = root` (while `x` is still the old node), then `x` moves on. Swapping the targets (`x, self.parent[x] = ...`) would write the wrong slot. Write it as three lines if that reads more clearly to you.
 
 ---
 
