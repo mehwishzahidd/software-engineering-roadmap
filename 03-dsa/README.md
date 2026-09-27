@@ -44,7 +44,7 @@ By the end of Week 26 you should be able to:
 - [ ] Solve an unseen **Easy** in ≤ 15 min and an unseen **Medium** in ≤ 25–30 min in **Python**, talking while you code.
 - [ ] State time and space complexity for every solution without hesitation, including the recursion stack.
 - [ ] Write in Python from a blank file, without looking anything up: binary search (and `bisect`), BFS with `collections.deque`, DFS on a grid, union-find, a trie, a `heapq` top-K, a backtracking template, and a memo (`@cache`) + tabulation DP.
-- [ ] Re-write any of those in Java 21 on request (≈20 Java reps logged by Week 26).
+- [ ] Re-write any of those in Java 21 on request (≈25 Java reps logged by Week 26 — one per week).
 - [ ] Pass a 70–120 min OA with 1–2 problems (see [`OA_PREP.md`](../OA_PREP.md)).
 - [ ] Have ≈185 problems logged in the tracker, with the NeetCode 150 core at `Solved Independently` or better and ≥ 60% of all problems `Mastered`.
 
@@ -192,7 +192,7 @@ Full statuses and transition rules live in [`trackers/dsa-tracker.md`](../tracke
 
 ## 7. Pattern-recognition cheat table
 
-Read the statement for these signals. More detail in each guide's §5.
+Read the statement for these signals. More detail in each guide's §6.
 
 | Signal in the problem statement | Likely pattern | Guide |
 |---|---|---|
