@@ -228,6 +228,26 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 - Milestone M3 closed; package visible under the repo's Packages; sample app README; `sdk/CHANGELOG.md` with `0.1.0`.
 - ADR: polling vs streaming (both, with fallback) in `docs/adr/`.
 
+### Interview questions this milestone generates (Track B)
+
+| Question | Strong answer contains |
+|---|---|
+| "How does an app use your SDK?" | builder → `waitForReady` → typed getter with default → `close()`; nothing throws |
+| "What happens when the flag server is down?" | at start: defaults + status; later: last snapshot, stale-if-error window, backoff with jitter; status exposed for metrics |
+| "Is it thread-safe?" | immutable snapshot + `AtomicReference` swap; single daemon poller; no locks on read |
+| "How do you know server and SDK agree?" | shared `eval` module + conformance vectors + contract test over 50 contexts; Python client proves the contract is language-independent |
+| "Polling or streaming?" | both: SSE nudge + ETag fetch, polling as fallback; cost reasoning per 10 000 clients |
+| "What is a breaking change in your SDK?" | public type/signature/thread-behaviour/exception changes; semver; `CHANGELOG` |
+| "Why a Python SDK too?" | contract tests across implementations catch encoding/hash mismatches a single implementation cannot; the rollout simulator needed a local evaluator anyway |
+
+### Definition of done for M3
+
+- [ ] `sdk/API.md` reviewed → implemented → published `0.1.0`
+- [ ] Failure matrix: every cell a test (Java); Python client: never-raises + vectors + contract test
+- [ ] `rollout-sim` results table; stickiness proven
+- [ ] Streaming (or documented deferral to M4)
+- [ ] `sdk/README.md`, `CHANGELOG.md`, ADR polling vs streaming, `docs/TESTING.md` cross-SDK section
+
 ## 9. Git activity
 
 - Branches: `feat/m3-sdk-core`, `feat/m3-sdk-transport`, `feat/m3-contract-tests`, `feat/m3-streaming`, `ops/m3-publish`.

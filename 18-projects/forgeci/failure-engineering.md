@@ -30,6 +30,11 @@ Useful one-liners you will use constantly:
 | Aftermath | `forgeci-tools analyze --api http://localhost:8080 --since 15m` |
 
 Wrap the fault injections in `scripts/chaos/*.sh` so runs are repeatable and the commands are in the repo.
+`forgeci-tools` is the **Python component** from `tools/` (README §16.1, M5): `simulate` supplies
+signed webhook load (with a `--duplicates` ratio for scenario 1 and a `--rate` for scenario 13),
+`repogen` creates the `slow` / `timeout` / `invalid-config` repositories the scenarios need, and
+`analyze` reports the failure-taxonomy counts and retry histogram after each run — paste its output
+into your `docs/FAILURE_ENGINEERING.md` entry as evidence.
 
 Scenario index: [1 duplicate webhook](#1-duplicate-webhook-delivery) · [2 worker crash](#2-worker-crashes-mid-job) · [3 container fails to start](#3-container-fails-to-start) · [4 timeout](#4-job-timeout) · [5 cancel](#5-job-cancellation-queued-and-running) · [6 Redis down — API](#6-redis-unavailable-api-side) · [7 Redis down — worker](#7-redis-unavailable-worker-side) · [8 API restart during SSE](#8-api-restarts-during-an-sse-stream) · [9 Docker daemon unreachable](#9-docker-daemon-unreachable) · [10 unregistered repo](#10-github-sends-an-event-for-an-unregistered-repo) · [11 network drop during clone](#11-network-drops-during-clone) · [12 log stream disconnects](#12-log-stream-disconnects) · [13 backlog](#13-queue-backlog) · [14 double lease](#14-two-workers-lease-the-same-job-the-slow-worker-bug) · [15 image pull rate limit](#15-image-pull-rate-limit) · [16 disk full](#16-disk-filling-with-workspaces)
 

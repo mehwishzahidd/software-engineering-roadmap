@@ -361,13 +361,13 @@ Write `build_list`/`to_list`/`build_tree` once in your katas repo and use them i
 # 1. Tiebreak counter (simplest, guarantees FIFO among equals)
 import itertools
 counter = itertools.count()
-heapq.heappush(h, (priority, next(counter), node))
+h1 = []; heapq.heappush(h1, (priority, next(counter), node))
 
 # 2. Define __lt__ on the item
 class Item:
     def __init__(self, prio, name): self.prio, self.name = prio, name
     def __lt__(self, other): return self.prio < other.prio
-heapq.heappush(h, Item(2, "b"))
+h2 = []; heapq.heappush(h2, Item(2, "b")); heapq.heappush(h2, Item(2, "a"))   # ties are fine now
 
 # 3. dataclass(order=True) with excluded payload
 @dataclass(order=True)
