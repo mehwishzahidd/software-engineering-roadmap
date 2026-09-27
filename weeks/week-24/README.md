@@ -77,6 +77,34 @@ Candidates: FlowGrid's allocation scorer (strategy per criterion); LedgerX's tra
 - Python components: `pytest --cov=tools --cov=sdk-python`, same rule: cover the decision branches (signature mismatch, empty result set, malformed input, rule overlap). Add `mypy --strict` or at least `pyright` basic mode to CI for the tools and fix the findings — types are the second test suite.
 - Cross-cutting: every failure-engineering scenario has a named regression test (audit the mapping issue → test).
 
+### 4.3b Characterization test shape
+
+```java
+@Test
+void allocation_prefersWarehouseWithStock_thenLowerWorkload_thenLowerId() {
+    // pins current behaviour, including the tie-break, before refactoring the scorer
+    var result = allocator.allocate(order(sku("A", 2)), warehouses(w1(stock 5, load 3), w2(stock 5, load 1)));
+    assertThat(result.warehouseId()).isEqualTo(w2.id());
+}
+```
+
+Write 5–10 such tests per module from the *existing* behaviour (run the code, record the output), not from what you wish it did. If a recorded behaviour is a bug, note it in an issue and fix it **after** the refactor lands.
+
+### 4.3c Python quality bar for the tools
+
+```toml
+# pyproject.toml (tools/loadsim) — pinned, typed, testable
+[project]
+name = "forgeci-loadsim"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["httpx>=0.27"]
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-cov", "mypy", "ruff"]
+```
+
+CI job: `pip install -e "tools/loadsim[dev]" && ruff check && mypy --strict tools/loadsim && pytest --cov`. Same shape for every Python component — a hiring manager who opens `tools/` should see the same discipline as in `src/main/java`.
+
 ### 4.4 Docs a hiring manager can read in ten minutes
 
 README order: one-paragraph what/why → architecture diagram (can be ASCII this week; real diagrams in W25) → "run it in 3 commands" → "what is tested and how" → **measured results with links** → known limitations → docs index. If a README needs scrolling to find how to run it, it fails.
