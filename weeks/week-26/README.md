@@ -69,6 +69,17 @@ aws ec2 describe-addresses --query 'Addresses[].PublicIp' --output table
 
 - **Interview angle (Track B):** "Is it live?" — "FlowGrid is; the others deploy on demand in about an hour from the documented runbook — I tore them down to control cost, which is also a real operations decision."
 
+### 4.3b Teardown checklist (per project, tick in `DEPLOYMENT.md`)
+
+- [ ] Final RDS snapshot taken and named `<project>-final-<date>`; instance deleted with "skip final snapshot" **unchecked**
+- [ ] EC2 instance terminated (not stopped) unless "keep up"; EBS volumes with `DeleteOnTermination=false` removed manually
+- [ ] Elastic IPs released; NAT gateways (if any) deleted; unused security groups removed
+- [ ] S3: report/artifact buckets emptied or lifecycle → expire; bucket kept only if the README links objects in it
+- [ ] CloudWatch log groups: retention set (14 days) or deleted
+- [ ] IAM: access keys deleted; deploy role kept; GitHub Actions secrets for the deploy job rotated or removed
+- [ ] Budget alarm remains active (it costs nothing and catches mistakes)
+- [ ] Next-day Cost Explorer check recorded
+
 ### 4.4 The maintenance rhythm
 
 Set it up **this week** in [`16-interview-prep/maintenance-plan.md`](../../16-interview-prep/maintenance-plan.md): weekly DSA reviews + 2–3 new Python problems + 1 Java rep; one project touch per week (a bug, a dependency bump, a doc fix — keeps the repos alive and your context warm); one mock per two weeks per track; tracker updates on Sundays; a monthly re-read of one project's ADRs. Put the recurring blocks in your calendar before the week ends.
@@ -139,6 +150,32 @@ From next week the cadence in the maintenance plan applies: reviews first, then 
 ### GitHub expectations
 
 - Final releases; pinned order; profile README; `Backlog` milestones; no secrets, no stale branches.
+
+### Résumé skeleton (structure only — content must come from your files)
+
+```
+PROJECTS
+<Leading project> — <one-line what/why> · Java 21, Spring Boot, PostgreSQL, Redis, Docker, AWS, GitHub Actions, Python tooling · <repo link> · <demo link>
+  • <engineering bullet with measured result + method reference>
+  • <correctness/testing bullet naming the test that proves it>
+  • <operations bullet: deployment, failure recovery, or tooling>
+<Second project> — same shape, 2–3 bullets
+<Third, fourth> — one line each with link
+SKILLS
+Languages: Java (primary), Python (tooling + algorithms), SQL, TypeScript/JavaScript · Backend: Spring Boot, JPA, REST, Redis · Data: PostgreSQL, MySQL · Infra: Docker, AWS (EC2/RDS/S3/IAM/CloudWatch), GitHub Actions, Linux · Testing: JUnit 5, Mockito, Testcontainers, pytest, k6
+```
+
+Every technology in SKILLS must map to a row in [`RESUME_TECH_DEFENSE.md`](../../RESUME_TECH_DEFENSE.md) marked at least "confident" and to a project that uses it. Remove anything that does not.
+
+### Interview questions the final week generates (Track B)
+
+| Question | Strong answer contains |
+|---|---|
+| "Which project are you proudest of and why?" | the leading project; the hardest engineering problem in it; the measured result; what you would do next |
+| "Why did you tear it down / why is it still up?" | cost decision with numbers; on-demand runbook timed; that this is an operations decision, not a shortcut |
+| "What did you learn in six months that you did not know before?" | specifics: locking, idempotency, queues, caching, SDK design, measurement discipline; and Python as a tooling language |
+| "How do you keep your skills sharp?" | the maintenance plan, concretely |
+| "Tell me about the gap." | truthful, brief, then pivot to the evidence (four projects, measured, deployed) — [`16-interview-prep/behavioral.md`](../../16-interview-prep/behavioral.md) |
 
 ## 9. Git activity
 

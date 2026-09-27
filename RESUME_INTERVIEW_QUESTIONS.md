@@ -46,7 +46,7 @@ This bank is Track B. Section 16 (Python) is the bridge: Python is both the lang
 
 ### Drill protocol (from Week 7, 3 questions/week; all techs by Week 23; full grill W24–26)
 
-1. **Pick** 3 questions — rotate technologies as they enter the [readiness matrix](./RESUME_TECH_DEFENSE.md#8-readiness-matrix) (Week 7: Java, Git, SQL). Don't open the `<details>` first.
+1. **Pick** 3 questions — rotate technologies as they enter the [readiness matrix](./RESUME_TECH_DEFENSE.md#8-readiness-matrix) (Week 7: Java, Git, SQL). Don't expand the answer outline first.
 2. **Answer out loud, recorded**, no notes, 60–120 s. Use the shape *what → how I used it (past truthfully, now specifically) → one concrete decision → one trade-off → offer to go deeper*.
 3. **Score 1–4** with the [rubric](./17-resume-tech-defense/README.md#scoring-rubric): **1** vague/wrong · **2** correct but generic, no project example · **3** correct mechanism + a concrete example from a project or truthful past work + one trade-off, survives one follow-up · **4** structured, anticipates the follow-up, admits limits cleanly. −1 for any claim your own code contradicts.
 4. **Re-drill** anything < 3: write 5 sentences, read the linked topic file, re-record once. Come back next week; don't re-record three times in a row.
@@ -503,3 +503,422 @@ This bank is Track B. Section 16 (Python) is the bridge: Python is both the lang
 
 - Multi-stage: Maven build stage (copy `pom.xml`, `dependency:go-offline`, then `src`, `package -DskipTests` — tests ran in CI), JRE runtime stage, non-root user, exec-form `ENTRYPOINT`, `-XX:MaxRAMPercentage`. Compose: `api`, `postgres` (named volume, `pg_isready` healthcheck), `redis`, `nginx` (React build + `/api` proxy), `depends_on: condition: service_healthy`; ForgeCI adds `worker` with `--scale`.
 </details>
+
+<details><summary><b>DOK-3. "How do containers talk to each other, and what's the classic mistake?"</b></summary>
+
+- Compose creates a user-defined bridge network with DNS by service name: `jdbc:postgresql://postgres:5432/flowgrid`, `redis:6379`, nginx `proxy_pass http://api:8080`. Only nginx publishes a port. `localhost` inside a container is the container itself — the classic "connection refused".
+</details>
+
+<details><summary><b>DOK-4. "A container exits with code 137 — what happened?"</b></summary>
+
+- SIGKILL: OOM-killed (`docker inspect` → `OOMKilled: true`) or stop timeout. JVM: default heap is 25 % of container memory → set `-XX:MaxRAMPercentage`; check `dmesg` on the host. In ForgeCI, 137 on a *job* container means the per-job timeout fired (`TIMED_OUT`, not `FAILED`).
+</details>
+
+<details><summary><b>DOK-5. "Explain SIGTERM vs SIGKILL and how your service shuts down gracefully."</b></summary>
+
+- `docker stop` sends SIGTERM to PID 1, waits, then SIGKILL. Exec-form entrypoint so the JVM is PID 1; `server.shutdown=graceful` finishes in-flight requests; ForgeCI's worker stops taking new jobs, finishes or releases the current lease, then exits (exit 143 = SIGTERM).
+</details>
+
+<details><summary><b>DOK-6. "The API is slow on the server — what commands do you run first?"</b></summary>
+
+- `uptime`/`top` (load vs cores), `free -h` (available, not free), `df -h`, `docker stats`, `ss -tlnp`, app logs filtered by `requestId`, `jcmd <pid> Thread.print` for stuck threads, `pg_isready`/`pg_stat_activity` for lock waits. Narrow to app vs DB vs network before touching anything.
+</details>
+
+<details><summary><b>DOK-7. "Why is giving a worker the Docker socket dangerous, and what did you do about it?"</b></summary>
+
+- Socket access = root on the host (mount `/`, escape). ForgeCI: workers on their own EC2 instance with their own SG, no privileged flag for job containers, resource limits, non-root user in job images, documented as isolation-not-security — and the honest next step (rootless Docker, gVisor/Firecracker, or a managed runner) if untrusted repos were allowed.
+</details>
+
+---
+
+## 11. AWS & deployment
+
+<details><summary><b>AWS-1. "How would you deploy this architecture on AWS?"</b></summary>
+
+- What I did (FlowGrid W8, repeated for LedgerX, ForgeCI, FlagForge): Route 53/DNS → EC2 (SG: 443 from the world, 22 closed — SSM Session Manager) running nginx + api + redis in Compose → **RDS PostgreSQL** in private subnets (SG allows 5432 only from the EC2 SG, automated backups) → **S3** for report exports via an instance role (`PutObject/GetObject` on one prefix, pre-signed URLs) → **CloudWatch** logs via the `awslogs` driver + alarms on 5xx/CPU/RDS storage → GitHub Actions builds the image, pushes to GHCR, assumes a deploy role via **OIDC** (no stored keys), `docker compose pull && up -d` through SSM, smoke test on `/actuator/health`.
+- ForgeCI variant: api instance + a separate worker instance (Docker socket), `--scale worker=N`; SQS weighed against Redis for the queue.
+- Next steps if it had to scale: ALB + ASG or ECS/Fargate for stateless api, ElastiCache Redis, RDS Multi-AZ; the scheduled low-stock job guarded by a distributed lock. Cost controls: budget alarm, smallest instance, teardown script.
+- *Follow-up:* "What breaks if the AZ goes down?" → everything on one instance; that's the documented trade-off for a single-box deploy and the reason for the "next steps".
+</details>
+
+<details><summary><b>AWS-2. "Explain least privilege with a policy you wrote."</b></summary>
+
+- Instance role with exactly `s3:PutObject/GetObject` on `arn:aws:s3:::flowgrid-reports-*/*` and `logs:CreateLogStream/PutLogEvents` on the app's log group; default credential chain in the SDK — no keys in env files. Prove it by showing `ListBucket` and writes outside the prefix are denied.
+</details>
+
+<details><summary><b>AWS-3. "How does CI deploy without storing AWS keys?"</b></summary>
+
+- GitHub OIDC: `permissions: id-token: write`, `aws-actions/configure-aws-credentials` with `role-to-assume`; the role's trust policy pins `aud` and `sub` to `repo:<owner>/<repo>:environment:production`. ~1 h credentials per run.
+</details>
+
+<details><summary><b>AWS-4. "The app on EC2 can't reach RDS — walk me through it."</b></summary>
+
+- Endpoint resolves? RDS SG allows 5432 from the app SG (SG reference, not CIDR)? Same VPC/routing? RDS `available`? Credentials/DB name? `sslmode`? `nc -zv host 5432` from the instance; `max_connections` vs Hikari pool × instances.
+</details>
+
+<details><summary><b>AWS-5. "Multi-AZ vs read replica vs backup?"</b></summary>
+
+- Multi-AZ: synchronous standby for availability (failover, same endpoint), not read scaling. Read replica: async, separate endpoint, replica lag → read-your-writes issues. Backups/PITR: recovery from mistakes.
+</details>
+
+<details><summary><b>AWS-6. "How do you know the app is down, and how do you keep costs sane?"</b></summary>
+
+- Alarm on EC2 status checks + a health probe from *outside* the instance (Route 53 health check), 5xx metric filter on logs, RDS CPU/storage alarms → SNS. Costs: budget alarm, no NAT gateway, single-AZ for dev, S3 lifecycle rules, delete unattached EBS/EIPs, teardown script, weekly Cost Explorer check.
+</details>
+
+<details><summary><b>AWS-7. "EC2 + Compose vs ECS/Fargate vs Lambda for your projects?"</b></summary>
+
+- EC2 + Compose: simplest, cheapest for one box, manual patching, no self-healing. ECS/Fargate: managed orchestration, rolling deploys, per-task IAM — the natural next step for api + worker. Lambda: poor fit for long-running workers (ForgeCI) or Redis-connected APIs with scheduled jobs without a redesign.
+</details>
+
+---
+
+## 12. CI/CD
+
+<details><summary><b>CI-1. "What is CI/CD?"</b></summary>
+
+- **CI**: every change merged frequently and automatically built + tested, so integration problems surface within minutes. **Continuous delivery**: every green build yields a deployable artefact; deploy is one (possibly manual) step. **Continuous deployment**: green builds go to production automatically.
+- Mine: "In FlowGrid a PR runs `mvn verify` (unit + slice + Testcontainers) and the frontend lint/type-check/tests; merge to `main` builds an image tagged with the git SHA, pushes it to GHCR, and after a manual approval on the `production` environment deploys to EC2 via an OIDC-assumed role, then a smoke test hits `/actuator/health`; rollback = redeploy the previous SHA."
+- Differentiator: "I also built ForgeCI — webhook receiver, Redis job queue, workers running steps in Docker containers, live logs — so I can explain what happens *behind* a pipeline, not just write the YAML."
+- Past: truthful about what you wrote vs used.
+- *Follow-up:* "How do you roll back?" → CI-3.
+</details>
+
+<details><summary><b>CI-2. "What runs in your pipeline, in what order, and why?"</b></summary>
+
+- Compile/lint → unit → slice/integration (Testcontainers) → build image once → push (SHA tag) → deploy (approval) → smoke test. Fast feedback first; build once, promote the same artefact; deploy only from `main`. ForgeCI: path-filtered jobs per module, `mvn -pl <module> -am verify`, three images.
+</details>
+
+<details><summary><b>CI-3. "A deploy broke production. What does your pipeline give you?"</b></summary>
+
+- Deployment history says which SHA is live; rollback = redeploy the previous SHA (images are immutable, never `:latest`); migrations are expand/contract so the old version still runs; then add the test that would have caught it. `/actuator/info` shows the SHA so you can verify.
+</details>
+
+<details><summary><b>CI-4. "Tests pass locally, fail in CI."</b></summary>
+
+- Differences: JDK, timezone/locale, env vars/secrets (none on fork PRs), Docker availability, test order, resources. Reproduce with the same command (`./mvnw -B verify`), clean `~/.m2`, read the failing step's log first.
+</details>
+
+<details><summary><b>CI-5. "How does ForgeCI decide whether to retry a failed job?"</b></summary>
+
+- Failure taxonomy: app failure (a step exits ≠ 0) → never retry; infra failure (container start error, worker lost → lease expired, Docker daemon error) → retry with exponential backoff up to N; timeout → `TIMED_OUT`, no retry by default; cancellation → terminal. Encoded as a sealed `JobOutcome` so the policy is exhaustive.
+</details>
+
+---
+
+## 13. Debugging & production incidents
+
+<details><summary><b>DBG-1. "How would you debug a slow API?"</b></summary>
+
+- **Measure first**: which endpoint, p50 vs p99, since when, what changed (deploy, data growth, traffic). Micrometer HTTP timers / logs with `requestId` and durations; correlate with DB (`pg_stat_statements`, lock waits in `pg_stat_activity`), Redis (`SLOWLOG`, hit ratio), Hikari pool (`active/pending` — pool exhaustion looks like a slow API), CPU/GC (`jcmd GC.heap_info`, thread dump if threads are `BLOCKED`).
+- **Narrow**: is time spent in the DB (slow query → DB-2), waiting for a connection (pool too small / long transactions / leak), in a downstream call inside a transaction, in serialization of a huge payload (missing pagination), or in N+1 queries (SQL logging)?
+- **Fix and verify** with the same measurement; add an alert on the metric that would have caught it.
+- Story: FlowGrid's low-stock endpoint slowed as inventory grew — the query needed a partial index on `available < reorder_point`; the Redis low-stock cache came second, not first.
+- *Follow-up:* "How do you tell 'slow DB' from 'slow app'?" → DB time from `pg_stat_statements` vs endpoint time; if pool wait dominates, the DB isn't slow — the app holds connections too long.
+</details>
+
+<details><summary><b>DBG-2. "Describe a production bug you might encounter in this architecture and how you would diagnose it."</b></summary>
+
+- Pick one with a real mechanism: **duplicate reservations after a client retry** (FlowGrid). Symptom: an order shows two reservations for one line; support ticket. Diagnose: pull both rows by `requestId`/timestamps → two `POST /orders` within 200 ms from the same client → the mobile client retried on timeout → the first request had succeeded after the client gave up. Root cause: the endpoint accepted a retry as a new order (missing/ignored `Idempotency-Key`), and no unique constraint on the business key. Fix: enforce `Idempotency-Key` (stored key + request hash + response), unique constraint, return the stored 201 on replay; regression test that replays the same request twice; alert on duplicate-line count.
+- Alternatives ready: stale catalog after Redis invalidation raced the commit (DB-10); LedgerX drift found by the reconciliation job (a transfer partially committed because a method was self-invoked and bypassed `@Transactional`); ForgeCI orphaned jobs after a worker OOM (lease sweep wasn't running because the scheduler thread died silently); FlagForge SDK serving stale flags because `ETag` handling returned 304 for a changed snapshot.
+- *Follow-up:* "How would you have caught it before production?" → the concurrency test for the reservation path, and a failure exercise that kills the client mid-request.
+</details>
+
+<details><summary><b>DBG-3. "Requests hang; nothing errors."</b></summary>
+
+- Lock waits: `pg_stat_activity` where `wait_event_type = 'Lock'`, `pg_blocking_pids(pid)`; usually an idle-in-transaction session. Or pool exhaustion: Hikari `pending` climbing with "Connection is not available". Thread dump shows where the app threads wait. Fix the long transaction; set `idle_in_transaction_session_timeout`; keep no I/O inside transactions.
+</details>
+
+<details><summary><b>DBG-4. "<code>LazyInitializationException</code> in production — what do you do?"</b></summary>
+
+- A lazy association touched after the persistence context closed (usually Jackson serialising an entity). Fix properly: map to DTOs inside the service, `JOIN FETCH`/`@EntityGraph` for what the endpoint needs. Don't enable open-in-view or make everything EAGER.
+</details>
+
+<details><summary><b>DBG-5. "The service hangs with near-zero CPU."</b></summary>
+
+- Deadlock or everything blocked on a lock/pool. `jcmd <pid> Thread.print` → "Found one Java-level deadlock" or many `BLOCKED`/`WAITING` on the same monitor. LedgerX avoids DB deadlocks by locking accounts in id order; in Java, consistent lock ordering + timeouts (`tryLock`).
+</details>
+
+<details><summary><b>DBG-6. "The reconciliation job flags drift on three accounts. Walk me through it."</b></summary>
+
+- Confirm with the independent Python verifier (same finding → data, not the job). Diff `SUM(entries)` vs materialized balance per account, find the first entry after which they diverge, correlate with the audit log and deploy history. Typical causes: a code path updating the balance outside the journal write, a reversal applied twice, a crash between steps before the outbox pattern existed. Fix forward with compensating entries — never edit the ledger.
+</details>
+
+<details><summary><b>DBG-7. "A worker died mid-job. What happens, and how do you know?"</b></summary>
+
+- Heartbeat stops → lease expires → sweeper moves the job back to the queue with an infra-failure retry count; the container it started is orphaned until the reaper removes containers labelled with dead job ids. Alert on "jobs with expired lease" and "orphan containers > 0". Check `dmesg` for the OOM kill, worker logs for the last `seq` persisted.
+</details>
+
+---
+
+## 14. Architecture & design
+
+<details><summary><b>ARC-1. "Why layered architecture, and what belongs where?"</b></summary>
+
+- Controller: HTTP concerns only (validation, mapping, status codes). Service: use cases and transaction boundaries. Repository: persistence. Domain: entities/value objects with invariants (FlowGrid's inventory state machine lives in the domain, not the controller). Cross-cutting via filters/aspects. Why: testability per layer and one place per rule.
+</details>
+
+<details><summary><b>ARC-2. "Optimistic vs pessimistic locking — how did you choose?"</b></summary>
+
+- Measured in FlowGrid M2: under a burst on one SKU, `@Version` produced N−1 retries per burst and jittery latency; `SELECT … FOR UPDATE` serialised cleanly with no retry loop. Chose pessimistic for hot rows with short transactions; optimistic where contention is rare (FlagForge config edits). LedgerX: pessimistic with ordered locks.
+</details>
+
+<details><summary><b>ARC-3. "Why a queue between the API and the workers?" (ForgeCI)</b></summary>
+
+- Decouples burst intake from execution capacity; workers pull at their own pace; per-project limits; a dead worker's job survives (lease); horizontal scaling by adding workers. Redis lists + `BLMOVE` chosen for latency and simplicity; Streams/SQS as alternatives with acks/visibility timeouts — trade-offs documented in an ADR.
+</details>
+
+<details><summary><b>ARC-4. "SSE vs WebSockets vs polling — justify your choice."</b></summary>
+
+- ForgeCI logs and FlagForge propagation are one-way server → client: SSE gives auto-reconnect, `Last-Event-ID` replay, plain HTTP through proxies, no extra infra. WebSockets when the client must send frequently. Polling when freshness of 15–30 s is fine and the endpoint is cacheable (FlowGrid low-stock view).
+</details>
+
+<details><summary><b>ARC-5. "Design a feature-flag evaluation path that stays fast under load."</b></summary>
+
+- Evaluate locally in the SDK from an in-memory snapshot (polling with `ETag` + SSE invalidation) so most evaluations never hit the server; server-side eval reads a Redis snapshot per environment, invalidated on publish with single-flight rebuild; deterministic bucketing `hash(flagKey:userKey) mod 10000` so results are sticky without storage; measured p99.
+</details>
+
+<details><summary><b>ARC-6. "How would you split FlowGrid into services — and should you?"</b></summary>
+
+- Not at this scale: one deployable, clear module boundaries (inventory, orders/fulfillment, catalog). If forced: split along the allocation boundary with an outbox for events, accept eventual consistency in the dashboard, keep reservations transactional inside one service. Say what you'd lose: cross-module transactions, simple joins.
+</details>
+
+<details><summary><b>ARC-7. "What is the transactional outbox and why did LedgerX need it?"</b></summary>
+
+- Writing an event to a broker/webhook *after* commit can lose it (crash) or publish for a rolled-back transaction. Outbox: write the event row in the same transaction as the journal; a relay (`FOR UPDATE SKIP LOCKED`) publishes and marks it. At-least-once → consumers idempotent.
+</details>
+
+---
+
+## 15. Project deep-dive questions
+
+Rehearse the 10–15 minute deep-dive without notes (W8, W13, W19, W23) using [`16-interview-prep/project-deep-dive.md`](./16-interview-prep/project-deep-dive.md); each project's own `interview-questions.md` has the long list.
+
+### FlowGrid
+
+<details><summary><b>PRJ-1. "Tell me about FlowGrid — what problem, what design, what was hard?"</b></summary>
+
+- Problem: multi-warehouse inventory and order fulfillment — quantities by state (on_hand / available / reserved / allocated / picked / shipped), idempotent orders, concurrent reservations, deterministic allocation across warehouses, pick/pack/ship workflow, returns and transfers.
+- Design: Spring Boot 3 + Postgres + Redis + React; row-level locking for reservations; allocation as a scored `Comparator` with an id tie-break; cache-aside catalog; JWT with four roles.
+- Hard: the one-unit concurrency test; partial fulfillment (ship what's ready); two-phase transfers (`in_transit`). Deployed to AWS in W8 with a measured k6 baseline.
+- *Follow-up:* "How does allocation pick a warehouse?" → PRJ-2.
+</details>
+
+<details><summary><b>PRJ-2. "How does allocation decide which warehouse ships an order line?"</b></summary>
+
+- Score candidates on availability, capacity, distance proxy (region/zone match), current workload, shipping priority; ties broken by warehouse id → deterministic, testable, explainable. Partial fulfillment when no single warehouse can cover a line (ADVANCED: split across warehouses). Allocation runs after reservation, inside its own transaction, and is re-runnable.
+</details>
+
+<details><summary><b>PRJ-3. "What did the k6 baseline show, and what would you not claim from it?"</b></summary>
+
+- Quote only what PERFORMANCE.md records: setup (instance type, RDS class, data size), load shape, p50/p95/p99 for order creation and the contention mix (201 vs 409). Don't extrapolate to production hardware; say the single-box deploy is the bottleneck you'd remove first.
+</details>
+
+### LedgerX
+
+<details><summary><b>PRJ-4. "Explain double-entry to me like I'm an engineer, and how the schema enforces it."</b></summary>
+
+- Every journal transaction has ≥ 2 entries whose amounts sum to zero (debit/credit); system accounts (`external_clearing`, `fees`) absorb the other side of deposits/withdrawals; balances are derived. Schema: `account`, `journal_txn` (state machine), `ledger_entry` append-only (trigger + revoked privileges), CHECKs, materialized balance verified by reconciliation and an independent Python verifier.
+</details>
+
+<details><summary><b>PRJ-5. "Two concurrent $400 transfers from a $500 account — what happens, exactly?"</b></summary>
+
+- Both hit `transfer()`; each locks accounts in ascending id order with `SELECT … FOR UPDATE`; the second waits; the first commits (balance 100); the second re-reads inside its transaction, fails `available >= amount`, rolls back → 409; `CHECK (balance >= 0)` would reject it anyway. Idempotency rows written in the same transactions. Test asserts exactly one success and the invariant suite passes.
+</details>
+
+<details><summary><b>PRJ-6. "What did failure injection teach you?"</b></summary>
+
+- Crash after the idempotency row but before the journal → must be one transaction. Crash after commit but before the response → retry must return the stored response, not re-execute. Outbox relay crash → at-least-once, consumers idempotent. Reconciliation must be independent of the code it checks → the Python verifier.
+</details>
+
+### ForgeCI
+
+<details><summary><b>PRJ-7. "Walk me through a push to a registered repo, end to end."</b></summary>
+
+- GitHub → webhook (HMAC verified, delivery id unique) → build + jobs from `.forgeci.yml` → enqueue → worker `BLMOVE` + lease → container from the configured image, workspace volume, clone at SHA → steps via `exec`, exit codes → log chunks to Postgres + Redis pub/sub → API SSE to the UI → result, status to GitHub → container removed. Name where each failure is handled.
+</details>
+
+<details><summary><b>PRJ-8. "How do you make the queue reliable and recover orphaned jobs?"</b></summary>
+
+- `BLMOVE` to a per-worker processing list (atomic hand-off), lease key with TTL refreshed by heartbeats, `LREM` on completion; sweeper re-queues jobs with expired leases as infra failures with bounded retries; job rows in Postgres are the record. Streams consumer groups as the alternative; SQS visibility timeout as the managed equivalent.
+</details>
+
+<details><summary><b>PRJ-9. "How do DAG pipelines schedule, and what happens when one job fails?"</b></summary>
+
+- `needs:` edges → topological order (Kahn's), fan-out of independent jobs, fan-in waits for all parents; fail-fast cancels descendants and queued siblings (configurable). Cycle → config rejected at parse time. Direct line from the W14 DSA pattern to the W19 feature.
+</details>
+
+### FlagForge
+
+<details><summary><b>PRJ-10. "How does percentage rollout stay consistent for a user?"</b></summary>
+
+- `bucket = hash(flagKey + ":" + userKey) mod 10000`; on if `bucket < pct × 100`. Same input → same bucket, on server and in both SDKs; different flags hash differently so users aren't always in the same cohort. The Python simulator proves distribution within tolerance and stickiness over N users.
+</details>
+
+<details><summary><b>PRJ-11. "How do config changes reach running applications?"</b></summary>
+
+- Publish creates an immutable version → Redis snapshot invalidated → pub/sub → SSE to connected SDKs, which refetch with `ETag`; polling as the fallback; rollback is just publishing an older version's copy. Stampede protection on rebuild; SDK serves stale on error.
+</details>
+
+<details><summary><b>PRJ-12. "What did designing an SDK teach you that building APIs didn't?"</b></summary>
+
+- You own the client's failure modes: timeouts, defaults, offline mode, stale-if-error, no Spring dependency, semantic versioning, a builder that can't be misconfigured. Two implementations (Java, Python) against one contract test suite exposed ambiguities in the spec.
+</details>
+
+---
+
+## 16. Python
+
+Python is on the résumé as both the coding-interview language (Track A) and a tooling language used in every project (Track B). Drill file: [`17-resume-tech-defense/python.md`](./17-resume-tech-defense/python.md); templates: [`PYTHON_INTERVIEW_CHEATSHEET.md`](./PYTHON_INTERVIEW_CHEATSHEET.md).
+
+<details><summary><b>PY-1. "How much Python have you used, and for what?"</b></summary>
+
+- Truthful past. Now: daily for every DSA/OA problem, and the tooling language in all four projects — FlowGrid's data generator + load harness, LedgerX's independent reconciliation verifier, ForgeCI's repo generator + webhook/load simulator + log analysis, FlagForge's rollout simulator + Python SDK + config linter — each with `pytest`, type hints and a README. Backends are Java; no Django/FastAPI production claims.
+</details>
+
+<details><summary><b>PY-2. "Complexity of list, dict and set operations?"</b></summary>
+
+- List: index/append/pop-end O(1); insert/pop-front/`in` O(n); slice O(k). Dict/set: get/set/`in`/delete O(1) average, O(n) worst; iteration O(n). `deque` O(1) both ends; `heapq` push/pop O(log n), `heapify` O(n); `sorted` O(n log n). Always say "average" for hash-based ops.
+</details>
+
+<details><summary><b>PY-3. "What's wrong with <code>def f(x, acc=[])</code>?"</b></summary>
+
+- Default evaluated once at definition; shared across calls. Use `None` + create inside; `field(default_factory=list)` in dataclasses. Same family: `[[0] * n] * m` aliases one row.
+</details>
+
+<details><summary><b>PY-4. "Explain the GIL. Did it affect your load harness?"</b></summary>
+
+- One thread executes bytecode at a time in CPython. I/O-bound threads still overlap (the GIL is released on socket waits) — FlowGrid's harness with a `ThreadPoolExecutor` saturated the API fine and was cross-checked with k6. CPU-bound (rollout simulation) → `ProcessPoolExecutor`. 3.13 has an experimental free-threaded build.
+</details>
+
+<details><summary><b>PY-5. "What are generators and where did you use one?"</b></summary>
+
+- `yield` produces a lazy iterator with constant memory. LedgerX verifier streams journal transactions through a server-side cursor in batches; ForgeCI log analysis streams large files line by line.
+</details>
+
+<details><summary><b>PY-6. "Dataclasses vs Java records?"</b></summary>
+
+- `@dataclass(frozen=True, slots=True)` generates `__init__/__repr__/__eq__/__hash__`; validation in `__post_init__` (≈ compact constructor); `frozen` makes it hashable like a record. Differences: no runtime type enforcement; `field(default_factory=…)` for mutable defaults.
+</details>
+
+<details><summary><b>PY-7. "When would you pick Python vs Java?"</b></summary>
+
+- Python: interviews, scripts, verification/simulation/analysis tooling, glue, data. Java: long-lived services, type safety at scale, real threads and JVM performance, Spring ecosystem. In my stack: Java services, Python tooling — tested like production code.
+</details>
+
+<details><summary><b>PY-8. "Explain the LedgerX independent verifier — why does it exist and what can't it catch?"</b></summary>
+
+- Reads Postgres directly with `psycopg` + `Decimal`, shares no code with the Java service; proves every journal sums to zero and `balance == SUM(entries)`; exits non-zero with a report; pytest against a DB with a planted unbalanced transaction; runs in CI after the Java suite and inside crash/retry exercises. Can't catch: a shared misunderstanding of the accounting model; anything not expressible as a row-level invariant; it's point-in-time.
+</details>
+
+<details><summary><b>PY-9. "How does the FlowGrid load harness work and how do you keep its numbers honest?"</b></summary>
+
+- Generator seeds realistic warehouses/SKUs/orders (via API or SQL); harness fires concurrent order creations (`concurrent.futures`, fresh `Idempotency-Key` per request), records latency and 201/409 per request, prints percentiles; run parameters and environment recorded in PERFORMANCE.md; warm-up excluded; cross-checked with k6. Say what a single-client harness can't distinguish (client scheduling vs server queueing).
+</details>
+
+<details><summary><b>PY-10. "What do the ForgeCI simulators do?"</b></summary>
+
+- Repo generator creates Git repos with `.forgeci.yml` variants (passing, failing, slow, timeout, bad config) for the failure suite; webhook simulator signs payloads with HMAC-SHA256 over the exact bytes sent and fires them at a rate, measuring queue wait and completion; log analysis parses persisted results into a failure-taxonomy report. Bug you hit: signing a re-serialised body → 401 → sign the raw bytes.
+</details>
+
+<details><summary><b>PY-11. "Why a Python SDK for FlagForge, and how is it kept in sync with the Java one?"</b></summary>
+
+- Second implementation of the evaluation contract (bucketing, rule priority, defaults, stale-if-error, polling + `ETag`, offline) used for cross-SDK contract tests against recorded server evaluations; disagreements mean the spec is ambiguous. Deliberately minimal (no SSE); the config linter reuses its rule parser to flag overlapping/unreachable rules.
+</details>
+
+<details><summary><b>PY-12. "What's the output?" (late-binding closure / aliasing / <code>is</code> snippet)</b></summary>
+
+- `[lambda: i for i in range(3)]` → all return 2 (fix `i=i`); `b = a; b.append(1)` mutates `a`; `a is b` for equal ints may be True or False (interning) — never rely on it. Narrate the object graph, not the syntax.
+</details>
+
+---
+
+## 17. Behavioral-technical hybrids
+
+Story bank and STAR shaping: [`16-interview-prep/behavioral.md`](./16-interview-prep/behavioral.md). Use true stories from past roles when you remember them clearly; otherwise the roadmap projects — labelled as personal projects.
+
+<details><summary><b>BEH-1. "Tell me about a hard bug you fixed."</b></summary>
+
+- STAR with mechanism: symptom → hypothesis → tool (thread dump, `EXPLAIN`, logs by `requestId`, the failing test) → root cause → fix → regression test → what you changed in process. Candidates: FlowGrid's double reservation (concurrency test caught it), ForgeCI's orphaned jobs (lease sweep), LedgerX drift (self-invocation bypassing `@Transactional`).
+</details>
+
+<details><summary><b>BEH-2. "Tell me about a decision you'd make differently now."</b></summary>
+
+- ForgeCI: starting with Redis lists instead of Streams/SQS meant building lease and sweep logic by hand — good learning, more code to own. Or FlowGrid: hand-rolled fetch hooks in React where a query library would have removed a class of race bugs. Say what you learned and when the original choice was still right.
+</details>
+
+<details><summary><b>BEH-3. "Tell me about a time you disagreed with a technical decision."</b></summary>
+
+- True past story if you have one; frame the mechanism (what each option cost), how you argued with data, how you committed once decided. If using a project: the `@Version` vs `FOR UPDATE` measurement — "I had an opinion; I measured instead."
+</details>
+
+<details><summary><b>BEH-4. "How do you approach a codebase you've never seen?"</b></summary>
+
+- Run it and its tests first; read the entry points and the tests for the area you must change; trace one request end to end with the debugger; write a failing test before changing anything; small PR. Practised weekly since W13 on the [buggy-library drills](./21-debugging-code-reading/README.md) and in OA simulations.
+</details>
+
+<details><summary><b>BEH-5. "How do you handle being stuck?"</b></summary>
+
+- Timebox; reproduce smaller; read the actual error and the docs for the exact version; form a hypothesis and test it; then ask with a precise question (what I tried, what I expected, what happened). Example: Testcontainers "no Docker environment" in CI — resolved by reading the runner docs rather than guessing.
+</details>
+
+<details><summary><b>BEH-6. "What would you do in your first 30 days here?"</b></summary>
+
+- Ship something small in week one through the real pipeline; learn the on-call/incident path; read the last five postmortems; pair with whoever owns the scariest service; write down what confused me so the docs improve.
+</details>
+
+---
+
+## 18. Tracking table
+
+Log every recorded drill here (or in [`trackers/technology-tracker.md`](./trackers/technology-tracker.md)). Target ≥ 3 on three consecutive attempts per id before you stop drilling it. Add rows as you go; keep the last three scores per id.
+
+| id | last drilled | score (1–4) | note (gap found / follow-up missed) |
+|---|---|---|---|
+| EXP-1 | | | |
+| EXP-2 | | | |
+| EXP-3 | | | |
+| EXP-4 | | | |
+| JAV-1 | | | |
+| JAV-3 | | | |
+| JAV-5 | | | |
+| SPR-1 | | | |
+| SPR-2 | | | |
+| SPR-4 | | | |
+| SPR-5 | | | |
+| SPR-6 | | | |
+| SPR-7 | | | |
+| RST-1 | | | |
+| RST-3 | | | |
+| DB-1 | | | |
+| DB-2 | | | |
+| DB-3 | | | |
+| DB-8 | | | |
+| DB-9 | | | |
+| FE-1 | | | |
+| FE-5 | | | |
+| TST-2 | | | |
+| TST-3 | | | |
+| GIT-1 | | | |
+| GIT-5 | | | |
+| DOK-1 | | | |
+| DOK-2 | | | |
+| AWS-1 | | | |
+| AWS-3 | | | |
+| CI-1 | | | |
+| CI-3 | | | |
+| DBG-1 | | | |
+| DBG-2 | | | |
+| ARC-2 | | | |
+| ARC-3 | | | |
+| PRJ-1 | | | |
+| PRJ-5 | | | |
+| PRJ-7 | | | |
+| PRJ-10 | | | |
+| PY-1 | | | |
+| PY-4 | | | |
+| PY-8 | | | |
+| BEH-1 | | | |
+| BEH-2 | | | |
+
+Related: [`RESUME_TECH_DEFENSE.md`](./RESUME_TECH_DEFENSE.md) · [`17-resume-tech-defense/README.md`](./17-resume-tech-defense/README.md) · [`16-interview-prep/project-deep-dive.md`](./16-interview-prep/project-deep-dive.md) · [`INTERVIEW_CHECKLIST.md`](./INTERVIEW_CHECKLIST.md) · [`PROJECTS.md`](./PROJECTS.md)
