@@ -162,6 +162,25 @@ One per project, chosen from its `failure-engineering.md` as the scenario you ar
 
 Do not write new features this week. Cutting scope is the skill being trained (ROADMAP §8).
 
+### Per-project focus (what to look at first)
+
+| Project | Likely bug class | Refactor target | Test gap to close | Security row to fix first | Python component check |
+|---|---|---|---|---|---|
+| FlowGrid | reservation release on cancel edge cases; pagination off-by-one | allocation scorer → strategy per criterion | partial-fulfillment branches; Redis-down degrade | ownership on `/orders/{id}`; role checks on adjustments | `tools/` generator + load harness: `pytest`, `mypy`, README |
+| LedgerX | rounding/`BigDecimal` scale; reversal of a reversal | transfer orchestration vs transaction boundary | idempotency conflict (same key, different body) under concurrency | rate limit on transfers; audit read authz | reconciliation verifier: inject drift → must detect; generator determinism |
+| ForgeCI | lease renewal vs timeout race; log sequence gaps on reconnect | worker loop → explicit state machine | retry taxonomy boundaries (image pull vs step failure) | webhook secret handling; socket exposure note | `repogen`/`loadsim`/`loganalyze`: unsigned payload rejected; fixtures |
+| FlagForge | rule priority ties; attribute type coercion | rule predicate compilation | 412 path in UI; stampede lock expiry | SDK key in logs; admin rate limit | `sdk-python` never-raises; validator large/empty input |
+
+### Interview questions this week generates (Track B)
+
+| Question | Strong answer contains |
+|---|---|
+| "Tell me about a bug you found in your own project." | one from this week: symptom → reproduction → root cause → fix → regression test → what you changed in your process |
+| "How do you approach refactoring legacy code?" | characterization tests, small steps, no behaviour change, then bug fixes separately |
+| "How do you decide what to test?" | branches on critical paths; failure scenarios → regression tests; coverage as a map, not a target |
+| "What security issues did you find?" | the table; the one that surprised you (usually a prod-profile leak or CORS) |
+| "How did Python fit into a Java project?" | tooling with real users (you), tests, types, CI — same standards as the Java code |
+
 ## 9. Git activity
 
 - Small PRs (< 300 lines) labeled by type; characterization tests in their own PR before the refactor PR.
