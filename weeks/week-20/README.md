@@ -86,6 +86,29 @@ sdk_keys (env_id, key_hash, role, revoked_at)   audit_events (org_id, actor, act
 
 Every mutation writes an `audit_events` row **in the same transaction** with `before`/`after` JSON. Simplest correct implementation: an `AuditService.record(action, entity, before, after)` called from services, not JPA listeners (listeners lack the actor and cannot see the diff cleanly). Query API: `GET /orgs/{id}/audit?entity=flag:123&cursor=…` — cursor pagination from LedgerX M3.
 
+### 4.4b Safe version numbering (≤ 25 lines you may copy)
+
+```sql
+-- inside the publish transaction: lock the config row, then compute the next number
+SELECT id, published_version_id FROM flag_configs
+ WHERE env_id = :env AND flag_id = :flag FOR UPDATE;
+
+INSERT INTO flag_config_versions (env_id, flag_id, version_no, payload, created_by, comment)
+SELECT :env, :flag, COALESCE(MAX(version_no), 0) + 1, :payload::jsonb, :actor, :comment
+  FROM flag_config_versions WHERE env_id = :env AND flag_id = :flag
+RETURNING id, version_no;
+
+UPDATE flag_configs SET published_version_id = :newId WHERE id = :cfgId;
+```
+
+The `FOR UPDATE` serialises publishers per config; the unique index on `(env_id, flag_id, version_no)` catches any bug that bypasses the lock. Compare with LedgerX's ordered locking ([`04-sql-databases/06-transactions.md`](../../04-sql-databases/06-transactions.md)) — same tool, simpler shape.
+
+### 4.4c Where system-design vocabulary meets this model
+
+- **Read/write ratio:** evaluations (M2) will be ~10⁴× publishes — that is why the write path may take a row lock and the read path must not touch Postgres.
+- **Consistency:** admins need read-your-writes on the dashboard (strong, via Postgres); SDKs tolerate seconds of staleness (eventual, via cache + propagation). Say this in the W22 system-design mock.
+- **Multi-tenancy:** shared schema with tenant column (chosen) vs schema-per-tenant vs database-per-tenant — know the trade-offs from [`15-system-design/fundamentals.md`](../../15-system-design/fundamentals.md).
+
 ### 4.5 Concurrency on edits
 
 Two admins edit the same flag in two tabs. Choice for M1: `If-Match: "<published_version_id>"` on publish → `412 Precondition Failed` if the pointer moved. Cheap, RESTful, and the dashboard (M4) will show "someone published v8 while you were editing".
@@ -184,6 +207,26 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 
 - Repo with README, `compose.yaml`, CI badge, milestone M1 with ≥ 8 issues linked to PRs.
 - ERD sketch in `docs/DATABASE.md` (Mermaid or dbdiagram export).
+
+### Interview questions this milestone generates (Track B)
+
+| Question | Strong answer contains |
+|---|---|
+| "Why are configs immutable versions?" | rollback = forward version; audit for free; monotonic version for SDK caching; no partial updates |
+| "How do you assign version numbers safely under concurrency?" | row lock on `flag_configs` (or a counter column with `UPDATE … RETURNING`); `(env_id, flag_id, version_no)` unique as the backstop; test with 10 threads |
+| "JSONB vs normalized rule tables?" | payload read/written whole; versioning multiplies rows otherwise; reporting later via a projection |
+| "How is tenant isolation enforced?" | tenant id in every query path; 404 for foreign tenants; `CrossTenantAccessIT`; SDK keys scoped to one environment |
+| "What is in an audit event and when is it written?" | actor, action, entity, before/after JSON, same transaction as the mutation; never from JPA listeners (no actor, no diff) |
+| "How do two admins editing the same flag not clobber each other?" | `If-Match` on the published version id → 412; dashboard handles it in M4 |
+| "How would you design this if I asked you from scratch?" | the junior design loop: requirements → estimates → API → model → design → deep dive → trade-offs — using this exact system |
+
+### Definition of done for M1
+
+- [ ] Migrations + append-only enforcement in DB; all ITs green in CI
+- [ ] Admin API complete with OpenAPI and ProblemDetail error catalogue
+- [ ] Authz + tenant tests; SDK keys hashed and revocable
+- [ ] Audit writes in-transaction; cursor-paginated read API
+- [ ] `docs/DATABASE.md` (ERD sketch, invariants), `docs/API.md`
 
 ## 9. Git activity
 

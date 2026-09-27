@@ -111,8 +111,8 @@ import heapq
 h = []
 heapq.heappush(h, 5); heapq.heappush(h, 1); heapq.heappop(h)     # 1 — MIN-heap only
 heapq.heapify(nums)                                              # in place, O(n)
-heapq.heappush(h, (priority, payload))                           # tuple: compares priority, then payload
-heapq.heappush(h, -x); largest = -heapq.heappop(h)               # max-heap by negation
+th = []; heapq.heappush(th, (priority, payload))                 # tuple heap: compares priority, then payload (never mix ints and tuples in one heap)
+mh = []; heapq.heappush(mh, -x); largest = -heapq.heappop(mh)    # max-heap by negation
 heapq.heappushpop(h, x)                                          # push x, pop min — one sift; keeps size
 heapq.heapreplace(h, x)                                          # pop min, push x
 heapq.nlargest(3, words, key=len); heapq.nsmallest(3, items, key=lambda t: t[1])

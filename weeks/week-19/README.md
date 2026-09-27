@@ -102,6 +102,18 @@ the container, but **not** the host — unless you let them. The note in `docs/S
 
 Use [`18-projects/templates/adr.md`](../../18-projects/templates/adr.md). Decision: Redis for one-dependency simplicity and local testability; migration path to SQS documented (queue port interface already isolates it).
 
+### 4.5b Crash-safety of "decrement then enqueue"
+
+Three acceptable designs — pick one and write it in the ADR:
+
+| Design | How | Cost |
+|---|---|---|
+| **Outbox** (LedgerX M3 pattern) | decrement + insert `outbox(enqueue job X)` in one tx; a relay pushes to Redis and marks sent | one more table + relay loop; strongest guarantee |
+| **DB-backed queue entry + Redis as signal** | job row status `QUEUED` in the same tx; Redis push after commit; a reconciler every 30 s re-pushes `QUEUED` rows missing from Redis | simplest with what you already have |
+| **Idempotent enqueue** | push after commit; worker ignores jobs whose DB status is not `QUEUED`; reconciler fixes misses | relies on the reconciler for the gap |
+
+Whichever you choose, the test `CrashBetweenDecrementAndEnqueueIT` is the same: arm the failure point, kill, restart, assert the job runs exactly once.
+
 ### 4.6 Deploying a multi-service stack on AWS
 
 - **Topology (cheap):** one `t3.small` (or similar) EC2 running Compose with api + 2 workers + Redis; RDS Postgres (smallest class, no multi-AZ); S3 for artifacts if you export logs; CloudWatch agent shipping `docker logs`.
@@ -209,6 +221,28 @@ Spec: [`18-projects/forgeci/README.md`](../../18-projects/forgeci/README.md) · 
 
 - Milestone M6 closed; ADRs under `docs/adr/`; `docs/SECURITY.md`, `docs/DEPLOYMENT.md`.
 - Release `v1.1-dag` notes: what is new, what remains out of scope (matrix jobs, artifacts between jobs, secrets management UI).
+
+### Interview questions this milestone generates (Track B — rehearse out loud)
+
+| Question | What a strong answer contains |
+|---|---|
+| "How does your scheduler decide what to run next?" | in-degree per job persisted in Postgres; enqueue zeros at build creation; atomic decrement on completion; enqueue when it hits 0 and parent succeeded |
+| "What happens if the api crashes right after a job finishes?" | the decrement and the enqueue are in one transaction (or outbox); a reconciler re-enqueues `pending_deps = 0 AND status = PENDING`; test name |
+| "How do you detect a cycle, and when?" | Kahn's at parse time; processed < N ⇒ cycle; error lists the offending jobs; never reaches the queue |
+| "Why Redis instead of SQS for the queue?" | one dependency for queue + pub/sub + counters; local testability; ADR with the migration path via the queue port |
+| "Is it safe to run arbitrary user code?" | no; the boundary chosen (no privileged, no host mounts, limits, socket only in worker); what production would add |
+| "How would you scale workers?" | stateless workers with unique ids; `--scale`; per-project limits in Redis; the measured jobs/min curve from M5 |
+| "What did the Python tools add?" | reproducible benchmark (`loadsim`), repo fixtures (`repogen`), failure taxonomy stats (`loganalyze`); all tested |
+
+### Definition of done for the ForgeCI phase
+
+- [ ] `v1.0` (Strong Résumé Version) and `v1.1-dag` (Advanced) tagged; both releases have notes
+- [ ] Failure suite: every scenario → regression test; `docs/TESTING.md` maps them
+- [ ] `docs/PERFORMANCE.md` with the `loadsim` matrix (1/3/5 workers), methodology recorded
+- [ ] `docs/SECURITY.md`, `docs/DEPLOYMENT.md`, ADRs (queue, SSE, Redis vs SQS)
+- [ ] Python tools tested in CI; READMEs
+- [ ] Deep-dive recorded and self-scored; weakest 3 answers redone
+- [ ] [`trackers/project-tracker.md`](../../trackers/project-tracker.md) closed for ForgeCI with actual hours
 
 ## 9. Git activity
 

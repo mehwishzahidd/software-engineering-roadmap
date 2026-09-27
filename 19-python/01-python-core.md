@@ -59,7 +59,7 @@ s.replace("l", "L", 1), s.zfill(15), s.center(20, "*")
 ord("a"), chr(97), ord("z") - ord("a")                     # 97 'a' 25
 f"{s!r} has {len(s)} chars; pi={3.14159:.2f}; {42:>6}|{42:<6}|{42:^6}|{255:#x}|{1234567:,}"
 str(123) + "4", "ab" * 3, "ab" < "b", "Z" < "a"           # '1234' 'ababab' True True (ASCII order)
-s == "Hello, World", s is "Hello, World"                   # equality yes; identity is undefined — never use `is` for strings
+s == "Hello, World"                                        # value equality; never use `is` for strings (identity is undefined, and 3.8+ warns)
 ```
 
 **Building strings:** never `s += ch` in a loop for large n. Collect into a list and `"".join`. Character frequency: `Counter(s)` or `[0]*26` with `ord(c) - ord('a')`.
@@ -83,12 +83,13 @@ a.index(2), a.count(2), 2 in a               # O(n) each
 a.sort(); a.sort(reverse=True); a.sort(key=abs)   # in place, returns None — `b = a.sort()` makes b None
 sorted(a)                                    # new list, works on any iterable
 a.reverse(); list(reversed(a)); a[::-1]      # in place / iterator / copy
-a.clear(); len(a); a.copy(); a[:]            # shallow copies
+a.copy(); a[:]; list(a)                      # shallow copies
 [0] * 5; [None] * n; list(range(5))          # [0,0,0,0,0]; preallocate; [0,1,2,3,4]
 [[0] * cols for _ in range(rows)]            # 2-D grid (see the [[0]*n]*m trap in 03-pitfalls)
 a[1:3] = [9, 9, 9]                           # slice assignment can change length
 del a[0]; del a[1:3]                         # O(n)
 a[-1], a[-2]                                 # last, second-to-last
+a.clear(); len(a)                            # [] 0
 ```
 
 Lists compare lexicographically: `[1, 2] < [1, 3]`. `min([])` raises `ValueError`; use `min(xs, default=...)`. `a * 2` repeats; `a + b` concatenates (new list).
@@ -101,7 +102,7 @@ r, c = p                                     # unpacking
 p[0], p[-1], len(p), p + (3,), p * 2, 2 in p # indexing/slicing like a list
 d = {(0, 0): "origin"}; visited = {(r, c)}   # tuples as dict keys / set members — the standard for grid coordinates
 t = ([1], 2); t[0].append(9)                 # tuple is immutable, its contents may not be; ([1, 9], 2)
-hash((1, 2)); hash(([1], 2))                 # ok; TypeError — unhashable list inside
+hash((1, 2))                                 # ok; hash(([1], 2)) → TypeError: unhashable list inside
 ```
 
 Use tuples for fixed-shape records `(dist, node)`, heap entries, dict keys and multiple return values. Use `namedtuple`/`dataclass` (Week 2) when fields need names.
@@ -111,7 +112,7 @@ Use tuples for fixed-shape records `(dist, node)`, heap entries, dict keys and m
 ```python
 a = list(range(10))
 a[2:5], a[:3], a[7:], a[-3:], a[::3], a[::-1], a[8:2:-2], a[100:]    # clamp, never IndexError → [2,3,4] ... []
-a[i:j] is a new list                      # O(j-i) time and memory; a[:] is a full shallow copy
+b = a[2:5]; b[0] = 99; print(a[2])         # 2 — a slice is a NEW list: O(j-i) time and memory; a[:] is a full shallow copy
 ```
 
 Passing `a[1:]` into recursion creates O(n) copies per level → O(n²). Pass an index instead.
@@ -143,12 +144,14 @@ Sets have **no order**; do not rely on iteration order. Sorting a set: `sorted(s
 
 ```python
 d = {"a": 1, "b": 2}; d = dict(a=1, b=2); d = dict(zip(["a", "b"], [1, 2])); d = dict.fromkeys("ab", 0)
-d["c"] = 3; d["a"]; d["zzz"]                # set; get; KeyError
+d["c"] = 3; d["a"]                          # set; get — d["zzz"] would raise KeyError
 d.get("zzz"), d.get("zzz", 0)               # None / default — no insertion
 d.setdefault("list", []).append(1)          # insert default if absent, return the value
 d.pop("a"), d.pop("zzz", None), d.popitem() # remove+return; default avoids KeyError; popitem is LIFO
 "a" in d                                    # KEY membership, O(1); `1 in d.values()` is O(n)
-for k in d: ...; for k, v in d.items(): ...; for v in d.values(): ...     # insertion order
+for k in d: pass                            # keys, insertion order
+for k, v in d.items(): pass                 # pairs
+for v in d.values(): pass                   # values
 d.keys() & other.keys()                     # key views support set operations
 d.update({"x": 9}); merged = d | other      # merge (right side wins)
 del d["b"]; d.clear(); len(d)
@@ -421,8 +424,10 @@ print(-7 // 2, -7 % 2, int(-7 / 2))          # -4 1 -3
 # 6  Truthiness and `or`
 print(0 or "default", "" or None, [] or [1]) # default None [1]
 
-# 7  Loop variable leaks and late binding
-fs = [lambda: i for i in range(3)]; print([f() for f in fs], i)    # [2, 2, 2] 2
+# 7  Loop variable leaks (for-loops only; comprehensions don't leak) and late binding
+fs = []
+for i in range(3): fs.append(lambda: i)
+print([f() for f in fs], i)                  # [2, 2, 2] 2 — all closures see the final i; i survives the loop
 
 # 8  Mutating while iterating
 s = {1, 2, 3}

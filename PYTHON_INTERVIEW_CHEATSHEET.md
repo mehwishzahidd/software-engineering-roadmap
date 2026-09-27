@@ -14,7 +14,8 @@
 import sys, math, heapq, bisect
 from collections import Counter, defaultdict, deque
 from functools import lru_cache, cache, cmp_to_key, reduce
-from itertools import permutations, combinations, product, accumulate, groupby, chain, pairwise
+from itertools import permutations, combinations, combinations_with_replacement, product
+from itertools import accumulate, groupby, chain, pairwise, islice, zip_longest
 from dataclasses import dataclass, field
 from typing import Optional
 ```

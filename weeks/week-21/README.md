@@ -103,6 +103,17 @@ on publish (same transaction commits) → DEL env:{envId}:snapshot   (after comm
 
 Also `POST /api/v1/evaluate/all` (all flags for a context — what SDKs bootstrap with) and `GET /api/v1/snapshot` (the raw snapshot + `ETag: "<version>"`, `304` on `If-None-Match` — the SDK's polling primitive in M3).
 
+### 4.4b Typed attribute matching without surprises
+
+| Operator | Types allowed | Notes |
+|---|---|---|
+| `EQ`, `NEQ`, `IN`, `NOT_IN` | string, number, boolean | compare after coercion to the rule's declared type; `"42"` vs `42` must not silently match — decide and test |
+| `STARTS_WITH`, `ENDS_WITH`, `CONTAINS` | string | case-sensitive by default; document |
+| `GT`, `GTE`, `LT`, `LTE` | number | `BigDecimal`/`double` policy (doubles are fine for targeting; say why) |
+| `SEMVER_GT` etc. (stretch) | string | parse once at snapshot build |
+
+Missing attribute → the rule does not match (no exception, no "null == null" surprises). Write one unit test per row.
+
 ### 4.5 Measuring p99 honestly
 
 - **JMH** for `evaluate()` alone: ops/µs with a 20-rule flag; this is CPU only.
@@ -201,6 +212,26 @@ Spec: [`18-projects/flagforge/README.md`](../../18-projects/flagforge/README.md)
 
 - Milestone M2 closed; `docs/PERFORMANCE.md` with the first table; `bucketing-vectors.json` in `eval/src/test/resources`.
 - `v0.5-mvp` tag; README's "How evaluation works" section with the algorithm and reasons.
+
+### Interview questions this milestone generates (Track B)
+
+| Question | Strong answer contains |
+|---|---|
+| "How does percentage rollout work?" | bucket = hash(flag:salt:user) mod 10 000; `< pct` → on; stickiness on ramp-up because the function is pure |
+| "Why MurmurHash3 and not `hashCode`/SHA-256?" | specified cross-language output, good distribution for short keys, fast; SHA works but is slower and overkill; `hashCode` unspecified across languages |
+| "What is the complexity of an evaluation?" | O(rules) with precompiled predicates; snapshot lookup O(1); no I/O on the hot path |
+| "Walk me through a cache miss." | Redis miss → build snapshot from Postgres → `SET EX` → serve; single-flight (M4) collapses concurrent misses |
+| "Walk me through a publish." | tx: version + pointer + audit → after commit: `DEL` (and `PUBLISH` in M4) → next read rebuilds |
+| "What if Redis is down?" | degrade: in-process copy or Postgres directly; warn; never fail an evaluation |
+| "What were your numbers?" | p50/p95/p99 at N VUs, hit rate, environment; JMH ops/µs for pure eval; where the time goes |
+
+### Definition of done for M2 (MVP)
+
+- [ ] `eval` module Spring-free (enforced in `pom.xml`), conformance vectors committed
+- [ ] `/evaluate`, `/evaluate/all`, `/snapshot` (+`ETag`/`304`) behind SDK-key auth
+- [ ] Cache-aside with after-commit invalidation, TTL, degrade path — all tested
+- [ ] JMH + k6 results recorded per template; `docs/PERFORMANCE.md` section 1
+- [ ] Tag `v0.5-mvp`
 
 ## 9. Git activity
 

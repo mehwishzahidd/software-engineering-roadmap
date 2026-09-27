@@ -276,8 +276,10 @@ def f(limit=None): limit = 10 if limit is None else limit   # FIX
 ### 3.21 Comparing chained / unintended tuple
 
 ```python
+a = 3
 x = 1, 2                                     # x is the tuple (1, 2), not 1
-return a, b                                  # returns a tuple — fine; `return (a), (b)` too
+def pair(a, b):
+    return a, b                              # returns a tuple — fine
 if a == 1 or 2: ...                          # always True — `2` is truthy; write `a in (1, 2)`
 ```
 
