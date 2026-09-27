@@ -16,7 +16,7 @@ Every tree, graph DFS, backtracking and DP solution in the rest of this roadmap 
 | Progress | Each call must move toward a base case (n − 1, n // 2, `node.next`, smaller index range) |
 | Leap of faith | Assume `f(smaller)` is correct; only reason about one level |
 | Call stack | Each call is a frame holding locals; depth = space cost. Python's default limit is **1000** frames → `RecursionError` |
-| `sys.setrecursionlimit` | Raises the limit (e.g. 10⁵) but the C stack can still overflow and crash; iteration is the safer fix |
+| `sys.setrecursionlimit` | Raises the limit (e.g. 10⁵) but the C stack can still overflow and crash; on Python 3.12+ `@cache`-decorated recursion is also capped by a separate C recursion limit (a few thousand frames). Iteration/tabulation is the safer fix |
 | Recursion tree | Draw calls as a tree: #nodes × work per node = time. Naive Fibonacci: ~2ⁿ nodes |
 | Tail recursion | Python (and Java) do **not** optimise tail calls |
 | Helper with extra parameters | Nested `def dfs(node, depth)` closures that read outer variables; use `nonlocal` to rebind an outer counter |
