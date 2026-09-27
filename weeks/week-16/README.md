@@ -208,6 +208,18 @@ M3 set: API instance killed mid-stream (browser reconnects to another instance �
 
 Milestone `M3`; PRs `feat/m3-log-chunks`, `feat/m3-sse-stream`, `feat/m3-ui-scaffold`, `feat/m3-ui-live-log`, `test/m3-replay-property`, `docs/m3-adr-sse`. CI adds `ui` job (`npm ci && npm test && npm run build`). Tag `m3`.
 
+### 8.6 Interview questions built from this milestone (Track B — answer out loud, 2 min each)
+
+1. "Why SSE and not WebSockets for build logs? When would you switch?" (one-way append-only, auto-reconnect + `Last-Event-ID`, plain HTTP; switch for client→server streaming)
+2. "A user's browser reconnects after 30 s offline. How do they get exactly the lines they missed?" (`id: <seq>`, replay `seq > lastId` from Postgres, subscribe-before-replay, seq filter)
+3. "Why persist the chunk before publishing it?" (pub/sub is fire-and-forget; the row is the truth; a publish-before-persist crash shows phantom lines)
+4. "Two API instances, one worker — does the client see all lines regardless of which instance it hits?" (pub/sub fans out; state in Postgres; yes)
+5. "A step prints 5 GB. What happens to Postgres, the API and the browser?" (per-job cap + truncated marker; bounded client queues + resync; UI cap/virtualisation)
+6. "How do you keep a slow browser from slowing the worker?" (worker only writes DB + Redis; API per-client bounded queue; drop and resync)
+7. "How would you test the resume logic?" (property test over random disconnect points: received == persisted, once, ordered)
+
+Full list: [`18-projects/forgeci/interview-questions.md`](../../18-projects/forgeci/interview-questions.md).
+
 ## 9. Git activity
 
 - Monorepo with `ui/`: add path filters to CI so backend-only PRs skip `npm` jobs and vice versa (15 min).

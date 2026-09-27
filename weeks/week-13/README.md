@@ -211,6 +211,18 @@ M5 set: Redis down under velocity rule; RDS failover/reboot (reboot the instance
 
 Milestone `M5`; PRs `infra/m5-aws`, `ci/m5-pipeline`, `sec/m5-review`, `docs/m5-v1`, `feat/m5-scheduled-payments`, `feat/m5-risk-rules`. **Release `v1.0`** on GitHub with notes: features, measured numbers (linked), known limitations (honest), advanced roadmap. Close the LedgerX project board. Tag `m5` after advanced features.
 
+### 8.6 Interview questions built from this milestone (Track B — answer out loud, 2 min each)
+
+1. "You run two instances of the API. How do scheduled payments avoid executing twice?" (claim with `SKIP LOCKED`, idempotency key per execution)
+2. "Redis is down. What happens to a transfer that hits a velocity rule?" (DB fallback, WARN + alarm, documented policy)
+3. "What did you change between your first and second AWS deployment, and by how much did it speed up?" (IAM policy in repo, `deploy.sh` with health gate, parameterised Compose — quote the timings)
+4. "How does a bad deploy get rolled back, and what constraint does that put on migrations?" (previous tag via the same script; expand/contract migrations)
+5. "Which security issues did your checklist find, and which tests now guard them?" (IDOR, admin routes, rate limiting, chaos-profile guard)
+6. "Why is the reconciliation report *not* allowed to fix drift?" (evidence, immutability, hides bugs — plus the independent Python verifier as second opinion)
+7. "What would you build next in LedgerX and why did you *not* build it now?" (scope discipline: v1.0 before advanced; name one stretch item)
+
+Full list: [`18-projects/ledgerx/interview-questions.md`](../../18-projects/ledgerx/interview-questions.md).
+
 ## 9. Git activity
 
 - `git tag -a v1.0`; GitHub Release with notes; protect `main` (required checks, required review — you can self-review via a second account or just enforce the check).
